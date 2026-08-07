@@ -1,0 +1,39 @@
+# --- Flutter / Dart ---------------------------------------------------------
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+
+# --- Windows ----------------------------------------------------------------
+windows/flutter/ephemeral/
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+
+# --- Sidecars ---------------------------------------------------------------
+# Los binarios y sus árboles de compilación no van al repositorio: librespot
+# ocupa 12 MB y el `target/` de Rust más de 3 GB. Se compilan con
+# tool\build_librespot.ps1 y se distribuyen ya montados en el instalador de
+# GitHub Releases.
+tool/librespot-build/
+tool/metadata-sidecar/target/
+*.exe
+
+# --- Salidas ----------------------------------------------------------------
+# El instalador va a Releases, no versionado.
+dist/
+
+# --- Entorno ----------------------------------------------------------------
+.vscode/
+.idea/
+.claude/
+*.log
+
+# --- Nada de credenciales ---------------------------------------------------
+# Viven en %APPDATA%\neofy y nunca deberían aparecer por aquí, pero más vale
+# que el .gitignore lo diga por si alguien copia su configuración al proyecto.
+config.json
+tokens.json
+credentials.json

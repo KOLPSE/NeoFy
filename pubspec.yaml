@@ -1,0 +1,29 @@
+name: neofy
+description: "Cliente de Spotify ligero y nativo para Windows (Flutter + librespot)"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+# Dependencias deliberadamente mínimas: cada paquete es RAM y superficie de fallo.
+# El estado se lleva con ChangeNotifier/ValueNotifier, sin gestor externo.
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  crypto: ^3.0.3
+  path: ^1.9.0
+  window_manager: ^0.4.2
+  tray_manager: ^0.2.3
+  url_launcher: ^6.3.0
+  ffi: ^2.2.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/tray.ico
