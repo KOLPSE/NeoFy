@@ -58,6 +58,18 @@ class ArtCache {
     return future;
   }
 
+  /// El fichero **solo si ya está descargado**, sin salir a la red ni esperar.
+  ///
+  /// Lo usa MPRIS (`core/mpris.dart`) para pasarle al escritorio la carátula de
+  /// lo que suena. Ahí no se puede esperar a una descarga: la respuesta de D-Bus
+  /// tiene que salir en el momento, y una carátula que aún no está vale más
+  /// omitirla que retrasar los metadatos enteros. Como la pantalla ya la habrá
+  /// pedido por [file], en la práctica casi siempre está.
+  static File? ficheroSiEstaEnDisco(String url) {
+    final f = _fileFor(url);
+    return f.existsSync() ? f : null;
+  }
+
   /// Los bytes, para quien de verdad los necesite. Hoy solo
   /// `tool/probe_art.dart`: la interfaz va por [file].
   static Future<Uint8List?> bytes(String url) async {
