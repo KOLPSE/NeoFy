@@ -47,6 +47,30 @@ if ($local -ne $remoto) {
 }
 Write-Host '  árbol limpio, en main y sincronizado'
 
+# El token se pide AQUÍ y no cuando hace falta, que es al final.
+#
+# ⚠️ Esto arregla un fallo que pasó de verdad. Estaba justo antes de crear la
+# release, o sea **después** de haber etiquetado y subido la etiqueta: cuando la
+# credencial no se pudo leer, el script murió dejando `v0.1.3` publicada y
+# ninguna release detrás. Y volver a ejecutarlo tampoco arreglaba nada, porque
+# lo primero que comprueba es que la etiqueta no exista. Había que terminar a
+# mano por la API.
+#
+# Pidiéndolo entre las comprobaciones previas, un token que falta o que no se
+# puede leer para el script antes de tocar nada irreversible.
+$token = $env:GITHUB_TOKEN
+if (-not $token) {
+  # El mismo token que usa git push, sin guardar nada en el proyecto.
+  $token = ("protocol=https`nhost=github.com`n`n" | git credential fill) |
+           Where-Object { $_ -like 'password=*' } |
+           ForEach-Object { $_.Substring(9) }
+}
+if (-not $token) {
+  Mal ('No hay token de GitHub. Guarda la credencial haciendo un `git push`, ' +
+       'o define $env:GITHUB_TOKEN antes de ejecutar esto.')
+}
+Write-Host '  token de GitHub disponible'
+
 # --- 2. Que el código esté sano --------------------------------------------
 Paso 'analyze y tests'
 $flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source
@@ -112,15 +136,7 @@ git push origin $tag
 Write-Host "  $tag subida"
 
 Paso 'Creando la release'
-$token = $env:GITHUB_TOKEN
-if (-not $token) {
-  # El mismo token que usa git push, sin guardar nada en el proyecto.
-  $token = ("protocol=https`nhost=github.com`n`n" | git credential fill) |
-           Where-Object { $_ -like 'password=*' } |
-           ForEach-Object { $_.Substring(9) }
-}
-if (-not $token) { Mal 'No hay token de GitHub (ni credencial guardada ni GITHUB_TOKEN).' }
-
+# El token ya se comprobó al principio, antes de etiquetar.
 $cabeceras = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' }
 $cuerpoJson = @{ tag_name = $tag; name = "NeoFy $version"; body = $cuerpo
                  draft = $false; prerelease = $false } | ConvertTo-Json
