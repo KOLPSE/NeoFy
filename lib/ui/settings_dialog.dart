@@ -224,8 +224,13 @@ class _Actualizaciones extends StatelessWidget {
                     switch (estado) {
                       EstadoActualizacion.buscando => 'Buscando…',
                       EstadoActualizacion.alDia => 'Estás al día',
-                      EstadoActualizacion.disponible =>
-                        'Hay una versión nueva: ${updater.versionDisponible}',
+                      // Donde no se instala sola (Linux), el aviso tiene que
+                      // decir qué hacer: si no, informa de una novedad y deja
+                      // al usuario sin ninguna forma de cogerla.
+                      EstadoActualizacion.disponible => Updater.seInstalaSolo
+                          ? 'Hay una versión nueva: ${updater.versionDisponible}'
+                          : 'Hay una versión nueva (${updater.versionDisponible}). '
+                              'Actualiza con ${Updater.comandoDeActualizacion}',
                       EstadoActualizacion.descargando =>
                         'Descargando… ${(updater.progreso * 100).round()} %',
                       EstadoActualizacion.listaParaInstalar =>
@@ -251,7 +256,8 @@ class _Actualizaciones extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            if (estado == EstadoActualizacion.disponible)
+            if (estado == EstadoActualizacion.disponible &&
+                Updater.seInstalaSolo)
               FilledButton(
                 onPressed: () => _actualizar(context),
                 child: const Text('Actualizar'),

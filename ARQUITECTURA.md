@@ -5,7 +5,7 @@ documento son trampas de la API de Spotify verificadas contra la API real con la
 `tool/`: si algo aquí parece una decisión rara, suele ser que la alternativa obvia no
 funciona.
 
-**neofy** es un cliente de Spotify ligero para Windows, parte del ecosistema Neo*.
+**neofy** es un cliente de Spotify ligero para Windows y Linux, parte del ecosistema Neo*.
 Flutter + Material 3 (mismo stack que `NeoDrive`) con `librespot` como sidecar de audio.
 La documentación del proyecto está en español; escribe en español.
 
@@ -155,10 +155,14 @@ release con una `kVersion` **anterior** a la que ya corre la gente, sus apps se 
 
 ## Comprobación automática
 
-`.github/workflows/ci.yml` pasa `analyze` y los tests en cada push y cada pull request,
-sobre **windows-latest**: la app es de escritorio Windows y hay tests que tocan disco de
-verdad y rutas de `%APPDATA%`. Además falla si `kDefaultClientId` deja de estar vacío, para
-que un Client ID no acabe publicado por descuido.
+`.github/workflows/ci.yml` pasa `analyze` y los tests en cada push y cada pull request, sobre
+**windows-latest y ubuntu-latest**. Los dos, porque la app ya es de los dos sitios: hay tests
+que tocan disco de verdad y correrlos en una sola plataforma dejaría pasar justo lo que un
+cambio de rutas puede romper. Además falla si `kDefaultClientId` deja de estar vacío, para que
+un Client ID no acabe publicado por descuido.
+
+El tarball de Linux va en un workflow aparte (`linux.yml`) porque son veinte minutos de
+compilar Rust y no tienen por qué esperarlos todos los push.
 
 **El CI no compila el instalador a propósito**: haría falta compilar los dos sidecars de
 Rust (su `target/` pasa de 3 GB) e instalar Inno Setup, más de veinte minutos para algo que
@@ -522,6 +526,104 @@ foco, para cuando la ventana está delante. **Ojo con el espacio**: en escritori
 llega por dos vías a la vez (evento de teclado al árbol de foco *y* texto al campo por el
 canal del motor), así que sin comprobar si hay un `EditableText` enfocado, escribir un
 espacio en el buscador metería el espacio y además pausaría la música.
+
+## Linux
+
+El port a Arch fue barato porque casi nada de la app es de Windows: `spotify_api.dart`,
+`auth.dart`, `player_state.dart`, los stores, los modelos y las trece pantallas de `lib/ui/`
+no tienen una sola llamada al sistema. Lo que hubo que rehacer es la capa que sí lo toca, y
+en tres de los cuatro casos **la solución de Linux es mejor que la de Windows**.
+
+- **Las teclas multimedia son MPRIS** (`core/mpris.dart`), no `RegisterHotKey`. En Windows
+  hizo falta C++ porque desde Dart no hay forma de ver un `WM_HOTKEY`; en Linux el escritorio
+  ya escucha esas teclas y lo que busca es un reproductor que hable D-Bus. De regalo, NeoFy
+  sale en el widget de reproducción de KDE y GNOME con carátula, y `playerctl` lo controla —
+  la misma propiedad que hace que un Stream Deck funcione en Windows sin plugin. Va con
+  `package:dbus`, que es Dart puro: **no hay una línea de código nativo en `linux/runner/`**.
+- **El vigilante de la salida de audio no existe, y no hace falta.** `audio_device_watcher.cpp`
+  resuelve en Windows que librespot abre el altavoz una vez y no lo suelta. En Linux se compila
+  librespot con el backend de **PulseAudio** y PipeWire mueve el flujo solo al cambiar de
+  dispositivo. Se conservan las otras dos vías por si acaso: el log (`esFalloDeAudio()`
+  reconoce también `pulseaudio` y `alsa`) y el botón de Ajustes.
+- **Matar sidecars huérfanos va por fichero de PID** (`core/procesos.dart`), no por nombre.
+  ⚠️ La traducción obvia de `taskkill /F /IM` sería `pkill librespot`, y **sería un error
+  grave**: mataría el `spotifyd` del usuario o cualquier otro librespot del sistema. Se anota
+  el pid que lanzamos nosotros en `$XDG_RUNTIME_DIR/neofy/` y antes de matarlo se comprueba en
+  `/proc/<pid>/cmdline` que sigue siendo el mismo proceso — un pid se recicla, y matar a ciegas
+  el número apuntado sería tan malo como el `pkill`.
+- **La memoria se mide por `/proc`**, que sale más simple que el FFI a `psapi`. El parseo está
+  en `rssDeStatm()` y `ticksDeStat()`, aparte y probadas con cadenas fijas para que valgan
+  también en el runner de Windows del CI. Dos trampas: el segundo campo de `/proc/<pid>/stat`
+  es el nombre del proceso **entre paréntesis y puede llevar espacios y paréntesis dentro**,
+  así que hay que contar desde el último `)` o se desalinean todos los campos sin dar error; y
+  los ticks se devuelven en unidades de 100 ns para que el cálculo del porcentaje sea el mismo
+  en las dos plataformas.
+
+### Rutas
+
+`appDataDir()` guarda lo que no se puede perder (`config.json`, `tokens.json`, credenciales de
+librespot) y `cacheDir()` lo que sí (carátulas, caché de audio). **En Windows las dos devuelven
+la misma carpeta a propósito**: separarlas obligaría a migrar la caché de quien ya tiene la app
+instalada, y a cambio de nada. En Linux salen de XDG (`~/.config/neofy` y `~/.cache/neofy`),
+donde sí importa: hay herramientas que dan por hecho que `~/.cache` se puede borrar entero.
+
+### La bandeja puede no existir
+
+`tray_manager` necesita `libayatana-appindicator`, y **en GNOME sin la extensión de
+AppIndicator no aparece ningún icono**. Antes `_setupTray()` se tragaba el fallo y la X
+escondía la ventana igualmente: la app se quedaba viva, sonando y fuera del alcance del
+usuario, que solo podía matarla desde un monitor de sistema. Ahora se guarda si la bandeja
+llegó a montarse y, si no, **la X cierra de verdad**. MPRIS compensa: aunque no haya icono, el
+widget del escritorio sigue controlando la reproducción.
+
+El icono de bandeja es `.png` en Linux y `.ico` en Windows — un `.ico` allí no lo pinta ni GTK
+ni el indicador. Los dos salen del mismo dibujo: `tray.ico` ya traía los siete tamaños como PNG
+dentro, así que el árbol hicolor de `linux/packaging/icons/` se extrajo de ahí sin reescalar
+nada.
+
+### Lo que se pierde
+
+**`EmptyWorkingSet` no tiene equivalente.** El modo rendimiento conserva sus otros tres efectos
+—no bajar imágenes, caché de bitmaps a 1 MB y apagar el sidecar de metadatos—, que son los que
+de verdad pesan, pero la parte de devolverle páginas al sistema es un no-op documentado en
+`vaciarWorkingSet()`. `malloc_trim` no serviría de mucho: la memoria de Flutter está en el heap
+de Dart y en Skia, no en las arenas de glibc.
+
+### El actualizador avisa pero no instala
+
+En Linux NeoFy se distribuye como paquete (`neofy-bin` en el AUR) y es pacman quien lleva la
+cuenta de qué ficheros son de quién. Una app que se sobrescribe a sí misma deja la base de
+datos del gestor mintiendo. `Updater.buscar()` sigue funcionando igual —la comparación por
+tramos numéricos no cambia—, pero al detectar novedad se para y Ajustes enseña
+`yay -Syu neofy-bin` en vez del botón de instalar.
+
+### Cómo se compila y se publica
+
+```bash
+./tool/build_sidecars.sh        # solo la 1ª vez
+flutter build linux --release
+./tool/build_linux_bundle.sh    # saca dist/NeoFy-x.y.z-linux-x86_64.tar.gz
+```
+
+`build_sidecars.sh` compila librespot con **rustls** y no con `native-tls`: en Windows
+`native-tls` va por schannel y no arrastra nada, pero en Linux iría por OpenSSL y ataría el
+binario a la versión exacta de `libssl` de la máquina donde se compiló, que es justo lo que no
+queremos en un paquete `-bin`. (El sidecar de metadatos sí arrastra OpenSSL, porque
+`librespot-core` trae `native-tls` en sus features por defecto; por eso el PKGBUILD lleva
+`openssl` en `depends`.)
+
+El tarball **no se compila en local**: lo genera `.github/workflows/linux.yml` sobre
+**ubuntu-latest a propósito**, porque su glibc es más antigua que la de Arch y un binario
+compilado contra una glibc vieja corre en una nueva, nunca al revés. Tiene dos disparadores:
+`workflow_dispatch` deja el tarball como artefacto descargable —así alguien puede probar en
+Arch sin instalar Flutter ni Rust— y `release: published` lo sube a la release.
+
+⚠️ **El disparador es `release: published` y no `push: tags`.** `release.ps1` sube la etiqueta
+*antes* de crear la release, así que un workflow colgado del tag arrancaría cuando la release
+todavía no existe y la subida fallaría.
+
+`linux/packaging/PRUEBAS.md` tiene la lista de comprobación manual: el audio, la bandeja y
+MPRIS no los cubre ningún test y no se pueden validar desde Windows.
 
 ## Sondeo: por qué es como es
 

@@ -1,0 +1,106 @@
+# Compila NeoFy para Linux y publica el tarball.
+#
+# Va en un workflow aparte del de `ci.yml` a proposito: aquello son treinta
+# segundos de analyze y tests en cada push, y esto son veinte minutos de
+# compilar dos binarios de Rust. Mezclarlos haria esperar a cada push por algo
+# que solo hace falta al publicar o al pedirlo.
+#
+# Dos disparadores, y cada uno tiene su motivo:
+#
+#   - workflow_dispatch: compila y deja el tarball como artefacto descargable.
+#     Es la via para que alguien pruebe en Arch sin instalar Flutter ni Rust,
+#     que es como se esta desarrollando este port (quien compila esta en
+#     Windows y no puede probar nada de esto).
+#
+#   - release published: sube el tarball a la release que acaba de crear
+#     tool/release.ps1, que solo publica el instalador de Windows.
+#
+# ⚠️ El disparador es `release: published`, **no** `push: tags`. release.ps1
+# sube la etiqueta ANTES de crear la release, asi que un workflow colgado del
+# tag arrancaria cuando la release todavia no existe y la subida fallaria.
+name: Linux
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  compilar:
+    # ubuntu-latest a proposito y no una distro rolling: su glibc es mas antigua
+    # que la de Arch, y un binario compilado contra una glibc vieja corre en una
+    # nueva, nunca al reves. Compilar aqui es lo que hace que el paquete -bin
+    # sirva en Arch.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema
+        # libpulse-dev lo pide el backend de audio de librespot; libssl-dev, el
+        # sidecar de metadatos (librespot-core arrastra native-tls por sus
+        # features por defecto). ninja y libgtk-3-dev son de Flutter.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev \
+            libpulse-dev libssl-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # El target/ de Rust pasa de 3 GB y compilar librespot de cero son ~20
+      # minutos. Con cache, las siguientes vueltas bajan a un par.
+      - name: Cache de Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tool/metadata-sidecar/target
+          key: rust-${{ runner.os }}-${{ hashFiles('tool/metadata-sidecar/Cargo.lock', 'tool/build_sidecars.sh') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Sidecars
+        run: ./tool/build_sidecars.sh
+
+      - name: Bundle
+        run: ./tool/build_linux_bundle.sh
+
+      - name: Nombre del tarball
+        id: tarball
+        run: |
+          ruta="$(ls dist/NeoFy-*-linux-x86_64.tar.gz)"
+          echo "ruta=$ruta" >> "$GITHUB_OUTPUT"
+          echo "nombre=$(basename "$ruta")" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$ruta" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # Comprobacion barata que pilla el fallo mas probable de todos: que el
+      # bundle salga sin alguno de los dos sidecars. Sin librespot la app
+      # instala y arranca, pero no suena, y eso solo se descubre usandola.
+      - name: Que el bundle este completo
+        run: |
+          tar -tzf "${{ steps.tarball.outputs.ruta }}" > /tmp/contenido.txt
+          for f in neofy librespot metadata-sidecar xyz.neogex.neofy.desktop; do
+            grep -q "/$f\$" /tmp/contenido.txt || { echo "Falta $f en el tarball"; exit 1; }
+          done
+          echo "Completo. sha256: ${{ steps.tarball.outputs.sha256 }}"
+
+      # Para el probador: se descarga de la pestana de Actions sin necesitar
+      # cuenta de nada ni compilar nada.
+      - name: Artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.tarball.outputs.nombre }}
+          path: ${{ steps.tarball.outputs.ruta }}
+          retention-days: 30
+
+      - name: Subir a la release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "${{ steps.tarball.outputs.ruta }}" --clobber

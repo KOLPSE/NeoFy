@@ -19,9 +19,16 @@ concurrency:
 
 jobs:
   comprobar:
-    # Windows y no Ubuntu: la app es de escritorio Windows y hay tests que
-    # tocan disco de verdad (la caché de carátulas) y rutas de %APPDATA%.
-    runs-on: windows-latest
+    # Las dos plataformas, porque la app ya es de las dos. Hay tests que tocan
+    # disco de verdad (la caché de carátulas) y antes daban por hecho un
+    # %APPDATA%; ahora todos pasan por appDataDir()/cacheDir(), que resuelven
+    # XDG en Linux, así que corren igual en los dos sitios. Correrlos solo en
+    # uno dejaría pasar justo lo que este port puede romper.
+    runs-on: ${{ matrix.so }}
+    strategy:
+      fail-fast: false
+      matrix:
+        so: [windows-latest, ubuntu-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +50,11 @@ jobs:
       # El Client ID va vacío en el repositorio a propósito. Si alguien lo
       # rellenara sin querer antes de un commit, se publicaría al mundo: mejor
       # que salte aquí que descubrirlo después.
+      #
+      # Basta con comprobarlo en una de las dos plataformas: es el mismo
+      # fichero y el mismo commit.
       - name: Que no se cuele ningún Client ID
+        if: matrix.so == 'windows-latest'
         shell: pwsh
         run: |
           $fuente = Get-Content lib/core/app_config.dart -Raw
