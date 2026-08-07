@@ -196,8 +196,15 @@ jobs:
             fi
           done
           # Y las librerias que el propio bundle trae dentro.
+          #
+          # ⚠️ Aqui hace falta LD_LIBRARY_PATH=lib y no es opcional. Las .so de
+          # los plugins no llevan RPATH propio: se cargan dentro del proceso de
+          # neofy, que si lo lleva ($ORIGIN/lib) y para entonces ya tiene
+          # cargada libflutter_linux_gtk.so. Un ldd sobre la .so suelta no
+          # simula eso y las cuatro salen como si les faltara una libreria que
+          # esta en su misma carpeta.
           for so in lib/*.so; do
-            faltan="$(ldd "$so" 2>&1 | grep 'not found' || true)"
+            faltan="$(LD_LIBRARY_PATH="$PWD/lib" ldd "$so" 2>&1 | grep 'not found' || true)"
             if [ -n "$faltan" ]; then
               echo "::error::$so no encuentra:"; echo "$faltan"; fallo=1
             fi
