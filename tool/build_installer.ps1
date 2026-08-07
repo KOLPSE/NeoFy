@@ -60,8 +60,18 @@ if (-not $iscc) {
   throw "Falta Inno Setup 6. Instálalo con: winget install JRSoftware.InnoSetup"
 }
 
+# La versión sale de `kVersion` en app_config.dart y no del .iss: es la misma
+# constante que usa el actualizador para decidir si hay algo más nuevo, así que
+# teniéndola en dos sitios acabarían por no coincidir.
+$fuente = Get-Content "lib\core\app_config.dart" -Raw
+if ($fuente -notmatch "kVersion\s*=\s*'([^']+)'") {
+  throw "No encuentro kVersion en lib\core\app_config.dart"
+}
+$version = $Matches[1]
+Write-Host "  version: $version (leída de app_config.dart)"
+
 New-Item -ItemType Directory -Force -Path dist | Out-Null
-& $iscc /Q "installer\neofy.iss"
+& $iscc /Q "/DVersion=$version" "installer\neofy.iss"
 if ($LASTEXITCODE -ne 0) { throw "ISCC falló" }
 
 Paso "Listo"

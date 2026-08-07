@@ -25,6 +25,39 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _busy = false;
   String? _error;
 
+  final _clientIdCtrl = TextEditingController();
+  String? _errorClientId;
+  bool _guardando = false;
+
+  @override
+  void dispose() {
+    _clientIdCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Guarda el Client ID y deja la app lista para el login.
+  ///
+  /// Se valida la forma antes de guardar: un Client ID de Spotify son 32
+  /// caracteres hexadecimales. Sin esta comprobación, pegar mal el valor —o
+  /// pegar el Client *Secret* por error, que es igual de largo pero no vale—
+  /// se manifestaría como un error críptico de Spotify a mitad del login.
+  Future<void> _guardarClientId() async {
+    final valor = _clientIdCtrl.text.trim();
+    if (!RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(valor)) {
+      setState(() => _errorClientId =
+          'Un Client ID son 32 caracteres hexadecimales. Revisa que lo hayas '
+          'copiado entero y que no sea el Client Secret.');
+      return;
+    }
+    setState(() {
+      _errorClientId = null;
+      _guardando = true;
+    });
+    widget.config.clientId = valor;
+    await widget.config.save();
+    if (mounted) setState(() => _guardando = false);
+  }
+
   Future<void> _login() async {
     setState(() {
       _busy = true;
@@ -213,23 +246,44 @@ class _LoginScreenState extends State<LoginScreen> {
                       )),
                   paso(
                       3,
-                      'Copia el Client ID y pégalo como "clientId" en config.json, '
-                      'dentro de la carpeta de datos. Luego reinicia NeoFy.',
-                      Row(
+                      'Copia el Client ID de tu app y pégalo aquí.',
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: SelectableText(
-                              appDataDir().path,
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(fontFamily: 'monospace'),
+                          TextField(
+                            controller: _clientIdCtrl,
+                            autofocus: true,
+                            decoration: InputDecoration(
+                              hintText: '32 caracteres, letras y números',
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              errorText: _errorClientId,
+                              // Pegar es lo que hará todo el mundo; el botón
+                              // ahorra el atajo de teclado.
+                              suffixIcon: IconButton(
+                                tooltip: 'Pegar',
+                                icon: const Icon(Icons.content_paste, size: 18),
+                                onPressed: () async {
+                                  final d = await Clipboard.getData('text/plain');
+                                  final t = d?.text?.trim();
+                                  if (t != null && t.isNotEmpty) {
+                                    _clientIdCtrl.text = t;
+                                  }
+                                },
+                              ),
                             ),
+                            onSubmitted: (_) => _guardarClientId(),
                           ),
-                          IconButton(
-                            tooltip: 'Abrir la carpeta',
-                            icon: const Icon(Icons.folder_open, size: 16),
-                            onPressed: () => launchUrl(
-                                Uri.file(appDataDir().path),
-                                mode: LaunchMode.externalApplication),
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed: _guardando ? null : _guardarClientId,
+                            icon: _guardando
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.check, size: 18),
+                            label: const Text('Guardar y continuar'),
                           ),
                         ],
                       )),

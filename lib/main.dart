@@ -18,6 +18,7 @@ import 'core/player_state.dart';
 import 'core/resource_monitor.dart';
 import 'core/settings.dart';
 import 'core/spotify_api.dart';
+import 'core/updater.dart';
 import 'ui/login_screen.dart';
 import 'ui/shell.dart';
 
@@ -125,6 +126,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   late final Settings _settings = Settings(widget.config)
     ..onCambioDeModo = _alCambiarDeModo;
+  final Updater _updater = Updater();
   late final LibrespotManager _librespot = LibrespotManager(widget.config);
   final MetadataSidecar _sidecar = MetadataSidecar();
 
@@ -147,6 +149,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     trayManager.addListener(this);
     _mediaKeys.start();
     _ram.start();
+    // Una comprobación al arrancar, sin molestar: si hay algo nuevo, aparece en
+    // Ajustes con un punto. No se instala nada sin que el usuario lo pida.
+    unawaited(_updater.buscar());
     // Aplica el modo guardado: techo de la caché de bitmaps y, si toca, del
     // residente.
     _aplicarTechoDeMemoria(_settings.performanceMode);
@@ -164,6 +169,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _home.dispose();
     _ram.dispose();
     _settings.dispose();
+    _updater.dispose();
     _librespot.dispose();
     _sidecar.dispose();
     super.dispose();
@@ -419,6 +425,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       home: _home,
       ram: _ram,
       settings: _settings,
+      updater: _updater,
+      onSalirParaActualizar: _quit,
       librespot: _librespot,
       sidecar: _sidecar,
       onReauth: _reauth,

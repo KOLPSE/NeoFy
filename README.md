@@ -42,6 +42,8 @@ use la API de Spotify controla NeoFy sin plugin ninguno**.
 - **Modo rendimiento**: sustituye las carátulas por mosaicos de color generados y baja el
   consumo por debajo de 100 MB, sin tocar el audio.
 - Bandeja del sistema: cerrar la ventana no corta la música.
+- **Se actualiza sola**: comprueba las releases de GitHub y se actualiza en un clic desde
+  Ajustes, sin perder la sesión ni la configuración.
 
 ## Instalación
 
@@ -52,7 +54,8 @@ dentro (interfaz, audio y metadatos), no pide permisos de administrador y ocupa 
 
 Spotify solo deja que una app de terceros funcione para los usuarios que su creador da de
 alta a mano — **25 como máximo** —, así que NeoFy no puede traer una configurada: necesitas
-crear la tuya. La propia app te guía, pero en resumen:
+crear la tuya. Es gratis y **el instalador te lo pide en una casilla**, así que no hay que
+editar ningún fichero.
 
 1. Entra en [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) y
    crea una app. Marca **Web API**.
@@ -61,11 +64,10 @@ crear la tuya. La propia app te guía, pero en resumen:
    http://127.0.0.1:8898/callback
    ```
    Ojo: Spotify ya no acepta `localhost`, solo el `127.0.0.1` literal, y sin barra final.
-3. Copia el **Client ID** y pégalo en `%APPDATA%\neofy\config.json`:
-   ```json
-   { "clientId": "tu-client-id-aqui" }
-   ```
-4. Reinicia NeoFy e inicia sesión.
+3. Copia el **Client ID** y pégalo en la casilla del instalador. Si lo dejaste en blanco o
+   compilaste desde el código, la propia app te lo pide al abrirla.
+
+Para instalaciones desatendidas: `NeoFy-x.y.z-windows-x64.exe /SILENT /CLIENTID=tu-id`.
 
 > **La primera vez se abrirá el navegador dos veces y es correcto.** Son dos flujos OAuth
 > distintos: el de la Web API y el de librespot, que usa el client_id del cliente de

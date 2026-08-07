@@ -12,6 +12,7 @@ import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
+import '../core/updater.dart';
 import '../core/spotify_api.dart';
 import 'art_image.dart';
 import 'home_screen.dart';
@@ -36,6 +37,8 @@ class AppShell extends StatefulWidget {
     required this.home,
     required this.ram,
     required this.settings,
+    required this.updater,
+    required this.onSalirParaActualizar,
     required this.onLogout,
     required this.onReauth,
   });
@@ -47,6 +50,10 @@ class AppShell extends StatefulWidget {
   final HomeStore home;
   final ResourceMonitor ram;
   final Settings settings;
+  final Updater updater;
+
+  /// Cerrar NeoFy para que el instalador pueda sobrescribir el ejecutable.
+  final Future<void> Function() onSalirParaActualizar;
   final LibrespotManager librespot;
   final MetadataSidecar sidecar;
   final Future<void> Function() onLogout;
@@ -296,6 +303,8 @@ class _AppShellState extends State<AppShell> {
                     onDeletePlaylist: _borrarPlaylist,
                     ram: widget.ram,
                     settings: widget.settings,
+                    updater: widget.updater,
+                    onSalirParaActualizar: widget.onSalirParaActualizar,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -376,6 +385,8 @@ class _Sidebar extends StatelessWidget {
     required this.onDeletePlaylist,
     required this.ram,
     required this.settings,
+    required this.updater,
+    required this.onSalirParaActualizar,
   });
 
   final List<Playlist> playlists;
@@ -394,6 +405,8 @@ class _Sidebar extends StatelessWidget {
   final Future<void> Function(Playlist) onDeletePlaylist;
   final ResourceMonitor ram;
   final Settings settings;
+  final Updater updater;
+  final Future<void> Function() onSalirParaActualizar;
 
   /// La playlist que está sonando, si es una de las del panel. Es la que se
   /// deja a la vista cuando la sección está plegada.
@@ -519,7 +532,13 @@ class _Sidebar extends StatelessWidget {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () => unawaited(
-                      mostrarAjustes(context, monitor: ram, settings: settings),
+                      mostrarAjustes(
+                        context,
+                        monitor: ram,
+                        settings: settings,
+                        updater: updater,
+                        onSalirParaActualizar: onSalirParaActualizar,
+                      ),
                     ),
                     icon: const Icon(Icons.tune, size: 18),
                     label: const Text('Ajustes'),

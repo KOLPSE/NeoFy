@@ -19,6 +19,17 @@ const String kDefaultClientId = '';
 /// ¿Hay Client ID configurado? Sin él no se puede ni empezar el login.
 bool get hayClientId => kDefaultClientId.isNotEmpty;
 
+/// Versión de NeoFy.
+///
+/// ⚠️ **Esta constante es la única fuente de la verdad.** `build_installer.ps1`
+/// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
+/// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
+/// y nada más.
+const String kVersion = '0.1.1';
+
+/// Repositorio de donde salen las actualizaciones.
+const String kRepoGitHub = 'KOLPSE/NeoFy';
+
 /// Puerto del servidor de loopback que recibe el callback de OAuth.
 ///
 /// Tiene que coincidir **carácter por carácter** con el Redirect URI dado de

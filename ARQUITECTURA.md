@@ -86,6 +86,46 @@ firma: la app solo escribe en `%APPDATA%`. El instalador mata los tres procesos 
 copiar —si no, el ejecutable en uso bloquea la instalación— y el desinstalador borra las
 cachés pero **no** los tokens, para que reinstalar no obligue a volver a loguearse.
 
+## Versión y actualizaciones
+
+`kVersion` en `app_config.dart` es la **única fuente de la verdad**:
+`build_installer.ps1` la lee de ahí y se la pasa a Inno Setup con `/DVersion=`, y
+`core/updater.dart` la usa para decidir si una release es más nueva. Teniéndola en dos
+sitios acabarían por no coincidir, y el síntoma sería una app ofreciéndose actualizarse a sí
+misma en bucle. **Subir de versión es tocar esa línea y nada más.**
+
+El actualizador consulta `releases/latest` de la API de GitHub, compara **por tramos
+numéricos** (`0.10.0` es posterior a `0.9.0`, cosa que una comparación de cadenas diría al
+revés — hay tests), descarga el `.exe` de la release y lo lanza con `/SILENT`. Dos detalles
+que importan:
+
+- **Se comprueba el host de la descarga antes de ejecutar nada.** Esto acaba lanzando un
+  ejecutable: que la URL venga en una respuesta JSON no la hace fiable por sí sola.
+- **La app se cierra en cuanto arranca el instalador**, porque no se puede sobrescribir un
+  ejecutable en uso. De eso se encarga `onSalirParaActualizar`, que es el mismo cierre
+  ordenado del menú de la bandeja: mata los sidecars antes de irse.
+
+El instalador conserva `%APPDATA%\neofy` entera, así que actualizar **no** hace perder la
+sesión ni los ajustes.
+
+## El Client ID se pide, no se edita a mano
+
+Hay dos sitios donde ponerlo y los dos escriben el mismo `config.json`:
+
+- **El instalador**, en una página propia (`InitializeWizard` en el `.iss`) con el botón al
+  panel de Spotify y el Redirect URI en un campo de solo lectura para poder copiarlo. Acepta
+  también `/CLIENTID=xxx` para instalaciones desatendidas.
+- **La app**, en la pantalla de primeros pasos, para quien compile desde el código o se lo
+  saltara en el instalador.
+
+Los dos **validan la forma antes de guardar** (32 caracteres hexadecimales). Sin esa
+comprobación, pegar el Client *Secret* por error —que mide lo mismo— se manifestaría como un
+error incomprensible de Spotify a mitad del login.
+
+⚠️ El instalador **mezcla** el valor en el `config.json` existente en vez de reescribirlo:
+si el usuario ya tenía volumen o modo rendimiento guardados, reinstalar no debe borrárselos.
+Está comprobado instalando con un Client ID distinto y viendo que el resto sobrevive.
+
 ## Comandos
 
 ```powershell
