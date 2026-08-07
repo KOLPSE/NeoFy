@@ -102,7 +102,11 @@ jobs:
           deb="$(ls dist/neofy_*_amd64.deb)"
           rpm="$(ls dist/neofy-*-1.x86_64.rpm)"
 
-          dpkg-deb -c "$deb" | awk '{print $NF}' > /tmp/deb.txt
+          # ⚠️ La ruta es el campo 6, no el ultimo. dpkg-deb imprime los enlaces
+          # como "./usr/bin/neofy -> /opt/neofy/neofy", asi que $NF devuelve el
+          # DESTINO del enlace y no su ruta: la comprobacion daba por ausente
+          # justo el enlace que si estaba.
+          dpkg-deb -c "$deb" | awk '{print $6}' > /tmp/deb.txt
           rpm -qlp "$rpm" > /tmp/rpm.txt
 
           for f in /opt/neofy/neofy /opt/neofy/librespot /opt/neofy/metadata-sidecar \
