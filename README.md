@@ -5,7 +5,7 @@
 <h1 align="center">NeoFy</h1>
 
 <p align="center">
-  Un cliente de Spotify ligero y nativo para Windows.<br>
+  Un cliente de Spotify ligero y nativo para Windows y Linux.<br>
   <b>~150 MB</b> de memoria — o <b>menos de 100</b> en modo rendimiento — frente a los
   400-700 MB del cliente oficial.
 </p>
@@ -39,23 +39,47 @@ use la API de Spotify controla NeoFy sin plugin ninguno**.
 - Crear y quitar playlists.
 - **Teclas multimedia globales**: el botón de play/pausa de unos cascos funciona aunque
   NeoFy esté en la bandeja. Barra espaciadora dentro de la app.
+- **En Linux, integración con el escritorio por MPRIS**: NeoFy sale en el widget de
+  reproducción de KDE y GNOME con carátula, y `playerctl` lo controla sin plugin.
 - **Modo rendimiento**: sustituye las carátulas por mosaicos de color generados y baja el
   consumo por debajo de 100 MB, sin tocar el audio.
 - Bandeja del sistema: cerrar la ventana no corta la música.
-- **Se actualiza sola**: comprueba las releases de GitHub y se actualiza en un clic desde
-  Ajustes, sin perder la sesión ni la configuración.
+- **Se actualiza sola** (Windows): comprueba las releases de GitHub y se actualiza en un clic
+  desde Ajustes, sin perder la sesión ni la configuración. En Linux avisa y lo actualiza
+  pacman, que es a quien le corresponde.
 
 ## Instalación
 
+### Windows
+
 Descarga el instalador de la sección [Releases](../../releases). Trae los tres binarios
 dentro (interfaz, audio y metadatos), no pide permisos de administrador y ocupa 14 MB.
+
+### Linux
+
+Cada release trae un instalador nativo por familia de distribución. Los tres instalan lo
+mismo: el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el comando
+`neofy` en el `PATH`.
+
+| Distribución | Cómo |
+|---|---|
+| **Arch**, Manjaro, EndeavourOS | `yay -S neofy-bin` |
+| **Debian**, Ubuntu, Mint, Pop!_OS | `sudo apt install ./neofy_x.y.z_amd64.deb` |
+| **Fedora**, RHEL | `sudo dnf install ./neofy-x.y.z-1.x86_64.rpm` |
+| **openSUSE** | `sudo zypper install ./neofy-x.y.z-1.x86_64.rpm` |
+
+Los `.deb` y `.rpm` se descargan de [Releases](../../releases); el de Arch se compila solo.
+
+> **En GNOME** hace falta además la extensión de AppIndicator para que aparezca el icono de
+> la bandeja. Sin ella NeoFy funciona igual, pero el botón de cerrar cierra del todo en vez
+> de esconderse — que es justo lo que debe hacer si no hay bandeja a la que volver.
 
 ### Configuración inicial (una sola vez)
 
 Spotify solo deja que una app de terceros funcione para los usuarios que su creador da de
 alta a mano — **25 como máximo** —, así que NeoFy no puede traer una configurada: necesitas
-crear la tuya. Es gratis y **el instalador te lo pide en una casilla**, así que no hay que
-editar ningún fichero.
+crear la tuya. Es gratis: **en Windows el instalador te lo pide en una casilla y en Linux te
+lo pide la propia app al abrirla**, así que no hay que editar ningún fichero a mano.
 
 1. Entra en [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) y
    crea una app. Marca **Web API**.
@@ -64,10 +88,12 @@ editar ningún fichero.
    http://127.0.0.1:8898/callback
    ```
    Ojo: Spotify ya no acepta `localhost`, solo el `127.0.0.1` literal, y sin barra final.
-3. Copia el **Client ID** y pégalo en la casilla del instalador. Si lo dejaste en blanco o
-   compilaste desde el código, la propia app te lo pide al abrirla.
+3. Copia el **Client ID** y pégalo donde te lo pida: la casilla del instalador en Windows, o
+   la pantalla de primeros pasos de la app en Linux (y también en Windows si lo dejaste en
+   blanco o compilaste desde el código).
 
-Para instalaciones desatendidas: `NeoFy-x.y.z-windows-x64.exe /SILENT /CLIENTID=tu-id`.
+Para instalaciones desatendidas en Windows:
+`NeoFy-x.y.z-windows-x64.exe /SILENT /CLIENTID=tu-id`.
 
 > **La primera vez se abrirá el navegador dos veces y es correcto.** Son dos flujos OAuth
 > distintos: el de la Web API y el de librespot, que usa el client_id del cliente de
@@ -88,17 +114,31 @@ Vienen del Modo Desarrollo de la API de Spotify, no del código:
 ## Compilar desde el código
 
 ```powershell
-# Los sidecars, una sola vez (necesita Rust; tarda un rato)
-powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1
-
-# La app
+# Windows
+powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1   # sidecars, 1ª vez
 flutter build windows --release
-
-# O todo junto y empaquetado (necesita Inno Setup 6)
-powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1
+powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1   # + Inno Setup 6
 ```
 
-```powershell
+```bash
+# Linux — dependencias de compilación (Arch)
+sudo pacman -S --needed base-devel clang cmake ninja pkgconf \
+                        gtk3 libayatana-appindicator libpulse openssl rust
+# En Debian/Ubuntu son los mismos con sufijo -dev:
+#   clang cmake ninja-build pkg-config libgtk-3-dev
+#   libayatana-appindicator3-dev libpulse-dev libssl-dev
+
+./tool/build_sidecars.sh        # sidecars, 1ª vez (tarda un rato)
+flutter build linux --release
+./tool/build_linux_bundle.sh    # deja dist/NeoFy-x.y.z-linux-x86_64.tar.gz
+./tool/build_linux_packages.sh  # y los instaladores .deb y .rpm
+```
+
+> `libayatana-appindicator` hace falta **al compilar**, no solo al ejecutar: el plugin de la
+> bandeja lo busca con `pkg-config` y sin él `flutter build linux` no llega ni a generar los
+> ficheros de build.
+
+```bash
 flutter analyze
 flutter test
 ```

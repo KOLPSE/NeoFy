@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'models.dart';
+import 'procesos.dart';
 
 /// Cliente y supervisor de `metadata-sidecar.exe`.
 ///
@@ -36,12 +37,13 @@ class MetadataSidecar extends ChangeNotifier {
   int? get pid => _proc?.pid;
 
   static File? findBinary() {
+    final nombre = 'metadata-sidecar$sufijoEjecutable';
     final candidates = <String>[
-      p.join(p.dirname(Platform.resolvedExecutable), 'metadata-sidecar.exe'),
+      p.join(p.dirname(Platform.resolvedExecutable), nombre),
       p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target', 'release',
-          'metadata-sidecar.exe'),
+          nombre),
       p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target', 'debug',
-          'metadata-sidecar.exe'),
+          nombre),
     ];
     for (final c in candidates) {
       final f = File(c);
@@ -58,17 +60,18 @@ class MetadataSidecar extends ChangeNotifier {
 
     final bin = findBinary();
     if (bin == null) {
-      _error = 'No se encuentra metadata-sidecar.exe.';
+      _error = 'No se encuentra metadata-sidecar$sufijoEjecutable.';
       notifyListeners();
       return;
     }
 
     // Un sidecar huérfano de un arranque anterior tendría el puerto ocupado.
-    await _killOrphans();
+    await matarHuerfano('metadata-sidecar', bin);
 
     try {
       final proc = await Process.start(bin.path, ['$puerto']);
       _proc = proc;
+      anotarPid('metadata-sidecar', proc.pid);
 
       final listo = Completer<bool>();
       proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
@@ -99,12 +102,6 @@ class MetadataSidecar extends ChangeNotifier {
       _error = 'No se pudo lanzar el sidecar de metadatos: $e';
       notifyListeners();
     }
-  }
-
-  Future<void> _killOrphans() async {
-    try {
-      await Process.run('taskkill', ['/F', '/IM', 'metadata-sidecar.exe']);
-    } catch (_) {}
   }
 
   /// Página de canciones de una playlist, con la misma forma que la Web API.
@@ -146,6 +143,7 @@ class MetadataSidecar extends ChangeNotifier {
     if (proc != null) {
       proc.kill();
       await proc.exitCode.timeout(const Duration(seconds: 2), onTimeout: () => -1);
+      olvidarPid('metadata-sidecar');
     }
   }
 

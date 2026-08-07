@@ -17,12 +17,19 @@ enum EstadoActualizacion {
   fallo,
 }
 
-/// Busca versiones nuevas en las releases de GitHub y las instala.
+/// Busca versiones nuevas en las releases de GitHub y, en Windows, las instala.
 ///
 /// El instalador ya sabe actualizar sobre una instalación existente: mata los
 /// tres procesos, sobrescribe los ficheros y conserva `%APPDATA%\neofy` entera,
 /// así que **no se pierde ni la sesión ni los ajustes**. Aquí solo hay que
 /// bajarlo y lanzarlo.
+///
+/// ⚠️ **En Linux avisa pero no instala**, y no es una carencia sino lo
+/// correcto: allí NeoFy se distribuye como paquete (`neofy-bin` en el AUR) y es
+/// pacman quien lleva la cuenta de qué ficheros son de quién. Una app que se
+/// sobrescribe a sí misma por su cuenta deja la base de datos del gestor
+/// mintiendo, y a la primera actualización del paquete se pisan los dos. Se
+/// enseña que hay versión nueva y el comando con el que actualizarla.
 class Updater extends ChangeNotifier {
   Updater({http.Client? cliente}) : _http = cliente ?? http.Client();
 
@@ -43,6 +50,16 @@ class Updater extends ChangeNotifier {
   File? _instalador;
 
   String get versionActual => kVersion;
+
+  /// ¿Puede esta plataforma instalarse la actualización ella sola?
+  ///
+  /// Solo Windows, donde la app se distribuye como instalador suelto. Ver el
+  /// aviso de la clase.
+  static bool get seInstalaSolo => Platform.isWindows;
+
+  /// Qué hacer cuando no se instala sola. Es el comando del AUR, que es como se
+  /// distribuye en Linux.
+  static const String comandoDeActualizacion = 'yay -Syu neofy-bin';
 
   Future<void> buscar() async {
     if (estado == EstadoActualizacion.buscando ||
@@ -75,6 +92,17 @@ class Updater extends ChangeNotifier {
         return;
       }
 
+      versionDisponible = version;
+      notas = j['body'] as String?;
+
+      // En Linux se para aquí: hay novedad, se anuncia, y quien instala es el
+      // gestor de paquetes. Buscar un asset sería además absurdo, porque el que
+      // hay es el instalador de Windows.
+      if (!seInstalaSolo) {
+        _cambiar(EstadoActualizacion.disponible);
+        return;
+      }
+
       // El instalador es el único .exe de la release.
       final assets = (j['assets'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>();
@@ -87,8 +115,6 @@ class Updater extends ChangeNotifier {
       }
 
       _urlDescarga = url;
-      versionDisponible = version;
-      notas = j['body'] as String?;
       _cambiar(EstadoActualizacion.disponible);
     } catch (e) {
       error = '$e';

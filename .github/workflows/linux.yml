@@ -1,0 +1,251 @@
+# Compila NeoFy para Linux y publica sus instaladores.
+#
+# Cada release acaba con un instalador por plataforma: el .exe de Inno Setup lo
+# sube tool/release.ps1 desde Windows, y el .deb y el .rpm salen de aqui. El
+# tarball se sube tambien, pero no es una descarga para usuarios: es lo que se
+# baja el PKGBUILD del AUR, que necesita una url estable.
+#
+# Va en un workflow aparte del de `ci.yml` a proposito: aquello son treinta
+# segundos de analyze y tests en cada push, y esto son veinte minutos de
+# compilar dos binarios de Rust. Mezclarlos haria esperar a cada push por algo
+# que solo hace falta al publicar o al pedirlo.
+#
+# Dos disparadores, y cada uno tiene su motivo:
+#
+#   - workflow_dispatch: compila y deja el tarball como artefacto descargable.
+#     Es la via para que alguien pruebe en Arch sin instalar Flutter ni Rust,
+#     que es como se esta desarrollando este port (quien compila esta en
+#     Windows y no puede probar nada de esto).
+#
+#   - release published: sube el tarball a la release que acaba de crear
+#     tool/release.ps1, que solo publica el instalador de Windows.
+#
+# ⚠️ El disparador es `release: published`, **no** `push: tags`. release.ps1
+# sube la etiqueta ANTES de crear la release, asi que un workflow colgado del
+# tag arrancaria cuando la release todavia no existe y la subida fallaria.
+name: Linux
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  compilar:
+    # ubuntu-latest a proposito y no una distro rolling: su glibc es mas antigua
+    # que la de Arch, y un binario compilado contra una glibc vieja corre en una
+    # nueva, nunca al reves. Compilar aqui es lo que hace que el paquete -bin
+    # sirva en Arch.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema
+        # libpulse-dev lo pide el backend de audio de librespot; libssl-dev, el
+        # sidecar de metadatos (librespot-core arrastra native-tls por sus
+        # features por defecto). ninja y libgtk-3-dev son de Flutter, y `rpm`
+        # trae el rpmbuild con el que se monta el paquete de Fedora (dpkg-deb ya
+        # viene de serie en Ubuntu).
+        #
+        # ⚠️ libayatana-appindicator3-dev hace falta **al compilar**, no solo al
+        # ejecutar: el plugin de tray_manager lo busca con pkg-config desde su
+        # CMakeLists y, si no esta, `flutter build linux` ni siquiera llega a
+        # generar los ficheros de build.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev \
+            libayatana-appindicator3-dev libpulse-dev libssl-dev rpm
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # El target/ de Rust pasa de 3 GB y compilar librespot de cero son ~20
+      # minutos. Con cache, las siguientes vueltas bajan a un par.
+      - name: Cache de Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tool/metadata-sidecar/target
+          key: rust-${{ runner.os }}-${{ hashFiles('tool/metadata-sidecar/Cargo.lock', 'tool/build_sidecars.sh') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Sidecars
+        run: ./tool/build_sidecars.sh
+
+      - name: Bundle
+        run: ./tool/build_linux_bundle.sh
+
+      - name: Instaladores .deb y .rpm
+        run: ./tool/build_linux_packages.sh
+
+      # Comprobacion barata que pilla el fallo mas probable de todos: que un
+      # paquete salga sin alguno de los dos sidecars. Sin librespot la app
+      # instala y arranca, pero no suena, y eso solo se descubre usandola.
+      - name: Que los paquetes esten completos
+        run: |
+          deb="$(ls dist/neofy_*_amd64.deb)"
+          rpm="$(ls dist/neofy-*-1.x86_64.rpm)"
+
+          # ⚠️ La ruta es el campo 6, no el ultimo. dpkg-deb imprime los enlaces
+          # como "./usr/bin/neofy -> /opt/neofy/neofy", asi que $NF devuelve el
+          # DESTINO del enlace y no su ruta: la comprobacion daba por ausente
+          # justo el enlace que si estaba.
+          dpkg-deb -c "$deb" | awk '{print $6}' > /tmp/deb.txt
+          rpm -qlp "$rpm" > /tmp/rpm.txt
+
+          for f in /opt/neofy/neofy /opt/neofy/librespot /opt/neofy/metadata-sidecar \
+                   /usr/bin/neofy /usr/share/applications/xyz.neogex.neofy.desktop; do
+            grep -q "^\.\?$f\$" /tmp/deb.txt || { echo "El .deb no trae $f"; exit 1; }
+            grep -q "^$f\$"     /tmp/rpm.txt || { echo "El .rpm no trae $f"; exit 1; }
+          done
+
+          # Que el .deb se pueda instalar de verdad, no solo que contenga los
+          # ficheros: un control mal formado solo se nota al instalarlo.
+          sudo apt-get install -y --no-install-recommends "$PWD/$deb"
+          test -x /opt/neofy/neofy
+          test -L /usr/bin/neofy
+          sudo apt-get remove -y neofy
+          echo "Los dos paquetes instalan y desinstalan."
+
+      # Para el probador: se descargan de la pestana de Actions sin necesitar
+      # cuenta de nada ni compilar nada.
+      - name: Artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: neofy-linux
+          path: |
+            dist/neofy_*_amd64.deb
+            dist/neofy-*-1.x86_64.rpm
+            dist/NeoFy-*-linux-x86_64.tar.gz
+          retention-days: 30
+
+      # Los dos instaladores, mas el tarball: ese no es una descarga para
+      # usuarios sino lo que se baja el PKGBUILD del AUR, que necesita una url
+      # estable en la release.
+      - name: Subir a la release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            dist/neofy_*_amd64.deb \
+            dist/neofy-*-1.x86_64.rpm \
+            dist/NeoFy-*-linux-x86_64.tar.gz \
+            --clobber
+          echo "sha256 para el PKGBUILD del AUR:"
+          sha256sum dist/NeoFy-*-linux-x86_64.tar.gz
+
+  # Lo unico que ningun otro paso puede comprobar: que un binario compilado en
+  # Ubuntu funcione en Arch, y que el PKGBUILD monte el paquete de verdad.
+  #
+  # Es la apuesta central del empaquetado -bin (glibc vieja corre en glibc
+  # nueva, nunca al reves) y hasta ahora dependia de que alguien con Arch lo
+  # probara a mano. Aqui se responde en dos minutos y en cada vuelta.
+  arch:
+    needs: compilar
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Dependencias
+        # Exactamente las que declara el PKGBUILD. Que este paso funcione ya
+        # demuestra que los nombres existen en los repositorios de Arch, que es
+        # justo lo que no se puede verificar desde Debian.
+        run: |
+          pacman -Syu --noconfirm --needed \
+            gtk3 libayatana-appindicator libpulse openssl xdg-utils \
+            base-devel sudo
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: neofy-linux
+          path: dist
+
+      - name: Que los binarios resuelvan sus librerias en Arch
+        # El fallo que buscamos: una .so que exista en Ubuntu y no en Arch, o
+        # con otro soname. Se manifestaria como una app que no arranca y un
+        # mensaje del enlazador que no dice de quien es la culpa.
+        run: |
+          tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
+          cd NeoFy-*-linux-x86_64
+          fallo=0
+          for bin in neofy librespot metadata-sidecar; do
+            faltan="$(ldd "$bin" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$bin no encuentra:"; echo "$faltan"; fallo=1
+            else
+              echo "ok  $bin"
+            fi
+          done
+          # Y las librerias que el propio bundle trae dentro.
+          #
+          # ⚠️ Aqui hace falta LD_LIBRARY_PATH=lib y no es opcional. Las .so de
+          # los plugins no llevan RPATH propio: se cargan dentro del proceso de
+          # neofy, que si lo lleva ($ORIGIN/lib) y para entonces ya tiene
+          # cargada libflutter_linux_gtk.so. Un ldd sobre la .so suelta no
+          # simula eso y las cuatro salen como si les faltara una libreria que
+          # esta en su misma carpeta.
+          for so in lib/*.so; do
+            faltan="$(LD_LIBRARY_PATH="$PWD/lib" ldd "$so" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$so no encuentra:"; echo "$faltan"; fallo=1
+            fi
+          done
+          [ "$fallo" = 0 ] || exit 1
+          echo "Todos los binarios resuelven sus dependencias en Arch."
+
+      - name: Que el PKGBUILD y kVersion no se hayan desincronizado
+        # Si el pkgver se queda atras, el PKGBUILD se baja el tarball de una
+        # version anterior y publica en el AUR algo que no es lo que dice ser.
+        run: |
+          version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
+          pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
+          echo "kVersion=$version  pkgver=$pkgver"
+          [ "$version" = "$pkgver" ] || {
+            echo "::error::linux/packaging/PKGBUILD tiene pkgver=$pkgver pero kVersion es $version"
+            exit 1
+          }
+
+      - name: Montar el paquete con el PKGBUILD de verdad
+        run: |
+          useradd -m builder
+          mkdir -p /tmp/pkg
+          cp linux/packaging/PKGBUILD /tmp/pkg/
+          cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
+          # El PKGBUILD real se baja el tarball de la release; aqui se apunta al
+          # que acabamos de compilar, que es la unica forma de validarlo antes
+          # de que exista ninguna release. El package() no se toca, que es lo
+          # que de verdad se esta probando.
+          sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
+          chown -R builder /tmp/pkg
+          # makepkg se niega a correr como root, de ahi el usuario. --nodeps
+          # porque las dependencias ya estan puestas arriba.
+          sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
+          ls -la /tmp/pkg/*.pkg.tar.zst
+
+      - name: Instalarlo y comprobar donde queda todo
+        run: |
+          pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+          test -x /opt/neofy/neofy          || { echo "::error::falta /opt/neofy/neofy"; exit 1; }
+          test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
+          test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
+          test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
+          test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
+          test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "::error::falta el .desktop"; exit 1; }
+          test -f /usr/share/icons/hicolor/256x256/apps/neofy.png  || { echo "::error::falta el icono"; exit 1; }
+          # El enlace tiene que llevar al binario real: de eso depende que
+          # findBinary() encuentre los sidecars a su lado.
+          [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
+            echo "::error::el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
+          echo "Instalado correctamente."
+          pacman -R --noconfirm neofy-bin
+          test ! -e /opt/neofy || { echo "::error::quedan restos en /opt/neofy"; exit 1; }
+          echo "Y desinstala limpio."

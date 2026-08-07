@@ -1,0 +1,27 @@
+# El proyecto se desarrolla en Windows pero ahora tambien se compila y se
+# ejecuta en Linux, asi que los finales de linea dejan de ser un detalle.
+
+# Por defecto, que git normalice a LF en el repositorio y entregue lo que toque
+# en cada equipo.
+* text=auto
+
+# ⚠️ Los scripts de shell van SIEMPRE con LF, pase lo que pase.
+#
+# Con CRLF, el shebang queda como "#!/usr/bin/env bash\r" y el nucleo busca un
+# interprete llamado "bash\r" que no existe: el script falla con un
+# "bad interpreter" que no dice nada de finales de linea y cuesta una tarde
+# entender. Lo mismo vale para el PKGBUILD, que makepkg ejecuta como shell.
+*.sh text eol=lf
+PKGBUILD text eol=lf
+
+# Los .desktop tambien: la especificacion los define como texto con LF.
+*.desktop text eol=lf
+
+# Y los de Windows al reves, que Inno Setup y PowerShell son de alli.
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+
+# Binarios, sin tocar.
+*.png binary
+*.ico binary
+*.exe binary

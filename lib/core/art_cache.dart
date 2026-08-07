@@ -16,8 +16,11 @@ import 'app_config.dart';
 class ArtCache {
   static const int _maxBytes = 50 * 1024 * 1024;
 
+  /// Cuelga de [cacheDir] y no de `appDataDir`: son 50 MB de imágenes que se
+  /// pueden borrar sin perder nada (se vuelven a bajar), así que en Linux van a
+  /// `~/.cache` y no a `~/.config`. En Windows las dos rutas son la misma.
   static Directory get _dir {
-    final d = Directory(p.join(appDataDir().path, 'art'));
+    final d = Directory(p.join(cacheDir().path, 'art'));
     if (!d.existsSync()) d.createSync(recursive: true);
     return d;
   }
@@ -53,6 +56,18 @@ class ArtCache {
     });
     _inFlight[url] = future;
     return future;
+  }
+
+  /// El fichero **solo si ya está descargado**, sin salir a la red ni esperar.
+  ///
+  /// Lo usa MPRIS (`core/mpris.dart`) para pasarle al escritorio la carátula de
+  /// lo que suena. Ahí no se puede esperar a una descarga: la respuesta de D-Bus
+  /// tiene que salir en el momento, y una carátula que aún no está vale más
+  /// omitirla que retrasar los metadatos enteros. Como la pantalla ya la habrá
+  /// pedido por [file], en la práctica casi siempre está.
+  static File? ficheroSiEstaEnDisco(String url) {
+    final f = _fileFor(url);
+    return f.existsSync() ? f : null;
   }
 
   /// Los bytes, para quien de verdad los necesite. Hoy solo

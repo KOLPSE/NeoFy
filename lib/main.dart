@@ -15,6 +15,7 @@ import 'core/librespot.dart';
 import 'core/liked_store.dart';
 import 'core/media_keys.dart';
 import 'core/metadata_sidecar.dart';
+import 'core/mpris.dart';
 import 'core/player_state.dart';
 import 'core/resource_monitor.dart';
 import 'core/settings.dart';
@@ -144,6 +145,31 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final AudioDeviceWatcher _audio =
       AudioDeviceWatcher(onCambio: _reiniciarAudio);
 
+  /// Lo mismo que [_mediaKeys], pero en Linux: allí las teclas multimedia las
+  /// reparte el escritorio entre los reproductores que hablan MPRIS. De regalo,
+  /// NeoFy sale en el widget de reproducción del sistema con carátula.
+  late final MprisService _mpris = MprisService(
+    onPlayPause: _player.togglePlay,
+    // ⚠️ `Play` no es `togglePlay`: MPRIS distingue las dos cosas y el
+    // escritorio manda `Play` a secas cuando el usuario le da al botón de
+    // reproducir. Mapearlo al toggle pausaría lo que ya está sonando.
+    onPlay: _reproducirSiEstaParado,
+    onPause: _player.pause,
+    onNext: _player.next,
+    onPrevious: _player.previous,
+    onSeek: (us) => _player.seek(us ~/ 1000),
+    estado: () => EstadoMpris(
+      track: _player.state.track,
+      sonando: _player.state.isPlaying,
+      // La posición interpolada en local, que se actualiza cada 250 ms sin
+      // gastar ni una petición. Ver "Sondeo: por qué es como es".
+      posicionMs: _player.progressMs.value,
+      puedeSaltar: _player.state.canSkipNext,
+      puedeVolver: _player.state.canSkipPrevious,
+      volumen: _player.state.volumePercent,
+    ),
+  );
+
   bool _booting = true;
   bool _sessionStarted = false;
   bool _reiniciandoAudio = false;
@@ -155,6 +181,13 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     windowManager.addListener(this);
     trayManager.addListener(this);
     _mediaKeys.start();
+    unawaited(_mpris.start());
+    // Se engancha al notificador general y no a `currentUri`: pausar no cambia
+    // de canción, y con solo `currentUri` el widget del escritorio se quedaría
+    // diciendo "reproduciendo" con la música parada. Que esto salte cada 3 s no
+    // importa — `notificarCambio` compara una firma y no emite si no ha
+    // cambiado nada.
+    _player.addListener(_mpris.notificarCambio);
     // Las dos vías por las que se detecta que el audio se ha quedado mudo: que
     // Windows cambie de altavoces, y que el propio librespot se queje en su log.
     _audio.start();
@@ -175,6 +208,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     _mediaKeys.stop();
+    _player.removeListener(_mpris.notificarCambio);
+    unawaited(_mpris.stop());
     _audio.stop();
     _player.dispose();
     _likes.dispose();
@@ -338,6 +373,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     }
   }
 
+  Future<void> _reproducirSiEstaParado() async {
+    if (_player.state.isPlaying) return;
+    await _player.togglePlay();
+  }
+
   Future<void> _onLoggedIn() async {
     await _startSession();
     if (mounted) setState(() {});
@@ -361,23 +401,40 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   // ------------------------------------------------------------------ bandeja
 
+  /// ¿Se pudo montar el icono de la bandeja?
+  ///
+  /// ⚠️ **De esto depende que la X cierre o esconda**, así que no vale con
+  /// tragarse el fallo. En Windows la bandeja no falla nunca, pero en Linux
+  /// `tray_manager` necesita `libayatana-appindicator` y **en GNOME sin la
+  /// extensión de AppIndicator no aparece nada**. Con la app escondiéndose
+  /// igualmente al cerrar, el usuario se queda sin ventana y sin icono al que
+  /// volver: la única salida sería matar el proceso.
+  bool _bandejaDisponible = false;
+
   Future<void> _setupTray() async {
     // La bandeja es prescindible: si falla (falta el icono, no hay área de
     // notificación), la app tiene que arrancar igual. Mismo criterio que
     // NeoDrive, donde esto ya dio problemas en Linux.
     try {
       final icon = _trayIconPath();
-      if (icon != null) await trayManager.setIcon(icon);
+      if (icon == null) return;
+      await trayManager.setIcon(icon);
       await trayManager.setToolTip('NeoFy');
       await _refreshTrayMenu();
-    } catch (_) {}
+      if (mounted) setState(() => _bandejaDisponible = true);
+    } catch (_) {
+      // Se queda en false: cerrar cerrará de verdad.
+    }
   }
 
+  /// Windows quiere `.ico` y Linux `.png`: un `.ico` en Linux no lo pinta ni
+  /// GTK ni el indicador, y el icono saldría en blanco.
   String? _trayIconPath() {
+    final nombre = Platform.isWindows ? 'tray.ico' : 'tray.png';
     final exeDir = p.dirname(Platform.resolvedExecutable);
     for (final c in [
-      p.join(exeDir, 'data', 'flutter_assets', 'assets', 'tray.ico'),
-      p.join(Directory.current.path, 'assets', 'tray.ico'),
+      p.join(exeDir, 'data', 'flutter_assets', 'assets', nombre),
+      p.join(Directory.current.path, 'assets', nombre),
     ]) {
       if (File(c).existsSync()) return c;
     }
@@ -430,7 +487,12 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Future<void> _quit() async {
     await _sidecar.stop();
     await _librespot.stop();
-    await trayManager.destroy();
+    await _mpris.stop();
+    try {
+      // Si la bandeja no llegó a montarse, destruirla lanza; y morir aquí
+      // dejaría la ventana abierta con los sidecars ya matados.
+      await trayManager.destroy();
+    } catch (_) {}
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
   }
@@ -440,6 +502,15 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   @override
   void onWindowClose() {
     // Esconder en vez de cerrar: la música no se corta al darle a la X.
+    //
+    // ⚠️ Salvo que no haya bandeja. Esconder una ventana sin dejar un icono al
+    // que volver deja la app viva, sonando y fuera del alcance del usuario, que
+    // solo puede matarla desde un monitor de sistema. Si no hay bandeja, la X
+    // hace lo que dice que hace.
+    if (!_bandejaDisponible) {
+      unawaited(_quit());
+      return;
+    }
     windowManager.hide();
     _alEsconderse();
   }

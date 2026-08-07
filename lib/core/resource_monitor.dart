@@ -14,9 +14,10 @@ import 'package:flutter/foundation.dart';
 /// gasto. No hay forma de cambiar cómo lo agrupa Windows, así que la app lo
 /// suma por su cuenta.
 ///
-/// Se lee con `GetProcessMemoryInfo` y `GetProcessTimes` por FFI —`dart:ffi`
-/// viene con el SDK— en vez de lanzar `tasklist` cada pocos segundos, que
-/// costaría más que lo que mide.
+/// En Windows se lee con `GetProcessMemoryInfo` y `GetProcessTimes` por FFI
+/// —`dart:ffi` viene con el SDK— en vez de lanzar `tasklist` cada pocos
+/// segundos, que costaría más que lo que mide. En Linux sale más barato
+/// todavía y sin FFI ninguna: `/proc/<pid>/statm` y `/proc/<pid>/stat`.
 class UsoDeRecursos {
   const UsoDeRecursos({
     this.app = 0,
@@ -143,7 +144,6 @@ class ResourceMonitor extends ChangeNotifier {
       ?.lookupFunction<_EmptyWorkingSetC, _EmptyWorkingSetDart>('EmptyWorkingSet');
 
   void start() {
-    if (!Platform.isWindows) return;
     _muestrear();
     _timer ??= Timer.periodic(_intervalo, (_) => _muestrear());
   }
@@ -202,6 +202,13 @@ class ResourceMonitor extends ChangeNotifier {
   /// vuelven solas si se necesitan; lo único que cuesta es un fallo de página
   /// blando la primera vez. A cambio, la memoria que la app tenía retenida
   /// queda libre para el resto del equipo, que es lo que se está midiendo.
+  ///
+  /// ⚠️ **En Linux no hace nada, y es correcto.** No hay equivalente de
+  /// `EmptyWorkingSet`: el kernel decide por su cuenta qué recupera y no acepta
+  /// que un proceso le pida podarse. `malloc_trim` tampoco serviría de mucho
+  /// porque la memoria de Flutter está en el heap de Dart y en Skia, no en las
+  /// arenas de glibc. El modo rendimiento conserva allí sus otros tres efectos,
+  /// que son los que de verdad pesan (ver `settings.dart`).
   static void vaciarWorkingSet(List<int?> procesos) {
     final abrir = _openProcess;
     final vaciar = _emptyWorkingSet;
@@ -218,18 +225,78 @@ class ResourceMonitor extends ChangeNotifier {
     }
   }
 
-  /// Working set y ticks de CPU de un pid, en una sola apertura del proceso.
-  /// `(0, 0)` si no existe o no se deja mirar.
+  /// Memoria residente y tiempo de CPU de un pid. `(0, 0)` si no existe o no
+  /// se deja mirar.
+  ///
+  /// Los ticks van **siempre en unidades de 100 ns**, pase lo que pase la
+  /// plataforma: es lo que espera el cálculo del porcentaje de [_muestrear], y
+  /// tenerlo en dos unidades distintas daría una CPU cien mil veces mayor en
+  /// una de las dos sin que saltara ningún error.
   static (int, int) _medir(int? proceso) {
+    if (proceso == null) return (0, 0);
+    return Platform.isWindows ? _medirWindows(proceso) : _medirLinux(proceso);
+  }
+
+  /// Lo mismo por `/proc`, que es texto plano y no necesita FFI.
+  static (int, int) _medirLinux(int proceso) {
+    try {
+      final rss = rssDeStatm(File('/proc/$proceso/statm').readAsStringSync());
+      final ticks = ticksDeStat(File('/proc/$proceso/stat').readAsStringSync());
+      return (rss, ticks);
+    } catch (_) {
+      // El proceso ha muerto entre una muestra y la siguiente, que es de lo más
+      // normal con sidecars que se reinician solos.
+      return (0, 0);
+    }
+  }
+
+  /// Tamaño en bytes de `/proc/<pid>/statm`.
+  ///
+  /// Los campos son `size resident shared text lib data dt`, **en páginas**. El
+  /// que interesa es el segundo: `size` es el espacio de direcciones virtual,
+  /// que en un proceso con Skia son gigas y no dice nada de lo que gasta.
+  @visibleForTesting
+  static int rssDeStatm(String statm) {
+    final campos = statm.trim().split(RegExp(r'\s+'));
+    if (campos.length < 2) return 0;
+    return (int.tryParse(campos[1]) ?? 0) * _tamanoDePagina;
+  }
+
+  /// Tiempo de CPU de `/proc/<pid>/stat`, convertido a unidades de 100 ns.
+  ///
+  /// ⚠️ **El segundo campo es el nombre del proceso entre paréntesis y puede
+  /// llevar espacios y paréntesis dentro** (`(un proceso (raro))`), así que
+  /// partir la línea por espacios desde el principio desalinea todo lo demás.
+  /// Se busca el **último** `)` y se cuenta a partir de ahí: el primer campo
+  /// que queda es el estado, o sea el número 3.
+  @visibleForTesting
+  static int ticksDeStat(String stat) {
+    final cierre = stat.lastIndexOf(')');
+    if (cierre < 0) return 0;
+    final campos = stat.substring(cierre + 1).trim().split(RegExp(r'\s+'));
+    // utime y stime son los campos 14 y 15; contando desde el 3, el 11 y el 12.
+    if (campos.length < 13) return 0;
+    final utime = int.tryParse(campos[11]) ?? 0;
+    final stime = int.tryParse(campos[12]) ?? 0;
+    return (utime + stime) * _cienNanosPorTick;
+  }
+
+  /// 4 KiB en x86-64 y arm64, que son las dos arquitecturas donde esto corre.
+  /// Preguntárselo al sistema exigiría lanzar `getconf`, y hacerlo cada tres
+  /// segundos costaría más que la medida entera.
+  static const int _tamanoDePagina = 4096;
+
+  /// `USER_HZ` vale 100 en Linux —es ABI, no depende del `CONFIG_HZ` del
+  /// kernel—, así que cada tick son 10 ms, o sea 100.000 unidades de 100 ns.
+  static const int _cienNanosPorTick = 100000;
+
+  /// Working set y ticks de CPU de un pid, en una sola apertura del proceso.
+  static (int, int) _medirWindows(int proceso) {
     final abrir = _openProcess;
     final memoria = _getMemoryInfo;
     final tiempos = _getProcessTimes;
     final cerrar = _closeHandle;
-    if (proceso == null ||
-        abrir == null ||
-        memoria == null ||
-        tiempos == null ||
-        cerrar == null) {
+    if (abrir == null || memoria == null || tiempos == null || cerrar == null) {
       return (0, 0);
     }
 
