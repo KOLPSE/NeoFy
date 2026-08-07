@@ -44,11 +44,13 @@ options=('!strip')
 
 _tarball="NeoFy-$pkgver-linux-x86_64"
 source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
-# ⚠️ SKIP es el valor de partida, no el bueno: hay que sustituirlo por el hash
-# real ANTES de subir cada version al AUR. Con SKIP, makepkg se traga cualquier
-# cosa que le sirva esa url. El workflow de Linux lo imprime al terminar, y
-# tambien sale con: makepkg -g
-sha256sums=('SKIP')
+# ⚠️ Hay que actualizarlo EN CADA VERSION, junto con pkgver. Con SKIP, makepkg
+# se traga cualquier cosa que le sirva esa url; con el hash puesto, comprueba
+# que el tarball es exactamente el que se publico.
+#
+# El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
+# `makepkg -g` o descargando el tarball y pasandole sha256sum.
+sha256sums=('347b9e8f6c648eb4a50a0a4025084dedd84a8933f417cbc22a96bf036cac35bb')
 
 package() {
   cd "$srcdir/$_tarball"

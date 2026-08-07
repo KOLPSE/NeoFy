@@ -247,6 +247,12 @@ jobs:
           # de que exista ninguna release. El package() no se toca, que es lo
           # que de verdad se esta probando.
           sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
+          # Y el hash tiene que quedar en SKIP: el del PKGBUILD es el del
+          # tarball PUBLICADO, y este es uno recien compilado. Dos compilaciones
+          # no dan ficheros identicos (marcas de tiempo dentro del tar), asi que
+          # comparar aqui solo conseguiria que el job fallara siempre. Lo que
+          # este paso valida es el package(), no la integridad de la descarga.
+          sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
           chown -R builder /tmp/pkg
           # makepkg se niega a correr como root, de ahi el usuario. --nodeps
           # porque las dependencias ya estan puestas arriba.
