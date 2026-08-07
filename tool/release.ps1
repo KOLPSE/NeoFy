@@ -88,7 +88,10 @@ Write-Host ('  {0}  ({1:N1} MB)' -f $exe, ((Get-Item $exe).Length / 1MB))
 Paso 'Notas de la versión'
 if ($Notas) {
   if (-not (Test-Path $Notas)) { Mal "No existe $Notas" }
-  $cuerpo = Get-Content $Notas -Raw
+  # -Encoding UTF8 no es opcional: sin el, PowerShell 5.1 lee un fichero UTF-8
+  # sin BOM como ANSI, y las notas se publican con los acentos rotos
+  # ("Se acabo" sale como "Se acabÃ³") porque luego se vuelven a codificar.
+  $cuerpo = Get-Content $Notas -Raw -Encoding UTF8
 } else {
   $ultima = git describe --tags --abbrev=0 2>$null
   $rango = if ($ultima) { "$ultima..HEAD" } else { 'HEAD' }
