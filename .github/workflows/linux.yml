@@ -30,16 +30,6 @@ on:
   release:
     types: [published]
 
-  # ⚠️ TEMPORAL — QUITAR ANTES DE FUSIONAR EN MAIN.
-  #
-  # `workflow_dispatch` solo se puede disparar si el fichero esta en la rama por
-  # defecto, asi que estando el port todavia en la rama `linux` no hay forma de
-  # ejecutarlo. Este disparador existe para validar el empaquetado (que el .deb
-  # instale, que los nombres de las dependencias sean los correctos) ANTES de
-  # que esto toque main, en vez de descubrirlo con main ya roto.
-  push:
-    branches: [linux]
-
 jobs:
   compilar:
     # ubuntu-latest a proposito y no una distro rolling: su glibc es mas antigua
