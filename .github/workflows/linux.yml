@@ -27,6 +27,13 @@ name: Linux
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Etiqueta de una release YA publicada a la que subir los paquetes
+          (por ejemplo v0.1.3). Vacio = solo compilar y dejar el artefacto.
+        required: false
+        default: ''
   release:
     types: [published]
 
@@ -37,6 +44,15 @@ jobs:
     # nueva, nunca al reves. Compilar aqui es lo que hace que el paquete -bin
     # sirva en Arch.
     runs-on: ubuntu-latest
+
+    # ⚠️ Sin esto, subir los paquetes falla con un 403 "Resource not accessible
+    # by integration" **despues** de haber compilado todo. El GITHUB_TOKEN de
+    # este repositorio viene con Contents:read por defecto, y para adjuntar
+    # ficheros a una release hace falta escritura. Se declara aqui y no en los
+    # ajustes del repositorio para que el permiso viaje con el workflow y se vea
+    # de un vistazo quien puede escribir que.
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -128,12 +144,18 @@ jobs:
       # Los dos instaladores, mas el tarball: ese no es una descarga para
       # usuarios sino lo que se baja el PKGBUILD del AUR, que necesita una url
       # estable en la release.
+      # Se sube al publicar una release, y tambien a mano indicando una etiqueta
+      # ya publicada. Lo segundo existe porque este paso ya fallo una vez con
+      # todo compilado: sin una via de reintento habria que republicar la
+      # version entera, y reetiquetar una release rompe a quien ya la tenga.
       - name: Subir a la release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "Subiendo a $tag"
+          gh release upload "$tag" \
             dist/neofy_*_amd64.deb \
             dist/neofy-*-1.x86_64.rpm \
             dist/NeoFy-*-linux-x86_64.tar.gz \
