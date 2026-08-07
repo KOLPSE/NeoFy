@@ -29,6 +29,9 @@ dist/
 .vscode/
 .idea/
 .claude/
+# Instrucciones de trabajo locales. Fuera del repositorio a proposito: es
+# publico y no debe llevar referencias a herramientas de quien lo desarrolla.
+CLAUDE.md
 *.log
 
 # --- Nada de credenciales ---------------------------------------------------
