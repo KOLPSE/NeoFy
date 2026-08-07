@@ -39,12 +39,20 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
     cada 120 ms.
   - `home_store.dart` — Datos de la portada (historial y lo más escuchado).
   - `media_keys.dart` — Recibe las teclas multimedia que registra el runner.
+  - `audio_device.dart` — Recibe del runner los cambios de la salida de audio de
+    Windows. Ver "El audio que se queda mudo" más abajo.
   - `art_cache.dart` — Caché LRU de carátulas en disco (50 MB).
   - `models.dart` — Modelos mínimos. `pickImage()` es RAM-crítica.
 - **`windows/runner/flutter_window.cpp`** — Además de hospedar Flutter, registra las teclas
   multimedia con `RegisterHotKey` y las manda a Dart por el canal
   `neofy/media_keys`. Ver "Teclas de los cascos" más abajo.
+- **`windows/runner/audio_device_watcher.cpp`** — `IMMNotificationClient` que avisa por
+  `neofy/audio_device` cuando Windows cambia el altavoz por defecto.
 - **`lib/ui/`** — `shell.dart` (sidebar + contenido + barra), pantallas y `art_image.dart`.
+  `tira_horizontal.dart` es la fila de tarjetas de la portada: con ratón, una lista
+  horizontal dentro de una vertical no se puede mover (Flutter no permite arrastrar con el
+  ratón y la rueda manda `dy`, que una lista horizontal ignora), así que lleva flechas, la
+  rueda mapeada al eje y arrastre habilitado.
   `like_button.dart` es el corazón que se llena como un líquido: la ondulación **solo corre
   mientras dura el llenado** (~600 ms) y se para al acabar. Con una animación perpetua por
   fila, una lista de 3.000 canciones tendría decenas corriendo sin que nadie las mire.
@@ -449,6 +457,52 @@ peticiones tiene que vivir **fuera** de la pantalla o se vuelve a bajar cada vez
 "Canciones que te gustan", que rebajaba sus ~60 páginas en cada visita. Por eso
 `LikedStore` y `HomeStore` cuelgan de `main.dart` y sobreviven a la navegación, y las
 pantallas solo guardan lo suyo (el scroll, la ventana de carátulas).
+
+## El audio que se queda mudo
+
+**Síntoma:** al cabo de un rato, o justo al cambiar de altavoces, deja de sonar. La app
+sigue como si nada —la barra avanza, Spotify dice que la canción se está reproduciendo— y la
+única cura era matar el proceso y volver a abrir NeoFy.
+
+**Causa:** librespot abre el dispositivo de salida **una vez, al arrancar**, y no lo suelta.
+Si el usuario se pone unos cascos, los quita, o Windows cambia el altavoz por defecto, el
+flujo se queda escribiendo en un sitio que ya no reproduce. Y como el proceso **no se
+muere**, el reinicio automático de `LibrespotManager` —que solo entra cuando cae— no se
+activa nunca. Nadie da error por ningún lado: el único síntoma es el silencio.
+
+Se ataca por tres vías, porque ninguna las cubre todas:
+
+1. **El aviso del sistema.** `windows/runner/audio_device_watcher.cpp` registra un
+   `IMMNotificationClient` y avisa a Dart cuando cambia el dispositivo de salida por defecto
+   (`eRender` + `eConsole`, que es el que elige cpal, la capa de debajo de rodio; los otros
+   roles cambian sin que la música se mueva de sitio). La llamada llega en un hilo del
+   servicio de audio, así que se hace un `PostMessage` a la ventana y el canal se toca desde
+   el hilo de siempre.
+2. **El log de librespot.** `esFalloDeAudio()` reconoce los `ERROR` del backend de audio, que
+   es lo único que queda escrito cuando la salida se rompe sin que Windows cambie de
+   dispositivo. Se busca por el nombre del backend (rodio, cpal, "audio sink") y no por el
+   texto del error: los mensajes cambian de versión en versión, el backend no.
+3. **El botón de Ajustes**, para lo que no se detecta: un driver atascado, otra aplicación
+   que se queda el dispositivo en modo exclusivo.
+
+Las tres acaban en `_reiniciarAudio()` de `main.dart`, y ahí importan cuatro detalles:
+
+- **Se agrupan los avisos.** Un solo cambio de salida dispara varios (aparece el dispositivo,
+  pasa a ser el de por defecto…) y un fallo de audio deja varias líneas de log seguidas.
+  `AudioDeviceWatcher` espera 1,2 s y hay además una ventana de 20 s entre reinicios
+  automáticos. Reiniciar corta el sonido un par de segundos: hacerlo tres veces seguidas
+  sería peor que el fallo.
+- **El `device_id` nuevo no es el viejo, y Spotify sigue listando el viejo** unos segundos
+  después de matarlo. Por eso `resolveDevice(distintoDe:)`: quedarse con ese id significaría
+  mandar la música a un proceso muerto.
+- **Retomar es traspasar, no volver a arrancar.** El estado vive en la sesión de Spotify, no
+  en el dispositivo (la misma razón por la que abrir la app reanudaba la música sola). Lo
+  único que no se recupera solo es la posición, que se manda aparte. El plan B —arrancar el
+  contexto con `offset: {uri}`— solo hace falta si la sesión se dio por terminada.
+- **Un proceso que ya no es el actual no manda.** Si el librespot viejo tarda más de dos
+  segundos en morir se le mata a lo bruto y `stop()` no espera; su aviso de salida puede
+  llegar con el nuevo ya arrancado, y darlo por caído reiniciaría otra vez el audio que
+  acabábamos de recuperar. `_onExit` compara el proceso antes de hacer nada.
 
 ## Teclas de los cascos
 

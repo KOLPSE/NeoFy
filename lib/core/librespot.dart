@@ -10,6 +10,28 @@ import 'app_config.dart';
 
 enum LibrespotStatus { stopped, starting, running, failed }
 
+/// ¿Esta línea del log dice que librespot se ha quedado sin audio?
+///
+/// Cuando el dispositivo de salida desaparece bajo sus pies, librespot **no se
+/// muere**: sigue vivo, sigue diciéndole a Spotify que la canción avanza, y lo
+/// único que pasa es que no sale sonido. Un proceso que no cae no dispara el
+/// reinicio automático, así que el error del backend de audio en el log es el
+/// único aviso que hay de que hace falta reabrir la salida.
+///
+/// Se busca a propósito por el nombre del backend y no por el texto exacto del
+/// error: los mensajes de rodio/cpal cambian de versión en versión, pero el
+/// backend que los firma no.
+bool esFalloDeAudio(String linea) {
+  if (!linea.contains('ERROR')) return false;
+  final l = linea.toLowerCase();
+  return l.contains('audio sink') ||
+      l.contains('audiosink') ||
+      l.contains('rodio') ||
+      l.contains('cpal') ||
+      l.contains('audio backend') ||
+      l.contains('output device');
+}
+
 /// Arranca y vigila `librespot.exe`, que es quien reproduce el audio de verdad.
 ///
 /// Spotify no deja que una app de terceros reproduzca por su API oficial sin un
@@ -29,6 +51,12 @@ class LibrespotManager extends ChangeNotifier {
   Timer? _restartTimer;
   DateTime? _startedAt;
   bool _stopping = false;
+  bool _reiniciando = false;
+
+  /// Se llama cuando el log delata que la salida de audio se ha roto. Quien
+  /// escucha decide qué hacer (reiniciar el sidecar y retomar la canción);
+  /// aquí no se sabe nada de la Web API ni de lo que estuviera sonando.
+  void Function()? onFalloDeAudio;
 
   /// Últimas líneas del log del proceso. Es lo único que tenemos para
   /// diagnosticar cuando librespot no arranca, así que se conserva un trozo.
@@ -129,16 +157,35 @@ class LibrespotManager extends ChangeNotifier {
       proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
       proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
 
-      unawaited(proc.exitCode.then(_onExit));
+      unawaited(proc.exitCode.then((code) => _onExit(proc, code)));
       _setStatus(LibrespotStatus.running);
     } catch (e) {
       _setStatus(LibrespotStatus.failed, error: 'No se pudo lanzar librespot: $e');
     }
   }
 
+  /// Vuelve a levantar el sidecar con la salida de audio que haya ahora.
+  ///
+  /// El contador de reintentos se pone a cero a propósito: esto no es una
+  /// caída, es un reinicio pedido, y no debe gastar los cinco intentos que
+  /// protegen del bucle cuando librespot de verdad no arranca.
+  Future<void> reiniciar() async {
+    if (_reiniciando) return;
+    _reiniciando = true;
+    try {
+      await stop();
+      _restartAttempts = 0;
+      await start();
+    } finally {
+      _reiniciando = false;
+    }
+  }
+
   void _onLogLine(String line) {
     logTail.add(line);
     if (logTail.length > 200) logTail.removeAt(0);
+
+    if (esFalloDeAudio(line)) onFalloDeAudio?.call();
 
     // Durante el login, librespot escribe la URL de autorización en el log en
     // vez de abrir el navegador. La abrimos nosotros para que el usuario no
@@ -150,7 +197,13 @@ class LibrespotManager extends ChangeNotifier {
     }
   }
 
-  Future<void> _onExit(int code) async {
+  Future<void> _onExit(Process proc, int code) async {
+    // Un proceso que ya no es el nuestro no tiene voz. Al reiniciar el sidecar,
+    // si el viejo tarda más de dos segundos en morir se le mata a lo bruto y
+    // `stop()` no espera: su aviso de salida puede llegar con el nuevo ya
+    // arrancado, y sin esta comprobación lo daría por caído y lo reiniciaría
+    // otra vez, cortando el audio que acabábamos de recuperar.
+    if (_proc != null && !identical(_proc, proc)) return;
     _proc = null;
     if (_stopping) {
       _setStatus(LibrespotStatus.stopped);

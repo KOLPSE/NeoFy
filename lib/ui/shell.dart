@@ -39,6 +39,7 @@ class AppShell extends StatefulWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
+    required this.onReiniciarAudio,
     required this.onLogout,
     required this.onReauth,
   });
@@ -54,6 +55,10 @@ class AppShell extends StatefulWidget {
 
   /// Cerrar NeoFy para que el instalador pueda sobrescribir el ejecutable.
   final Future<void> Function() onSalirParaActualizar;
+
+  /// Reabre la salida de audio sin cerrar la app. Ver `_reiniciarAudio` en
+  /// `main.dart`.
+  final Future<void> Function() onReiniciarAudio;
   final LibrespotManager librespot;
   final MetadataSidecar sidecar;
   final Future<void> Function() onLogout;
@@ -305,6 +310,7 @@ class _AppShellState extends State<AppShell> {
                     settings: widget.settings,
                     updater: widget.updater,
                     onSalirParaActualizar: widget.onSalirParaActualizar,
+                    onReiniciarAudio: widget.onReiniciarAudio,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -387,6 +393,7 @@ class _Sidebar extends StatelessWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
+    required this.onReiniciarAudio,
   });
 
   final List<Playlist> playlists;
@@ -407,6 +414,7 @@ class _Sidebar extends StatelessWidget {
   final Settings settings;
   final Updater updater;
   final Future<void> Function() onSalirParaActualizar;
+  final Future<void> Function() onReiniciarAudio;
 
   /// La playlist que está sonando, si es una de las del panel. Es la que se
   /// deja a la vista cuando la sección está plegada.
@@ -538,6 +546,7 @@ class _Sidebar extends StatelessWidget {
                         settings: settings,
                         updater: updater,
                         onSalirParaActualizar: onSalirParaActualizar,
+                        onReiniciarAudio: onReiniciarAudio,
                       ),
                     ),
                     icon: const Icon(Icons.tune, size: 18),

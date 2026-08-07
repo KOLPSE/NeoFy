@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "audio_device_watcher.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -31,6 +32,11 @@ class FlutterWindow : public Win32Window {
   void RegisterMediaKeys();
   void UnregisterMediaKeys();
 
+  // Vigila el dispositivo de salida por defecto. Cambiarlo con la música
+  // sonando deja mudo a librespot, que abrió el suyo al arrancar y no se
+  // entera del cambio; avisando a Dart, la app puede reiniciarlo sola.
+  void StartAudioDeviceWatcher();
+
   // The project to run.
   flutter::DartProject project_;
 
@@ -44,6 +50,12 @@ class FlutterWindow : public Win32Window {
   // Si ninguna llegó a registrarse (otra app se las quedó antes), no hay nada
   // que soltar al cerrar.
   bool media_keys_registered_ = false;
+
+  // Por donde se le cuenta a Dart que la salida de audio ha cambiado.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      audio_device_channel_;
+
+  AudioDeviceWatcher audio_device_watcher_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

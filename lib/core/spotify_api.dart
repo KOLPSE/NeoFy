@@ -257,18 +257,23 @@ class SpotifyApi {
   /// Reanuda, o arranca algo concreto.
   ///
   /// [contextUri] para una playlist/álbum entero, [uris] para canciones
-  /// sueltas, [offsetPosition] para empezar en la pista N del contexto.
+  /// sueltas, [offsetPosition] para empezar en la pista N del contexto y
+  /// [offsetUri] para empezar en una canción concreta de ese contexto sin
+  /// saber en qué posición está — que es el caso al recuperarse de un corte de
+  /// audio: se sabe qué sonaba, no por dónde iba la lista.
   Future<void> play({
     String? deviceId,
     String? contextUri,
     List<String>? uris,
     int? offsetPosition,
+    String? offsetUri,
     int? positionMs,
   }) {
     final body = <String, dynamic>{};
     if (contextUri != null) body['context_uri'] = contextUri;
     if (uris != null) body['uris'] = uris;
     if (offsetPosition != null) body['offset'] = {'position': offsetPosition};
+    if (offsetUri != null) body['offset'] = {'uri': offsetUri};
     if (positionMs != null) body['position_ms'] = positionMs;
     return _request(
       'PUT',

@@ -25,9 +25,25 @@ class _FakeApi extends SpotifyApi {
 
   final List<String> llamadas = [];
   bool nextProhibido = false;
+  bool traspasoProhibido = false;
 
   /// Lo que contesta `GET /me/player`.
   Playback? estadoRemoto;
+
+  /// Lo que contesta `GET /me/player/devices`.
+  List<Device> dispositivos = const [];
+
+  @override
+  Future<List<Device>> devices() async {
+    llamadas.add('devices');
+    return dispositivos;
+  }
+
+  @override
+  Future<void> transfer(String deviceId, {bool play = false}) async {
+    llamadas.add('transfer $deviceId play=$play');
+    if (traspasoProhibido) throw ApiException(404, 'Device not found');
+  }
 
   @override
   Future<Playback?> playbackState() async {
@@ -59,9 +75,11 @@ class _FakeApi extends SpotifyApi {
     String? contextUri,
     List<String>? uris,
     int? offsetPosition,
+    String? offsetUri,
     int? positionMs,
   }) async {
-    llamadas.add('play ${contextUri ?? uris} offset=$offsetPosition');
+    llamadas.add('play ${contextUri ?? uris} offset=${offsetUri ?? offsetPosition}'
+        '${positionMs == null ? '' : ' pos=$positionMs'}');
   }
 }
 
@@ -234,6 +252,88 @@ void main() {
       await player.ensurePausedAtStartup();
 
       expect(api.llamadas, ['playbackState']);
+    });
+  });
+
+  // Cambiar la salida de audio deja a librespot escribiendo en un dispositivo
+  // que ya no suena, y la única cura es reiniciarlo. Lo que no puede pasar es
+  // que arreglar el sonido cueste perder la canción.
+  group('reinicio del audio', () {
+    Device neofy(String id) =>
+        Device(id: id, name: kDeviceName, isActive: false, volumePercent: 50);
+
+    test('no se pilla el dispositivo del librespot que acabamos de matar',
+        () async {
+      // Spotify sigue listando el viejo unos segundos después de morir.
+      api.dispositivos = [neofy('viejo')];
+      expect(
+        await player.resolveDevice(transfer: false, distintoDe: 'viejo'),
+        isFalse,
+      );
+
+      api.dispositivos = [neofy('viejo'), neofy('nuevo')];
+      expect(
+        await player.resolveDevice(transfer: false, distintoDe: 'viejo'),
+        isTrue,
+      );
+      expect(player.ourDeviceId, 'nuevo');
+    });
+
+    test('la canción se retoma donde iba, no donde crea Spotify', () async {
+      player.state = _sonando();
+      player.progressMs.value = 42000;
+      final antes = player.instantanea();
+
+      player.ourDeviceId = 'nuevo';
+      await player.retomar(antes);
+
+      // El traspaso recupera la canción (el estado vive en la sesión), pero la
+      // posición se quedó clavada mientras el dispositivo estuvo muerto.
+      expect(api.llamadas, ['transfer nuevo play=true', 'seek 42000']);
+    });
+
+    test('lo que estaba en pausa no se pone a sonar solo', () async {
+      player.state = _sonando(isPlaying: false);
+      player.progressMs.value = 42000;
+      final antes = player.instantanea();
+
+      player.ourDeviceId = 'nuevo';
+      await player.retomar(antes);
+
+      expect(api.llamadas, ['transfer nuevo play=false']);
+    });
+
+    test('si el traspaso no cuaja, se rearranca la lista por esa canción',
+        () async {
+      api.traspasoProhibido = true;
+      player.state = _sonando();
+      player.progressMs.value = 42000;
+      final antes = player.instantanea();
+
+      player.ourDeviceId = 'nuevo';
+      await player.retomar(antes);
+
+      // Con contexto se vuelve a él apuntando a la canción concreta: perder la
+      // lista significaría que al acabar no hay adónde seguir.
+      expect(api.llamadas, [
+        'transfer nuevo play=true',
+        'play spotify:playlist:abc offset=spotify:track:1 pos=42000',
+      ]);
+    });
+
+    test('una canción suelta se rearranca sola, sin contexto', () async {
+      api.traspasoProhibido = true;
+      player.state = _sonando(contextUri: null);
+      player.progressMs.value = 1000;
+      final antes = player.instantanea();
+
+      player.ourDeviceId = 'nuevo';
+      await player.retomar(antes);
+
+      expect(api.llamadas, [
+        'transfer nuevo play=true',
+        'play [spotify:track:1] offset=null pos=1000',
+      ]);
     });
   });
 

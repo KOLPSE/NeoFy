@@ -6,6 +6,22 @@ import 'app_config.dart';
 import 'models.dart';
 import 'spotify_api.dart';
 
+/// Lo que hacía falta saber para dejar la música como estaba después de
+/// reiniciar el sidecar de audio.
+class ReproduccionEnCurso {
+  const ReproduccionEnCurso({
+    required this.sonaba,
+    required this.posicionMs,
+    required this.trackUri,
+    required this.contextUri,
+  });
+
+  final bool sonaba;
+  final int posicionMs;
+  final String? trackUri;
+  final String? contextUri;
+}
+
 /// Estado del reproductor y todas las acciones sobre él.
 ///
 /// La pieza clave del bajo consumo está aquí: en vez de preguntarle a Spotify
@@ -199,10 +215,15 @@ class PlayerController extends ChangeNotifier {
   ///
   /// Se llama al arrancar y cada vez que la API responde "device not found",
   /// que es lo que pasa cuando el sidecar se ha reiniciado y tiene un id nuevo.
-  Future<bool> resolveDevice({bool transfer = true}) async {
+  /// [distintoDe] sirve para el reinicio del audio: durante unos segundos
+  /// Spotify sigue listando el dispositivo del librespot que acabamos de matar,
+  /// y quedarse con ese id significaría mandar la música a un proceso muerto.
+  Future<bool> resolveDevice({bool transfer = true, String? distintoDe}) async {
     try {
       final list = await api.devices();
-      final ours = list.where((d) => d.name == kDeviceName).toList();
+      final ours = list
+          .where((d) => d.name == kDeviceName && d.id != distintoDe)
+          .toList();
       if (ours.isEmpty) return false;
       ourDeviceId = ours.first.id;
       if (transfer && !ours.first.isActive) {
@@ -214,6 +235,73 @@ class PlayerController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Olvida el dispositivo actual. Se llama justo antes de reiniciar el
+  /// sidecar: el id que tenemos ya no vale, y mientras no haya otro la barra
+  /// de reproducción avisa de que se está buscando el reproductor.
+  String? olvidarDispositivo() {
+    final anterior = ourDeviceId;
+    ourDeviceId = null;
+    notifyListeners();
+    return anterior;
+  }
+
+  /// Foto de lo que suena, para poder dejarlo igual tras reiniciar el audio.
+  ReproduccionEnCurso instantanea() => ReproduccionEnCurso(
+        sonaba: state.isPlaying,
+        posicionMs: progressMs.value,
+        trackUri: state.track?.uri,
+        contextUri: contextUri,
+      );
+
+  /// Vuelve a poner lo que sonaba en el librespot recién arrancado.
+  ///
+  /// Basta con traspasar la reproducción: el estado vive en la **sesión** de
+  /// Spotify, no en el dispositivo — es la misma razón por la que abrir la app
+  /// reanudaba la música sola. Lo que no se recupera solo es la posición: con
+  /// el dispositivo muerto se queda clavada donde se cortó, o sigue corriendo
+  /// sin que suene nada, así que se manda el salto aparte.
+  Future<void> retomar(ReproduccionEnCurso antes) async {
+    final device = ourDeviceId;
+    if (device == null) return;
+    try {
+      await api.transfer(device, play: antes.sonaba);
+      if (antes.sonaba) {
+        await api.seek(antes.posicionMs);
+        _pendingSeekMs = antes.posicionMs;
+        _pendingSeekAt = DateTime.now();
+      }
+      state = state.copyWith(isPlaying: antes.sonaba);
+      lastError = null;
+      notifyListeners();
+    } catch (_) {
+      await _arrancarDeNuevo(antes);
+    }
+    _schedulePoll(const Duration(milliseconds: 500));
+  }
+
+  /// Plan B cuando el traspaso no cuaja: arrancar la reproducción a mano.
+  ///
+  /// Pasa cuando la sesión de Spotify se dio por terminada mientras el
+  /// dispositivo no existía. Con contexto se vuelve a él apuntando a la canción
+  /// concreta, para no perder la lista; sin contexto, la canción suelta.
+  Future<void> _arrancarDeNuevo(ReproduccionEnCurso antes) async {
+    if (!antes.sonaba || antes.trackUri == null) return;
+    try {
+      await api.play(
+        deviceId: ourDeviceId,
+        contextUri: antes.contextUri,
+        uris: antes.contextUri == null ? [antes.trackUri!] : null,
+        offsetUri: antes.contextUri == null ? null : antes.trackUri,
+        positionMs: antes.posicionMs,
+      );
+      lastError = null;
+    } catch (e) {
+      lastError = 'No se pudo retomar la reproducción tras reiniciar el '
+          'audio: $e';
+    }
+    notifyListeners();
   }
 
   /// Deja la reproducción parada al arrancar la app.

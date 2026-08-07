@@ -16,6 +16,7 @@ Future<void> mostrarAjustes(
   required Settings settings,
   required Updater updater,
   required Future<void> Function() onSalirParaActualizar,
+  required Future<void> Function() onReiniciarAudio,
 }) {
   return showDialog<void>(
     context: context,
@@ -24,6 +25,7 @@ Future<void> mostrarAjustes(
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
+      onReiniciarAudio: onReiniciarAudio,
     ),
   );
 }
@@ -34,6 +36,7 @@ class _DialogoAjustes extends StatelessWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
+    required this.onReiniciarAudio,
   });
 
   final ResourceMonitor monitor;
@@ -43,6 +46,9 @@ class _DialogoAjustes extends StatelessWidget {
   /// Cerrar la app en cuanto arranque el instalador: no puede sobrescribir un
   /// ejecutable en uso.
   final Future<void> Function() onSalirParaActualizar;
+
+  /// Reabrir la salida de audio sin cerrar la app.
+  final Future<void> Function() onReiniciarAudio;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +104,8 @@ class _DialogoAjustes extends StatelessWidget {
               ),
             ),
             const Divider(height: 12),
+            _ReiniciarAudio(onReiniciar: onReiniciarAudio),
+            const Divider(height: 12),
             _Actualizaciones(
               updater: updater,
               onSalirParaActualizar: onSalirParaActualizar,
@@ -109,6 +117,67 @@ class _DialogoAjustes extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cerrar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Salida de emergencia para cuando la música se queda muda.
+///
+/// La app ya reinicia el audio sola al cambiar la salida del sistema o al ver
+/// un error del backend en el log, pero no todo se detecta: un driver que se
+/// atasca o una aplicación que se queda el dispositivo en modo exclusivo no
+/// avisan a nadie. Esto es lo mismo que hacía el usuario cerrando y abriendo la
+/// app, pero sin perder la sesión ni la canción.
+class _ReiniciarAudio extends StatefulWidget {
+  const _ReiniciarAudio({required this.onReiniciar});
+
+  final Future<void> Function() onReiniciar;
+
+  @override
+  State<_ReiniciarAudio> createState() => _ReiniciarAudioState();
+}
+
+class _ReiniciarAudioState extends State<_ReiniciarAudio> {
+  bool _enMarcha = false;
+
+  Future<void> _reiniciar() async {
+    setState(() => _enMarcha = true);
+    try {
+      await widget.onReiniciar();
+    } finally {
+      if (mounted) setState(() => _enMarcha = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Audio', style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 2),
+              Text(
+                _enMarcha
+                    ? 'Reabriendo la salida…'
+                    : 'Si deja de oírse, vuelve a abrir la salida sin cerrar '
+                        'NeoFy. Sigue por donde iba.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        OutlinedButton(
+          onPressed: _enMarcha ? null : () => unawaited(_reiniciar()),
+          child: const Text('Reiniciar'),
         ),
       ],
     );

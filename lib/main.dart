@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'core/app_config.dart';
 import 'core/art_cache.dart';
+import 'core/audio_device.dart';
 import 'core/auth.dart';
 import 'core/home_store.dart';
 import 'core/librespot.dart';
@@ -139,8 +140,14 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     onPause: _player.pause,
   );
 
+  /// Cambios de la salida de audio del sistema. Ver [_reiniciarAudio].
+  late final AudioDeviceWatcher _audio =
+      AudioDeviceWatcher(onCambio: _reiniciarAudio);
+
   bool _booting = true;
   bool _sessionStarted = false;
+  bool _reiniciandoAudio = false;
+  DateTime _ultimoReinicioDeAudio = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -148,6 +155,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     windowManager.addListener(this);
     trayManager.addListener(this);
     _mediaKeys.start();
+    // Las dos vías por las que se detecta que el audio se ha quedado mudo: que
+    // Windows cambie de altavoces, y que el propio librespot se queje en su log.
+    _audio.start();
+    _librespot.onFalloDeAudio = () => unawaited(_reiniciarAudio());
     _ram.start();
     // Una comprobación al arrancar, sin molestar: si hay algo nuevo, aparece en
     // Ajustes con un punto. No se instala nada sin que el usuario lo pida.
@@ -164,6 +175,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     _mediaKeys.stop();
+    _audio.stop();
     _player.dispose();
     _likes.dispose();
     _home.dispose();
@@ -214,6 +226,58 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     } catch (_) {
       // Ya fallará más adelante con un mensaje concreto en la pantalla que lo
       // necesite; no es motivo para entorpecer el arranque.
+    }
+  }
+
+  /// Vuelve a abrir la salida de audio y deja la música donde estaba.
+  ///
+  /// **El fallo que arregla:** librespot elige el dispositivo de salida al
+  /// arrancar y no lo suelta. Si cambia el de por defecto —unos cascos, un
+  /// televisor, la salida del monitor— o el que tenía deja de funcionar, se
+  /// queda escribiendo audio en el vacío: el proceso sigue vivo, Spotify sigue
+  /// diciendo que la canción avanza y no suena nada. Como no se cae, el
+  /// reinicio automático de [LibrespotManager] no entra, y la única salida era
+  /// cerrar la app entera y volver a abrirla.
+  ///
+  /// Reiniciar el sidecar corta el sonido un par de segundos, así que no se
+  /// hace a la ligera: solo con un aviso del sistema, con un error del backend
+  /// de audio en el log, o porque lo pida el usuario desde Ajustes.
+  Future<void> _reiniciarAudio({bool porElUsuario = false}) async {
+    if (!_sessionStarted || _reiniciandoAudio) return;
+    // Un cambio de salida llega en ráfaga de avisos y un fallo de audio, en
+    // ráfaga de líneas de log. Sin esta ventana, la app se pasaría el rato
+    // reiniciando el sidecar y cortando la misma música que intenta salvar.
+    // Quien le da al botón sí manda: ese ya sabe lo que está pidiendo.
+    final desde = DateTime.now().difference(_ultimoReinicioDeAudio);
+    if (!porElUsuario && desde < const Duration(seconds: 20)) return;
+
+    _reiniciandoAudio = true;
+    _ultimoReinicioDeAudio = DateTime.now();
+    try {
+      final antes = _player.instantanea();
+      final viejo = _player.olvidarDispositivo();
+      await _librespot.reiniciar();
+
+      // librespot tarda unos segundos en volver a registrarse en Spotify
+      // Connect, y lo hace con un device_id nuevo. Durante ese rato la API
+      // sigue listando el del proceso que acabamos de matar, de ahí el filtro.
+      for (var i = 0; i < 20; i++) {
+        if (!mounted) return;
+        if (await _player.resolveDevice(transfer: false, distintoDe: viejo)) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+      if (!mounted) return;
+      // Si el id no cambió (no debería, pero tampoco lo promete nadie), mejor
+      // quedarse con el que haya que no quedarse sin dispositivo.
+      if (_player.ourDeviceId == null) {
+        await _player.resolveDevice(transfer: false);
+      }
+      if (!mounted) return;
+      await _player.retomar(antes);
+    } finally {
+      _reiniciandoAudio = false;
     }
   }
 
@@ -427,6 +491,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       settings: _settings,
       updater: _updater,
       onSalirParaActualizar: _quit,
+      onReiniciarAudio: () => _reiniciarAudio(porElUsuario: true),
       librespot: _librespot,
       sidecar: _sidecar,
       onReauth: _reauth,

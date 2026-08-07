@@ -14,6 +14,12 @@ constexpr int kHotKeyPrevious = 3;
 constexpr int kHotKeyStop = 4;
 
 constexpr const char kMediaKeysChannel[] = "neofy/media_keys";
+constexpr const char kAudioDeviceChannel[] = "neofy/audio_device";
+
+// Mensaje propio con el que el vigilante de audio —que corre en un hilo del
+// servicio de audio de Windows— le pasa el aviso al hilo de la ventana. WM_APP
+// es el rango reservado justo para esto; WM_USER se lo reparten los controles.
+constexpr UINT kAudioDeviceChangedMessage = WM_APP + 1;
 
 }  // namespace
 
@@ -45,6 +51,12 @@ bool FlutterWindow::OnCreate() {
           flutter_controller_->engine()->messenger(), kMediaKeysChannel,
           &flutter::StandardMethodCodec::GetInstance());
   RegisterMediaKeys();
+
+  audio_device_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), kAudioDeviceChannel,
+          &flutter::StandardMethodCodec::GetInstance());
+  StartAudioDeviceWatcher();
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -98,7 +110,17 @@ void FlutterWindow::UnregisterMediaKeys() {
   media_keys_registered_ = false;
 }
 
+// El vigilante no es imprescindible: si el servicio de audio no contesta, la
+// app sigue funcionando exactamente igual y lo único que se pierde es el
+// reinicio automático al cambiar de altavoces. No es motivo para fallar el
+// arranque.
+void FlutterWindow::StartAudioDeviceWatcher() {
+  audio_device_watcher_.Start(GetHandle(), kAudioDeviceChangedMessage);
+}
+
 void FlutterWindow::OnDestroy() {
+  audio_device_watcher_.Stop();
+  audio_device_channel_ = nullptr;
   UnregisterMediaKeys();
   media_keys_channel_ = nullptr;
   if (flutter_controller_) {
@@ -137,6 +159,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
           action, std::make_unique<flutter::EncodableValue>());
       return 0;
     }
+  }
+
+  // El aviso llega desde un hilo del servicio de audio con un PostMessage, así
+  // que aquí ya estamos en el hilo de la ventana y se puede hablar con Flutter.
+  if (message == kAudioDeviceChangedMessage && audio_device_channel_) {
+    audio_device_channel_->InvokeMethod(
+        "defaultDeviceChanged", std::make_unique<flutter::EncodableValue>());
+    return 0;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.
