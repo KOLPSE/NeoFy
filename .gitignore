@@ -15,8 +15,8 @@ windows/flutter/generated_plugins.cmake
 # --- Sidecars ---------------------------------------------------------------
 # Los binarios y sus árboles de compilación no van al repositorio: librespot
 # ocupa 12 MB y el `target/` de Rust más de 3 GB. Se compilan con
-# tool\build_librespot.ps1 y se distribuyen ya montados en el instalador de
-# GitHub Releases.
+# tool\build_librespot.ps1 (Windows) o tool/build_sidecars.sh (Linux) y se
+# distribuyen ya montados en los artefactos de GitHub Releases.
 tool/librespot-build/
 tool/metadata-sidecar/target/
 *.exe

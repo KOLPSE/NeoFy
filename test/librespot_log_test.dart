@@ -12,6 +12,12 @@ void main() {
       '[2026-08-07T10:12:00Z ERROR librespot_playback::player] Audio Sink Error '
           'Write: NoDevice',
       'ERROR cpal: the requested output device is no longer available',
+      // Los backends de Linux. En Arch se usa el de PulseAudio, que PipeWire
+      // expone por su shim; sus errores llegan firmados con ese nombre.
+      '[2026-08-07T10:12:00Z ERROR librespot_playback::audio_backend::pulseaudio] '
+          'PulseAudio failed to write: ConnectionTerminated',
+      '[2026-08-07T10:12:00Z ERROR librespot_playback::audio_backend::alsa] '
+          'Alsa error PCM write failed',
     ];
     for (final linea in lineas) {
       test(linea.substring(0, 40), () => expect(esFalloDeAudio(linea), isTrue));

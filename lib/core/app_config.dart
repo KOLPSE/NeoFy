@@ -86,18 +86,54 @@ const String kScopeLibraryRead = 'user-library-read';
 const String kScopeTopRead = 'user-top-read';
 const String kScopeRecentlyPlayed = 'user-read-recently-played';
 
-/// `%APPDATA%\neofy`, creado si no existe.
+/// Dónde viven los datos que **no se pueden perder**: `config.json`, el refresh
+/// token y las credenciales de librespot.
+///
+/// - Windows: `%APPDATA%\neofy`.
+/// - Linux: `$XDG_CONFIG_HOME/neofy`, o `~/.config/neofy` si no está definida.
 ///
 /// Se lee del entorno en vez de usar `path_provider` para ahorrarnos un plugin
-/// nativo entero — en Windows `APPDATA` siempre está definido.
+/// nativo entero — en Windows `APPDATA` siempre está definido, y en Linux la
+/// especificación XDG obliga a que `HOME` lo esté.
 Directory appDataDir() {
-  final base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
-  final dir = Directory(p.join(base, 'neofy'));
+  final base = Platform.isWindows
+      ? Platform.environment['APPDATA']
+      : _xdg('XDG_CONFIG_HOME', '.config');
+  final dir = Directory(p.join(base ?? Directory.systemTemp.path, 'neofy'));
   if (!dir.existsSync()) {
-    _migrarDesdeElNombreViejo(base, dir);
+    _migrarDesdeElNombreViejo(dir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
   }
   return dir;
+}
+
+/// Dónde va lo que se puede tirar sin consecuencias: las carátulas y la caché
+/// de audio de librespot.
+///
+/// - Windows: la misma carpeta que [appDataDir], **a propósito**. Separarlas
+///   obligaría a migrar la caché de quien ya tiene la app instalada, y a cambio
+///   de nada: Windows no distingue entre datos y caché.
+/// - Linux: `$XDG_CACHE_HOME/neofy`, o `~/.cache/neofy`. Ahí sí importa —
+///   meter cientos de megas de carátulas en `~/.config` está mal, y hay
+///   herramientas que dan por hecho que `~/.cache` se puede borrar entero.
+Directory cacheDir() {
+  if (Platform.isWindows) return appDataDir();
+  final base = _xdg('XDG_CACHE_HOME', '.cache') ?? Directory.systemTemp.path;
+  final dir = Directory(p.join(base, 'neofy'));
+  if (!dir.existsSync()) dir.createSync(recursive: true);
+  return dir;
+}
+
+/// Una ruta base de XDG: la variable si está definida y es absoluta, y si no el
+/// respaldo bajo `$HOME`.
+///
+/// La especificación es explícita en que un valor relativo hay que ignorarlo,
+/// no interpretarlo desde el directorio actual.
+String? _xdg(String variable, String respaldo) {
+  final valor = Platform.environment[variable];
+  if (valor != null && valor.isNotEmpty && p.isAbsolute(valor)) return valor;
+  final home = Platform.environment['HOME'];
+  return home == null || home.isEmpty ? null : p.join(home, respaldo);
 }
 
 /// La app se llamaba "spotify-native" y sus datos vivían en otra carpeta.
@@ -106,9 +142,13 @@ Directory appDataDir() {
 /// carátulas: perderlos significaría **dos logins otra vez** por un simple
 /// cambio de nombre. Se mueve la carpeta entera la primera vez y no se vuelve a
 /// tocar el asunto.
-void _migrarDesdeElNombreViejo(String base, Directory nueva) {
+///
+/// Solo aplica a Windows: es historia de una instalación que en Linux no ha
+/// existido nunca, porque el port es posterior al cambio de nombre.
+void _migrarDesdeElNombreViejo(Directory nueva) {
+  if (!Platform.isWindows) return;
   try {
-    final vieja = Directory(p.join(base, 'spotify-native'));
+    final vieja = Directory(p.join(nueva.parent.path, 'spotify-native'));
     if (!vieja.existsSync()) return;
     vieja.renameSync(nueva.path);
   } catch (_) {
@@ -117,7 +157,7 @@ void _migrarDesdeElNombreViejo(String base, Directory nueva) {
   }
 }
 
-/// Preferencias persistidas en `%APPDATA%\neofy\config.json`.
+/// Preferencias persistidas en `config.json`, dentro de [appDataDir].
 class AppConfig {
   String clientId;
   int initialVolume;

@@ -16,8 +16,11 @@ import 'app_config.dart';
 class ArtCache {
   static const int _maxBytes = 50 * 1024 * 1024;
 
+  /// Cuelga de [cacheDir] y no de `appDataDir`: son 50 MB de imágenes que se
+  /// pueden borrar sin perder nada (se vuelven a bajar), así que en Linux van a
+  /// `~/.cache` y no a `~/.config`. En Windows las dos rutas son la misma.
   static Directory get _dir {
-    final d = Directory(p.join(appDataDir().path, 'art'));
+    final d = Directory(p.join(cacheDir().path, 'art'));
     if (!d.existsSync()) d.createSync(recursive: true);
     return d;
   }

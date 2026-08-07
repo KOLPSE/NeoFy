@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_config.dart';
+import 'procesos.dart';
 
 enum LibrespotStatus { stopped, starting, running, failed }
 
@@ -28,6 +29,11 @@ bool esFalloDeAudio(String linea) {
       l.contains('audiosink') ||
       l.contains('rodio') ||
       l.contains('cpal') ||
+      // Los backends de Linux. `pulseaudio` es el que usamos allí; `alsa`
+      // aparece igualmente porque PulseAudio se apoya en él por debajo y sus
+      // errores suben al log con ese nombre.
+      l.contains('pulseaudio') ||
+      l.contains('alsa') ||
       l.contains('audio backend') ||
       l.contains('output device');
 }
@@ -69,7 +75,9 @@ class LibrespotManager extends ChangeNotifier {
   /// reinicio del sidecar, así que hay que preguntarlo, no guardarlo.
   int? get pid => _proc?.pid;
 
-  Directory get _cacheDir {
+  /// Donde librespot deja `credentials.json`. Cuelga de [appDataDir] y no de la
+  /// caché: perderlo obliga a repetir el login del navegador.
+  Directory get _credencialesDir {
     final d = Directory(p.join(appDataDir().path, 'librespot'));
     if (!d.existsSync()) d.createSync(recursive: true);
     return d;
@@ -78,28 +86,25 @@ class LibrespotManager extends ChangeNotifier {
   /// librespot guarda aquí el blob de sesión tras el login OAuth. Si existe,
   /// no hace falta volver a pasar por el navegador.
   bool get hasCredentials =>
-      File(p.join(_cacheDir.path, 'credentials.json')).existsSync();
+      File(p.join(_credencialesDir.path, 'credentials.json')).existsSync();
 
   /// Busca el binario junto al ejecutable (release) y, si no, en el árbol de
   /// desarrollo. Mismo patrón que usa NeoDrive para el icono de bandeja.
+  ///
+  /// Junto al ejecutable es donde lo dejan las dos cadenas de empaquetado: el
+  /// `install(PROGRAMS ...)` de CMake en Windows y el mismo en Linux, que en un
+  /// paquete del AUR acaba en `/opt/neofy`.
   static File? findBinary() {
+    final nombre = 'librespot$sufijoEjecutable';
     final candidates = <String>[
-      p.join(p.dirname(Platform.resolvedExecutable), 'librespot.exe'),
-      p.join(Directory.current.path, 'tool', 'librespot-build', 'bin', 'librespot.exe'),
+      p.join(p.dirname(Platform.resolvedExecutable), nombre),
+      p.join(Directory.current.path, 'tool', 'librespot-build', 'bin', nombre),
     ];
     for (final c in candidates) {
       final f = File(c);
       if (f.existsSync()) return f;
     }
     return null;
-  }
-
-  Future<void> _killOrphans() async {
-    try {
-      await Process.run('taskkill', ['/F', '/IM', 'librespot.exe']);
-    } catch (_) {
-      // Si no hay ninguno que matar, taskkill devuelve error: da igual.
-    }
   }
 
   void _setStatus(LibrespotStatus s, {String? error}) {
@@ -116,7 +121,9 @@ class LibrespotManager extends ChangeNotifier {
     final bin = findBinary();
     if (bin == null) {
       _setStatus(LibrespotStatus.failed,
-          error: 'No se encuentra librespot.exe. Ejecuta tool\\build_librespot.ps1.');
+          error: Platform.isWindows
+              ? 'No se encuentra librespot.exe. Ejecuta tool\\build_librespot.ps1.'
+              : 'No se encuentra librespot. Ejecuta tool/build_sidecars.sh.');
       return;
     }
 
@@ -126,17 +133,23 @@ class LibrespotManager extends ChangeNotifier {
     // de golpe (cuelgue, kill, corte de luz), su librespot sobrevive y se queda
     // sonando sin ventana que lo controle, además de ocupar el nombre del
     // dispositivo en Spotify Connect. El cierre ordenado ya lo mata; esto cubre
-    // el que no lo fue. Es seguro: la app es de instancia única, así que ningún
-    // librespot vivo en este punto es nuestro.
-    await _killOrphans();
+    // el que no lo fue. Ver `procesos.dart`: cada plataforma lo hace de una
+    // forma, y en Linux **no** vale barrer por nombre.
+    await matarHuerfano('librespot', bin);
 
     final args = <String>[
       '--name', kDeviceName,
       '--device-type', 'computer',
       '--bitrate', '${config.bitrate}',
-      '--backend', 'rodio',
-      '--system-cache', _cacheDir.path,
-      '--cache', p.join(_cacheDir.path, 'audio'),
+      // En Windows, rodio (que va por cpal). En Linux, PulseAudio: PipeWire lo
+      // expone por su shim y **mueve el flujo solo** cuando cambia el altavoz,
+      // que es justo el fallo que en Windows hay que vigilar a mano con un
+      // IMMNotificationClient. Ver "El audio que se queda mudo".
+      '--backend', Platform.isWindows ? 'rodio' : 'pulseaudio',
+      '--system-cache', _credencialesDir.path,
+      // La caché de audio son megas que se pueden tirar: va a la carpeta de
+      // caché, que en Linux no es la misma que la de configuración.
+      '--cache', p.join(cacheDir().path, 'audio'),
       // Sin tope, la caché de audio crece indefinidamente.
       '--cache-size-limit', '1G',
       '--initial-volume', '${config.initialVolume}',
@@ -153,6 +166,8 @@ class LibrespotManager extends ChangeNotifier {
       final proc = await Process.start(bin.path, args);
       _proc = proc;
       _startedAt = DateTime.now();
+      // Anotado para poder barrerlo si la app muere sin llegar a matarlo.
+      anotarPid('librespot', proc.pid);
 
       proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
       proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
@@ -246,6 +261,9 @@ class LibrespotManager extends ChangeNotifier {
         proc.kill(ProcessSignal.sigkill);
         return -1;
       });
+      // Cierre ordenado: la anotación ya no sirve, y dejarla haría que el
+      // siguiente arranque fuera a buscar un pid que puede haberse reciclado.
+      olvidarPid('librespot');
     }
     _setStatus(LibrespotStatus.stopped);
   }

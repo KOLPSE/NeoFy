@@ -20,7 +20,7 @@ void main() {
   // para que no haga falta red: `flutter test` la tiene mockeada a 400.
   const url = 'https://ejemplo.invalido/neofy-test/portada.png';
   final fichero = File(p.join(
-      appDataDir().path, 'art', '${sha1.convert(url.codeUnits)}.img'));
+      cacheDir().path, 'art', '${sha1.convert(url.codeUnits)}.img'));
 
   setUp(() {
     fichero.parent.createSync(recursive: true);
