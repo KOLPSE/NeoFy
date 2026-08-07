@@ -135,6 +135,11 @@ montar_raiz "$tmp/rpm"
 # del bundle y generaria Requires de las propias librerias que el paquete trae
 # dentro (libflutter_linux_gtk.so y las de los plugins), que no existen como
 # paquete en ninguna distribucion: el rpm quedaria imposible de instalar.
+#
+# ⚠️ Dentro del %install NO valen rutas relativas. El scriptlet no corre en la
+# raiz del proyecto sino en el directorio de trabajo de rpmbuild, asi que un
+# "dist/NeoFy-.../LICENSE" resuelve contra otro sitio y falla con un
+# "cannot stat" que no menciona el directorio por ningun lado. De ahi el $raiz.
 cat > "$rpmroot/SPECS/neofy.spec" <<EOF
 # rpmbuild pasa por defecto un strip a todo binario que encuentra. Aqui sobra y
 # ademas es arriesgado: la libreria AOT que genera Flutter no gana nada con ello
@@ -162,7 +167,7 @@ pide la primera vez que se abre.
 %install
 mkdir -p %{buildroot}
 cp -a $tmp/rpm/. %{buildroot}/
-install -Dm644 $arbol/LICENSE %{buildroot}/usr/share/licenses/neofy/LICENSE
+install -Dm644 $raiz/$arbol/LICENSE %{buildroot}/usr/share/licenses/neofy/LICENSE
 
 %post
 update-desktop-database -q /usr/share/applications 2>/dev/null || :
