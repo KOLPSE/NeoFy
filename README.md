@@ -121,11 +121,22 @@ powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1   # + Inno Set
 ```
 
 ```bash
-# Linux
-./tool/build_sidecars.sh        # sidecars, 1ª vez (Rust, pkg-config, libpulse, openssl)
+# Linux — dependencias de compilación (Arch)
+sudo pacman -S --needed base-devel clang cmake ninja pkgconf \
+                        gtk3 libayatana-appindicator libpulse openssl rust
+# En Debian/Ubuntu son los mismos con sufijo -dev:
+#   clang cmake ninja-build pkg-config libgtk-3-dev
+#   libayatana-appindicator3-dev libpulse-dev libssl-dev
+
+./tool/build_sidecars.sh        # sidecars, 1ª vez (tarda un rato)
 flutter build linux --release
 ./tool/build_linux_bundle.sh    # deja dist/NeoFy-x.y.z-linux-x86_64.tar.gz
+./tool/build_linux_packages.sh  # y los instaladores .deb y .rpm
 ```
+
+> `libayatana-appindicator` hace falta **al compilar**, no solo al ejecutar: el plugin de la
+> bandeja lo busca con `pkg-config` y sin él `flutter build linux` no llega ni a generar los
+> ficheros de build.
 
 ```bash
 flutter analyze
