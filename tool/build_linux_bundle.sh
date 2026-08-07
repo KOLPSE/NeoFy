@@ -57,8 +57,12 @@ cp -r "$bundle" "dist/$nombre"
 # --owner/--group a root: el tarball lo desempaqueta makepkg y no tiene por que
 # arrastrar el usuario con el que se compilo.
 tar -czf "dist/$nombre.tar.gz" -C dist --owner=0 --group=0 "$nombre"
-rm -rf "dist/$nombre"
+
+# La carpeta se deja a proposito: tool/build_linux_packages.sh la reutiliza para
+# montar el .deb y el .rpm, y asi los tres artefactos salen exactamente del mismo
+# arbol de ficheros en vez de armarlo cada uno por su cuenta.
 
 echo
 echo "Listo: dist/$nombre.tar.gz ($(du -h "dist/$nombre.tar.gz" | cut -f1))"
 echo "sha256: $(sha256sum "dist/$nombre.tar.gz" | cut -d' ' -f1)"
+echo "Arbol en dist/$nombre/ (lo usa build_linux_packages.sh)"

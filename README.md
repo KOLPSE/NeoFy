@@ -55,19 +55,24 @@ use la API de Spotify controla NeoFy sin plugin ninguno**.
 Descarga el instalador de la sección [Releases](../../releases). Trae los tres binarios
 dentro (interfaz, audio y metadatos), no pide permisos de administrador y ocupa 14 MB.
 
-### Arch Linux
+### Linux
 
-```bash
-yay -S neofy-bin
-```
+Cada release trae un instalador nativo por familia de distribución. Los tres instalan lo
+mismo: el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el comando
+`neofy` en el `PATH`.
 
-En GNOME hace falta además la extensión de AppIndicator para que aparezca el icono de la
-bandeja; sin ella la app funciona igual, pero el botón de cerrar cierra en vez de esconderse.
+| Distribución | Cómo |
+|---|---|
+| **Arch**, Manjaro, EndeavourOS | `yay -S neofy-bin` |
+| **Debian**, Ubuntu, Mint, Pop!_OS | `sudo apt install ./neofy_x.y.z_amd64.deb` |
+| **Fedora**, RHEL | `sudo dnf install ./neofy-x.y.z-1.x86_64.rpm` |
+| **openSUSE** | `sudo zypper install ./neofy-x.y.z-1.x86_64.rpm` |
 
-### Otras distribuciones
+Los `.deb` y `.rpm` se descargan de [Releases](../../releases); el de Arch se compila solo.
 
-En [Releases](../../releases) hay un `NeoFy-x.y.z-linux-x86_64.tar.gz` con todo dentro.
-Necesita `gtk3`, `libayatana-appindicator`, `libpulse` y `openssl`.
+> **En GNOME** hace falta además la extensión de AppIndicator para que aparezca el icono de
+> la bandeja. Sin ella NeoFy funciona igual, pero el botón de cerrar cierra del todo en vez
+> de esconderse — que es justo lo que debe hacer si no hay bandeja a la que volver.
 
 ### Configuración inicial (una sola vez)
 

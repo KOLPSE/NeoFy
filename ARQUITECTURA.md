@@ -612,15 +612,43 @@ queremos en un paquete `-bin`. (El sidecar de metadatos sí arrastra OpenSSL, po
 `librespot-core` trae `native-tls` en sus features por defecto; por eso el PKGBUILD lleva
 `openssl` en `depends`.)
 
-El tarball **no se compila en local**: lo genera `.github/workflows/linux.yml` sobre
+Nada de esto **se compila en local**: lo genera `.github/workflows/linux.yml` sobre
 **ubuntu-latest a propósito**, porque su glibc es más antigua que la de Arch y un binario
 compilado contra una glibc vieja corre en una nueva, nunca al revés. Tiene dos disparadores:
-`workflow_dispatch` deja el tarball como artefacto descargable —así alguien puede probar en
-Arch sin instalar Flutter ni Rust— y `release: published` lo sube a la release.
+`workflow_dispatch` deja los artefactos descargables —así alguien puede probar sin instalar
+Flutter ni Rust— y `release: published` los sube a la release.
 
 ⚠️ **El disparador es `release: published` y no `push: tags`.** `release.ps1` sube la etiqueta
 *antes* de crear la release, así que un workflow colgado del tag arrancaría cuando la release
 todavía no existe y la subida fallaría.
+
+### Qué lleva cada release
+
+Un instalador por plataforma, y los tres instalan **exactamente el mismo árbol de ficheros**
+(`/opt/neofy` entero, enlace en `/usr/bin`, `.desktop` e iconos hicolor):
+
+| Fichero | Quién lo hace | Para quién |
+|---|---|---|
+| `NeoFy-x.y.z-windows-x64.exe` | `release.ps1` → Inno Setup | Windows |
+| `neofy_x.y.z_amd64.deb` | `build_linux_packages.sh` → `dpkg-deb` | Debian, Ubuntu |
+| `neofy-x.y.z-1.x86_64.rpm` | `build_linux_packages.sh` → `rpmbuild` | Fedora, openSUSE |
+| `NeoFy-x.y.z-linux-x86_64.tar.gz` | `build_linux_bundle.sh` | **No es una descarga**: es lo que se baja el PKGBUILD del AUR |
+
+El bundle de Flutter **no se puede repartir por `/usr`**: el ejecutable busca `data/` y `lib/`
+a su lado, de ahí que todo vaya a `/opt/neofy` con un enlace en `/usr/bin`. El enlace es
+seguro porque Dart resuelve `Platform.resolvedExecutable` al destino real, así que
+`findBinary()` sigue encontrando los sidecars.
+
+Dos detalles del `.rpm` que costaría descubrir a base de intentos: **`AutoReqProv` va
+desactivado**, porque si no `rpmbuild` lee los ELF del bundle y genera `Requires` de las
+librerías que el propio paquete trae dentro (`libflutter_linux_gtk.so` y las de los plugins),
+que no existen como paquete en ninguna distribución y dejarían el rpm imposible de instalar; y
+**se anula `__os_install_post`** para que no pase un `strip` a unos binarios que ya vienen
+compilados.
+
+Los nombres de las dependencias no se parecen entre familias y hay que darlos a mano en cada
+formato: `gtk3` en Arch y Fedora es `libgtk-3-0` en Debian, `libpulse` es `libpulse0` allí y
+`pulseaudio-libs` en Fedora.
 
 `linux/packaging/PRUEBAS.md` tiene la lista de comprobación manual: el audio, la bandeja y
 MPRIS no los cubre ningún test y no se pueden validar desde Windows.

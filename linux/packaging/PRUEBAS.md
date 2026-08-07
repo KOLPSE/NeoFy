@@ -8,14 +8,19 @@ cada punto un ✅ o qué pasó exactamente, sobra.
 ## De dónde sacar el binario
 
 No hace falta instalar Flutter ni Rust. En la pestaña **Actions** del
-repositorio, workflow **Linux** → *Run workflow*; al terminar deja un
-`NeoFy-<version>-linux-x86_64.tar.gz` descargable como artefacto.
+repositorio, workflow **Linux** → *Run workflow*; al terminar deja un artefacto
+`neofy-linux` con el `.deb`, el `.rpm` y el tarball.
+
+Para las pruebas de los puntos 1 a 9 conviene usar **el tarball**, que se ejecuta
+sin instalar nada y se puede borrar de un tirón:
 
 ```bash
 tar -xzf NeoFy-*-linux-x86_64.tar.gz
 cd NeoFy-*-linux-x86_64
 ./neofy
 ```
+
+El `.deb` y el `.rpm` son para el punto 10.
 
 Dependencias que tienen que estar (las declara el PKGBUILD, pero para probar el
 tarball suelto conviene comprobarlas):
@@ -124,17 +129,31 @@ Esto va por MPRIS, que sustituye al `RegisterHotKey` de Windows.
 
 ## 10. El paquete
 
+En Arch, con el PKGBUILD de este directorio en una carpeta vacía:
+
 ```bash
-# Con el PKGBUILD de este directorio, en una carpeta vacía:
 makepkg -si
 ```
 
-- [ ] ¿Instala sin quejarse?
+Si además puedes probar en Debian/Ubuntu o Fedora, los instaladores están en la
+misma release (o como artefacto del workflow):
+
+```bash
+sudo apt install ./neofy_*_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./neofy-*.x86_64.rpm     # Fedora
+```
+
+- [ ] ¿Instala sin quejarse? ¿Se resolvieron todas las dependencias solas?
+- [ ] `which neofy` → `/usr/bin/neofy`, y lanzarlo desde ahí abre la app.
 - [ ] ¿Sale NeoFy en el menú de aplicaciones, **con su icono** y no con uno
-      genérico?
+      genérico? (Si no aparece, cierra sesión y vuelve a entrar antes de darlo
+      por malo: las cachés del escritorio a veces tardan.)
 - [ ] Ánclalo a la barra de tareas y ábrelo: ¿la ventana se asocia al lanzador
       (mismo icono, no una entrada duplicada)?
-- [ ] `sudo pacman -Rns neofy-bin` → ¿desinstala limpio?
+- [ ] **La música tiene que sonar instalado igual que suelto.** Es el punto que
+      pilla si los sidecars no llegaron a `/opt/neofy`.
+- [ ] Desinstala: `sudo pacman -Rns neofy-bin`, `sudo apt remove neofy` o
+      `sudo dnf remove neofy`. ¿Limpio, sin ficheros huérfanos en `/opt/neofy`?
 - [ ] Tras desinstalar, `~/.config/neofy` **debe seguir ahí**: los tokens no se
       borran, para que reinstalar no obligue a loguearse otra vez.
 

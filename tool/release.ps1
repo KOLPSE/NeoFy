@@ -143,3 +143,11 @@ $r = Invoke-WebRequest -Method Head -Uri $asset.browser_download_url -UseBasicPa
 Write-Host "  descarga pública: HTTP $($r.StatusCode)"
 Write-Host "`nPublicada NeoFy $version" -ForegroundColor Green
 Write-Host 'Quien tenga una versión anterior la verá en Ajustes.'
+Write-Host ''
+Write-Host 'Los instaladores de Linux (.deb y .rpm) los añade GitHub Actions a esta misma' -ForegroundColor Yellow
+Write-Host 'release y tardan unos veinte minutos: el workflow "Linux" se dispara solo al' -ForegroundColor Yellow
+Write-Host 'publicarla. La release queda incompleta hasta que termine.' -ForegroundColor Yellow
+Write-Host ''
+Write-Host 'Cuando acabe, para actualizar el AUR: coge el sha256 del tarball que imprime el'
+Write-Host 'workflow, ponlo en linux/packaging/PKGBUILD junto con el pkgver y sube el'
+Write-Host 'PKGBUILD y su .SRCINFO al repositorio de neofy-bin.'
