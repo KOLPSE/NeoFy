@@ -7,6 +7,7 @@ import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import 'art_image.dart';
+import 'tira_horizontal.dart';
 import 'track_tile.dart';
 
 /// Portada: lo último que has escuchado y lo que más pones.
@@ -87,14 +88,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             if (home.recientes.isNotEmpty) ...[
               _Titulo('Vuelve a escuchar', theme),
-              _TirasDeCanciones(
+              TiraDeCanciones(
                 tracks: home.recientes,
                 onPlay: (t) => widget.player.playTrack(t.uri),
               ),
             ],
             if (home.artistas.isNotEmpty) ...[
               _Titulo('Tus artistas', theme),
-              _TiraDeArtistas(
+              TiraDeArtistas(
                 artistas: home.artistas,
                 // El contexto de un artista pone sus canciones más populares.
                 onPlay: (a) => widget.player.playContext(a.uri),
@@ -210,11 +211,36 @@ class _Titulo extends StatelessWidget {
       );
 }
 
+/// Hueco entre la carátula y el texto, y margen de la tarjeta.
+const double _huecoTarjeta = 6;
+const double _margenTarjeta = 4;
+
+/// Alto que hay que reservar para una tarjeta de [lado] píxeles con [lineas]
+/// líneas de texto debajo.
+///
+/// Estaba a ojo (`lado + 46` y `lado + 28`) y **la tira de artistas se pasaba
+/// por dos píxeles**: el nombre salía recortado por abajo. Calcularlo del
+/// estilo real, con la escala de texto del sistema aplicada, es lo único que
+/// aguanta un Windows al 125 % sin volver a recortar nada.
+double _altoDeTarjeta(
+  BuildContext context,
+  TextStyle estilo, {
+  required double lado,
+  required int lineas,
+}) {
+  final tamano = MediaQuery.textScalerOf(context).scale(estilo.fontSize ?? 14);
+  final altoDeLinea = tamano * (estilo.height ?? 1.4);
+  return _margenTarjeta * 2 +
+      lado +
+      _huecoTarjeta +
+      (altoDeLinea * lineas).ceilToDouble();
+}
+
 /// Tira horizontal de carátulas. Se pide la variante de 300 px de Spotify (no
 /// la de 640) porque la tarjeta mide 128: es la regla de siempre, y la que
 /// mantiene la memoria plana.
-class _TirasDeCanciones extends StatelessWidget {
-  const _TirasDeCanciones({required this.tracks, required this.onPlay});
+class TiraDeCanciones extends StatelessWidget {
+  const TiraDeCanciones({super.key, required this.tracks, required this.onPlay});
 
   static const double _ladoTarjeta = 128;
 
@@ -224,56 +250,53 @@ class _TirasDeCanciones extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SizedBox(
-      // Carátula + dos líneas de texto.
-      height: _ladoTarjeta + 46,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: tracks.length,
-        itemBuilder: (context, i) {
-          final t = tracks[i];
-          return InkWell(
-            onTap: () => onPlay(t),
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: SizedBox(
-                width: _ladoTarjeta,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ArtImage(
-                      url: t.artSmall,
-                      urlGrande: t.artMedium,
-                      size: _ladoTarjeta,
-                      radius: 6,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(t.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                    Text(t.artists,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  ],
-                ),
+    final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+    return TiraHorizontal(
+      // Carátula + dos líneas de texto (título y artistas).
+      alto: _altoDeTarjeta(context, estilo, lado: _ladoTarjeta, lineas: 2),
+      centroDeFlechas: _margenTarjeta + _ladoTarjeta / 2,
+      itemCount: tracks.length,
+      itemBuilder: (context, i) {
+        final t = tracks[i];
+        return InkWell(
+          onTap: () => onPlay(t),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.all(_margenTarjeta),
+            child: SizedBox(
+              width: _ladoTarjeta,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ArtImage(
+                    url: t.artSmall,
+                    urlGrande: t.artMedium,
+                    size: _ladoTarjeta,
+                    radius: 6,
+                  ),
+                  const SizedBox(height: _huecoTarjeta),
+                  Text(t.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: estilo.copyWith(fontWeight: FontWeight.w600)),
+                  Text(t.artists,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: estilo.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                ],
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _TiraDeArtistas extends StatelessWidget {
-  const _TiraDeArtistas({required this.artistas, required this.onPlay});
+class TiraDeArtistas extends StatelessWidget {
+  const TiraDeArtistas({super.key, required this.artistas, required this.onPlay});
 
   static const double _lado = 108;
 
@@ -283,39 +306,37 @@ class _TiraDeArtistas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SizedBox(
-      height: _lado + 28,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: artistas.length,
-        itemBuilder: (context, i) {
-          final a = artistas[i];
-          return InkWell(
-            onTap: () => onPlay(a),
-            borderRadius: BorderRadius.circular(_lado),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: SizedBox(
-                width: _lado,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Radio la mitad del lado = círculo.
-                    ArtImage(url: a.art, size: _lado, radius: _lado / 2),
-                    const SizedBox(height: 6),
-                    Text(a.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall),
-                  ],
-                ),
+    final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+    return TiraHorizontal(
+      alto: _altoDeTarjeta(context, estilo, lado: _lado, lineas: 1),
+      centroDeFlechas: _margenTarjeta + _lado / 2,
+      itemCount: artistas.length,
+      itemBuilder: (context, i) {
+        final a = artistas[i];
+        return InkWell(
+          onTap: () => onPlay(a),
+          borderRadius: BorderRadius.circular(_lado),
+          child: Padding(
+            padding: const EdgeInsets.all(_margenTarjeta),
+            child: SizedBox(
+              width: _lado,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Radio la mitad del lado = círculo.
+                  ArtImage(url: a.art, size: _lado, radius: _lado / 2),
+                  const SizedBox(height: _huecoTarjeta),
+                  Text(a.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: estilo),
+                ],
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
