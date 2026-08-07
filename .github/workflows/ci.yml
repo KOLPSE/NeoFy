@@ -1,0 +1,54 @@
+# Comprobación automática en cada push y cada pull request.
+#
+# Solo `analyze` y los tests. **No compila el instalador a propósito**: eso
+# necesita compilar los dos sidecars de Rust (el `target/` pasa de 3 GB) e Inno
+# Setup, y tardaría más de veinte minutos para algo que solo hace falta al
+# publicar una versión. Las releases se generan en local con `tool\release.ps1`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Si llegan varios push seguidos, solo interesa el último.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  comprobar:
+    # Windows y no Ubuntu: la app es de escritorio Windows y hay tests que
+    # tocan disco de verdad (la caché de carátulas) y rutas de %APPDATA%.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+
+      # El Client ID va vacío en el repositorio a propósito. Si alguien lo
+      # rellenara sin querer antes de un commit, se publicaría al mundo: mejor
+      # que salte aquí que descubrirlo después.
+      - name: Que no se cuele ningún Client ID
+        shell: pwsh
+        run: |
+          $fuente = Get-Content lib/core/app_config.dart -Raw
+          if ($fuente -notmatch "kDefaultClientId\s*=\s*''") {
+            Write-Error "kDefaultClientId no está vacío: no publiques un Client ID."
+            exit 1
+          }
+          Write-Host "kDefaultClientId vacío, correcto."

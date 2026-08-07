@@ -108,6 +108,54 @@ que importan:
 El instalador conserva `%APPDATA%\neofy` entera, así que actualizar **no** hace perder la
 sesión ni los ajustes.
 
+## Publicar una versión
+
+Todo el ciclo está en `tool\release.ps1`; no hay que tocar la API de GitHub a mano.
+
+```powershell
+# 1. Subir la versión en el UNICO sitio donde vive
+#    lib/core/app_config.dart  ->  const String kVersion = '0.1.2';
+
+# 2. Confirmar y subir ese cambio (el script exige un árbol limpio)
+git commit -am "0.1.2: ..."
+git push
+
+# 3. Publicar
+powershell -ExecutionPolicy Bypass -File tool\release.ps1 -Notas notas.md
+powershell -ExecutionPolicy Bypass -File tool\release.ps1 -Ensayo   # sin publicar
+```
+
+El script se niega a seguir si algo no cuadra, y cada negativa tiene su motivo:
+
+- **Árbol sucio** → lo que se etiqueta tiene que ser exactamente lo que se compila.
+- **No estás en `main`, o `main` no coincide con `origin/main`** → la etiqueta apuntaría a un
+  commit que nadie más tiene.
+- **`analyze` o los tests en rojo** → una release rota se actualiza sola en los equipos de
+  todo el mundo; es el peor sitio donde meter la pata.
+- **La etiqueta ya existe** → reetiquetar una versión publicada rompe a quien ya la tenga,
+  porque el actualizador se fía del número y no del contenido.
+
+Después compila el instalador, crea la etiqueta, publica la release, sube el `.exe` y
+**comprueba que se descarga públicamente**. El token sale del gestor de credenciales de
+Windows (el mismo que usa `git push`) o de `$env:GITHUB_TOKEN`; no hay credenciales en el
+proyecto. Sin `-Notas`, las genera con los commits desde la etiqueta anterior.
+
+⚠️ **No subas la versión sin publicar.** Si `kVersion` avanza y no hay release, el
+actualizador de quien ya la tenga no ve nada nuevo — inofensivo — pero si publicas una
+release con una `kVersion` **anterior** a la que ya corre la gente, sus apps se ofrecerán
+"actualizar" hacia atrás en bucle.
+
+## Comprobación automática
+
+`.github/workflows/ci.yml` pasa `analyze` y los tests en cada push y cada pull request,
+sobre **windows-latest**: la app es de escritorio Windows y hay tests que tocan disco de
+verdad y rutas de `%APPDATA%`. Además falla si `kDefaultClientId` deja de estar vacío, para
+que un Client ID no acabe publicado por descuido.
+
+**El CI no compila el instalador a propósito**: haría falta compilar los dos sidecars de
+Rust (su `target/` pasa de 3 GB) e instalar Inno Setup, más de veinte minutos para algo que
+solo hace falta al publicar. Las releases salen de `tool\release.ps1` en local.
+
 ## El Client ID se pide, no se edita a mano
 
 Hay dos sitios donde ponerlo y los dos escriben el mismo `config.json`:
