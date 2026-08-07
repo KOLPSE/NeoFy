@@ -146,3 +146,105 @@ jobs:
             --clobber
           echo "sha256 para el PKGBUILD del AUR:"
           sha256sum dist/NeoFy-*-linux-x86_64.tar.gz
+
+  # Lo unico que ningun otro paso puede comprobar: que un binario compilado en
+  # Ubuntu funcione en Arch, y que el PKGBUILD monte el paquete de verdad.
+  #
+  # Es la apuesta central del empaquetado -bin (glibc vieja corre en glibc
+  # nueva, nunca al reves) y hasta ahora dependia de que alguien con Arch lo
+  # probara a mano. Aqui se responde en dos minutos y en cada vuelta.
+  arch:
+    needs: compilar
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Dependencias
+        # Exactamente las que declara el PKGBUILD. Que este paso funcione ya
+        # demuestra que los nombres existen en los repositorios de Arch, que es
+        # justo lo que no se puede verificar desde Debian.
+        run: |
+          pacman -Syu --noconfirm --needed \
+            gtk3 libayatana-appindicator libpulse openssl xdg-utils \
+            base-devel sudo
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: neofy-linux
+          path: dist
+
+      - name: Que los binarios resuelvan sus librerias en Arch
+        # El fallo que buscamos: una .so que exista en Ubuntu y no en Arch, o
+        # con otro soname. Se manifestaria como una app que no arranca y un
+        # mensaje del enlazador que no dice de quien es la culpa.
+        run: |
+          tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
+          cd NeoFy-*-linux-x86_64
+          fallo=0
+          for bin in neofy librespot metadata-sidecar; do
+            faltan="$(ldd "$bin" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$bin no encuentra:"; echo "$faltan"; fallo=1
+            else
+              echo "ok  $bin"
+            fi
+          done
+          # Y las librerias que el propio bundle trae dentro.
+          for so in lib/*.so; do
+            faltan="$(ldd "$so" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$so no encuentra:"; echo "$faltan"; fallo=1
+            fi
+          done
+          [ "$fallo" = 0 ] || exit 1
+          echo "Todos los binarios resuelven sus dependencias en Arch."
+
+      - name: Que el PKGBUILD y kVersion no se hayan desincronizado
+        # Si el pkgver se queda atras, el PKGBUILD se baja el tarball de una
+        # version anterior y publica en el AUR algo que no es lo que dice ser.
+        run: |
+          version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
+          pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
+          echo "kVersion=$version  pkgver=$pkgver"
+          [ "$version" = "$pkgver" ] || {
+            echo "::error::linux/packaging/PKGBUILD tiene pkgver=$pkgver pero kVersion es $version"
+            exit 1
+          }
+
+      - name: Montar el paquete con el PKGBUILD de verdad
+        run: |
+          useradd -m builder
+          mkdir -p /tmp/pkg
+          cp linux/packaging/PKGBUILD /tmp/pkg/
+          cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
+          # El PKGBUILD real se baja el tarball de la release; aqui se apunta al
+          # que acabamos de compilar, que es la unica forma de validarlo antes
+          # de que exista ninguna release. El package() no se toca, que es lo
+          # que de verdad se esta probando.
+          sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
+          chown -R builder /tmp/pkg
+          # makepkg se niega a correr como root, de ahi el usuario. --nodeps
+          # porque las dependencias ya estan puestas arriba.
+          sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
+          ls -la /tmp/pkg/*.pkg.tar.zst
+
+      - name: Instalarlo y comprobar donde queda todo
+        run: |
+          pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+          test -x /opt/neofy/neofy          || { echo "::error::falta /opt/neofy/neofy"; exit 1; }
+          test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
+          test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
+          test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
+          test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
+          test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "::error::falta el .desktop"; exit 1; }
+          test -f /usr/share/icons/hicolor/256x256/apps/neofy.png  || { echo "::error::falta el icono"; exit 1; }
+          # El enlace tiene que llevar al binario real: de eso depende que
+          # findBinary() encuentre los sidecars a su lado.
+          [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
+            echo "::error::el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
+          echo "Instalado correctamente."
+          pacman -R --noconfirm neofy-bin
+          test ! -e /opt/neofy || { echo "::error::quedan restos en /opt/neofy"; exit 1; }
+          echo "Y desinstala limpio."
