@@ -33,7 +33,28 @@ Paso "Compilando NeoFy"
 foreach ($n in @('neofy', 'librespot', 'metadata-sidecar')) {
   Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
 }
-& D:\dev\flutter\bin\flutter.bat build windows --release
+
+# Flutter sale del PATH, no de una ruta fija: cada uno lo tiene donde le cabe,
+# y una ruta absoluta aquí hace que el script solo funcione en un equipo.
+$flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source
+if (-not $flutter -and $env:FLUTTER_ROOT) {
+  $candidato = Join-Path $env:FLUTTER_ROOT 'bin\flutter.bat'
+  if (Test-Path $candidato) { $flutter = $candidato }
+}
+if (-not $flutter) {
+  # Sitios habituales, por si alguien no lo tiene en el PATH. Ninguna ruta
+  # personal: para eso está FLUTTER_ROOT.
+  foreach ($c in @('C:\src\flutter\bin\flutter.bat',
+                   'C:\flutter\bin\flutter.bat',
+                   "$env:LOCALAPPDATA\flutter\bin\flutter.bat")) {
+    if (Test-Path $c) { $flutter = $c; break }
+  }
+}
+if (-not $flutter) {
+  throw 'No encuentro Flutter. Añádelo al PATH o define FLUTTER_ROOT con la ' +
+        'carpeta donde lo tengas (la que contiene bin\flutter.bat).'
+}
+& $flutter build windows --release
 if ($LASTEXITCODE -ne 0) { throw "Falló la compilación de Flutter" }
 
 $release = "build\windows\x64\runner\Release"

@@ -129,9 +129,9 @@ Está comprobado instalando con un Client ID distinto y viendo que el resto sobr
 ## Comandos
 
 ```powershell
-D:\dev\flutter\bin\flutter analyze
-D:\dev\flutter\bin\flutter test
-D:\dev\flutter\bin\flutter build windows --release
+flutter analyze
+flutter test
+flutter build windows --release
 powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1   # solo la 1ª vez
 .\build\windows\x64\runner\Release\neofy.exe
 ```
