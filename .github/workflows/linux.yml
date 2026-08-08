@@ -259,6 +259,35 @@ jobs:
           sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
           ls -la /tmp/pkg/*.pkg.tar.zst
 
+      # El AUR exige un .SRCINFO junto al PKGBUILD, y solo lo puede generar
+      # makepkg — que no existe fuera de Arch. Se genera aqui, se enseña en el
+      # log para poder copiarlo, y si ya hay uno en el repositorio se comprueba
+      # que no se hayan desincronizado: un .SRCINFO viejo hace que el AUR anuncie
+      # una version distinta de la que el PKGBUILD instala.
+      - name: Generar y comprobar el .SRCINFO
+        run: |
+          install -dm755 /tmp/srcinfo
+          # Del PKGBUILD DE VERDAD, no de la copia parcheada del paso anterior:
+          # lo que se sube al AUR tiene que describir la descarga de la release,
+          # no el tarball local del CI.
+          cp linux/packaging/PKGBUILD /tmp/srcinfo/
+          chown -R builder /tmp/srcinfo
+          sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo' \
+            > /tmp/srcinfo/SRCINFO.generado
+          echo '----- .SRCINFO -----'
+          cat /tmp/srcinfo/SRCINFO.generado
+          echo '----- fin -----'
+          if [ -f linux/packaging/.SRCINFO ]; then
+            if diff -u linux/packaging/.SRCINFO /tmp/srcinfo/SRCINFO.generado; then
+              echo ".SRCINFO al dia."
+            else
+              echo "::error::linux/packaging/.SRCINFO no coincide con el PKGBUILD. Regeneralo con: makepkg --printsrcinfo > .SRCINFO"
+              exit 1
+            fi
+          else
+            echo "::warning::Todavia no hay linux/packaging/.SRCINFO en el repositorio."
+          fi
+
       - name: Instalarlo y comprobar donde queda todo
         run: |
           pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
