@@ -349,8 +349,13 @@ jobs:
           # repo-add deja neofy.db y neofy.files como enlaces simbolicos, y una
           # release de GitHub no guarda enlaces: se suben como ficheros reales,
           # que son ademas los nombres exactos que pide pacman.
-          cp -L neofy.db.tar.gz neofy.db
-          cp -L neofy.files.tar.gz neofy.files
+          #
+          # ⚠️ Hay que BORRAR el enlace antes de copiar. Con el enlace puesto,
+          # `cp neofy.db.tar.gz neofy.db` resuelve origen y destino al mismo
+          # fichero y falla con "are the same file".
+          rm -f neofy.db neofy.files
+          cp neofy.db.tar.gz neofy.db
+          cp neofy.files.tar.gz neofy.files
 
           # ⚠️ --latest=false NO es opcional. Si esta release quedara marcada
           # como la ultima, `releases/latest` devolveria la etiqueta "repo" y el
