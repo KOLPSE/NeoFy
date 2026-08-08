@@ -584,6 +584,16 @@ usuario, que solo podía matarla desde un monitor de sistema. Ahora se guarda si
 llegó a montarse y, si no, **la X cierra de verdad**. MPRIS compensa: aunque no haya icono, el
 widget del escritorio sigue controlando la reproducción.
 
+⚠️ **El plugin de `tray_manager` implementa muy poco en Linux**: solo `setIcon`,
+`setContextMenu`, `setTitle` y `destroy`. `setToolTip` y `popUpContextMenu` **no existen allí**
+y lanzan. Eso costó un fallo que parecía otra cosa completamente: `_setupTray()` llamaba a
+`setToolTip` justo después del icono, la excepción se la comía el `catch`, `_bandejaDisponible`
+se quedaba en `false` y **la X cerraba la app entera** — aunque el icono se viera
+perfectamente, porque `setIcon` ya había pasado. Desde fuera parecía que la app se mataba
+sola al cerrarla. Por eso ahora **la bandeja se da por buena en cuanto están el icono y su
+menú**, y los adornos van después, fuera de ese `try`: algo que no existe en una plataforma no
+puede decidir si hay bandeja en ella.
+
 El icono de bandeja es `.png` en Linux y `.ico` en Windows — un `.ico` allí no lo pinta ni GTK
 ni el indicador. Los dos salen del mismo dibujo: `tray.ico` ya traía los siete tamaños como PNG
 dentro, así que el árbol hicolor de `linux/packaging/icons/` se extrajo de ahí sin reescalar

@@ -424,13 +424,35 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     // NeoDrive, donde esto ya dio problemas en Linux.
     try {
       final icon = _trayIconPath();
-      if (icon == null) return;
+      if (icon == null) {
+        debugPrint('Bandeja: no se encuentra el icono; la X cerrará la app.');
+        return;
+      }
       await trayManager.setIcon(icon);
-      await trayManager.setToolTip('NeoFy');
       await _refreshTrayMenu();
+      // ⚠️ Lo imprescindible es el icono y su menú; **hasta aquí** se decide si
+      // hay bandeja. El resto son adornos y van después a propósito.
       if (mounted) setState(() => _bandejaDisponible = true);
-    } catch (_) {
-      // Se queda en false: cerrar cerrará de verdad.
+    } catch (e) {
+      // Se queda en false: cerrar cerrará de verdad, que es mejor que esconder
+      // la app donde el usuario no puede recuperarla.
+      debugPrint('Bandeja no disponible ($e); la X cerrará la app.');
+      return;
+    }
+
+    // El texto al pasar el ratón es un adorno, y **en Linux no existe**: el
+    // plugin de tray_manager solo implementa allí setIcon, setContextMenu,
+    // setTitle y destroy.
+    //
+    // ⚠️ Esto estaba antes dentro del try de arriba, y fue un fallo caro: en
+    // Linux lanzaba, se lo tragaba el catch, `_bandejaDisponible` se quedaba en
+    // false y **la X cerraba la app entera** aunque el icono se viera
+    // perfectamente (setIcon ya había pasado). Un adorno que no existe no puede
+    // decidir si hay bandeja.
+    if (Platform.isWindows) {
+      try {
+        await trayManager.setToolTip('NeoFy');
+      } catch (_) {}
     }
   }
 
@@ -469,6 +491,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   @override
   void onTrayIconRightMouseDown() {
+    // `popUpContextMenu` tampoco está implementado en Linux, y allí no hace
+    // falta: el indicador enseña su menú por su cuenta al pulsarlo. Llamarlo
+    // igualmente solo conseguiría una excepción sin ningún efecto útil.
+    if (!Platform.isWindows) return;
     trayManager.popUpContextMenu();
   }
 
