@@ -192,6 +192,57 @@ void main() {
     });
   });
 
+  // Las tiras de la portada no son un contexto de Spotify: no tienen uri y
+  // `GET /me/player` no las devuelve, así que hay que mandarlas enteras.
+  group('tiras de la portada', () {
+    test('al pulsar una se manda la tira entera, no solo esa canción', () async {
+      await player.playLista(
+        const ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'],
+        desde: 1,
+      );
+
+      expect(api.llamadas,
+          ['play [spotify:track:a, spotify:track:b, spotify:track:c] offset=1']);
+    });
+
+    test('al final de la tira, siguiente vuelve a la primera', () async {
+      await player.playLista(const ['spotify:track:a', 'spotify:track:b']);
+      api.llamadas.clear();
+
+      // Este es el fallo que se arreglo. Mandando solo la cancion pulsada,
+      // Spotify marcaba el salto como prohibido, no habia lista que reiniciar
+      // y el unico efecto visible era que la misma cancion volvia a empezar.
+      player.state = _sonando(canSkipNext: false, contextUri: null);
+      await player.next();
+
+      expect(api.llamadas, ['play [spotify:track:a, spotify:track:b] offset=0']);
+    });
+
+    test('poner una cancion suelta despues olvida la tira', () async {
+      await player.playLista(const ['spotify:track:a', 'spotify:track:b']);
+      await player.playTrack('spotify:track:z');
+      api.llamadas.clear();
+
+      player.state = _sonando(canSkipNext: false, contextUri: null);
+      await player.next();
+
+      // Lo que no puede pasar es que reviva la tira anterior, que ya no es lo
+      // que esta sonando.
+      expect(api.llamadas, ['next']);
+    });
+
+    test('poner una playlist despues tambien la olvida', () async {
+      await player.playLista(const ['spotify:track:a']);
+      await player.playContext('spotify:playlist:abc');
+      api.llamadas.clear();
+
+      player.state = _sonando(canSkipNext: false, contextUri: null);
+      await player.next();
+
+      expect(api.llamadas, ['play spotify:playlist:abc offset=0']);
+    });
+  });
+
   test('el contexto sobrevive a que la reproducción se acabe', () async {
     await player.playContext('spotify:user:usuario:collection');
     api.llamadas.clear();

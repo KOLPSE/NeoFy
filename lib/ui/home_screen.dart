@@ -90,7 +90,13 @@ class _HomeScreenState extends State<HomeScreen> {
               _Titulo('Vuelve a escuchar', theme),
               TiraDeCanciones(
                 tracks: home.recientes,
-                onPlay: (t) => widget.player.playTrack(t.uri),
+                // Se manda la tira entera y no solo la canción pulsada: con una
+                // sola, "siguiente" no tiene adónde ir y la deja empezando otra
+                // vez. Ver `PlayerController.playLista`.
+                onPlay: (i) => widget.player.playLista(
+                  [for (final t in home.recientes) t.uri],
+                  desde: i,
+                ),
               ),
             ],
             if (home.artistas.isNotEmpty) ...[
@@ -124,8 +130,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         leadingNumber: i + 1,
                         isCurrent: currentUri == home.masEscuchadas[i].uri,
                         actions: TrackActions(
-                          onPlay: () =>
-                              widget.player.playTrack(home.masEscuchadas[i].uri),
+                          onPlay: () => widget.player.playLista(
+                            [for (final t in home.masEscuchadas) t.uri],
+                            desde: i,
+                          ),
                           onQueue: () async {
                             await widget.player
                                 .addToQueue(home.masEscuchadas[i].uri);
@@ -245,7 +253,11 @@ class TiraDeCanciones extends StatelessWidget {
   static const double _ladoTarjeta = 128;
 
   final List<Track> tracks;
-  final void Function(Track) onPlay;
+
+  /// Recibe **la posición** y no la canción a propósito: las tiras traen
+  /// repetidos —en "Vuelve a escuchar" es de lo más normal— y buscar la pulsada
+  /// por uri empezaría siempre por su primera aparición.
+  final void Function(int indice) onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +271,7 @@ class TiraDeCanciones extends StatelessWidget {
       itemBuilder: (context, i) {
         final t = tracks[i];
         return InkWell(
-          onTap: () => onPlay(t),
+          onTap: () => onPlay(i),
           borderRadius: BorderRadius.circular(6),
           child: Padding(
             padding: const EdgeInsets.all(_margenTarjeta),

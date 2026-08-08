@@ -57,6 +57,14 @@ class PlayerController extends ChangeNotifier {
   /// que te gustan", que la API no devuelve nunca.
   String? _lastContextUri;
 
+  /// Última lista suelta de canciones que se puso a sonar (ver [playLista]).
+  ///
+  /// Va aparte de [_lastContextUri] porque no es un contexto: no tiene uri, no
+  /// se puede pedir por `context_uri` y `GET /me/player` no la devuelve. Sin
+  /// guardarla, al acabar la última canción de una tira de la portada no habría
+  /// forma de volver a empezarla.
+  List<String>? _lastUris;
+
   /// El contexto que suena, o el último que sonó si ya no suena nada.
   String? get contextUri => state.contextUri ?? _lastContextUri;
 
@@ -450,17 +458,29 @@ class PlayerController extends ChangeNotifier {
   /// Vuelve a poner desde el principio la lista que suena (o la última que
   /// sonó). Devuelve false si no hay lista que reiniciar —una canción suelta
   /// no tiene contexto—, para que quien llama siga con su plan B.
+  ///
+  /// Sirve para las dos formas de poner música: un contexto de Spotify (una
+  /// playlist, un álbum, un artista) y una lista suelta de uris de [playLista].
+  /// La segunda hay que reenviarla entera, porque no tiene uri por la que
+  /// pedirla.
   Future<bool> _volverAlPrincipio() async {
     final ctx = contextUri;
-    if (ctx == null) return false;
+    final uris = _lastUris;
+    if (ctx == null && uris == null) return false;
     progressMs.value = 0;
     _lastSyncedProgress = 0;
     _lastSync = DateTime.now();
-    await _withDevice(() => api.play(
-          deviceId: ourDeviceId,
-          contextUri: ctx,
-          offsetPosition: 0,
-        ));
+    await _withDevice(() => ctx != null
+        ? api.play(
+            deviceId: ourDeviceId,
+            contextUri: ctx,
+            offsetPosition: 0,
+          )
+        : api.play(
+            deviceId: ourDeviceId,
+            uris: uris,
+            offsetPosition: 0,
+          ));
     return true;
   }
 
@@ -517,6 +537,7 @@ class PlayerController extends ChangeNotifier {
     // que te gustan" no lo devuelve `GET /me/player`: si no lo guardáramos al
     // pedirlo, no habría manera de saber que era esa lista.
     _lastContextUri = contextUri;
+    _lastUris = null;
     return _withDevice(() => api.play(
           deviceId: ourDeviceId,
           contextUri: contextUri,
@@ -524,9 +545,37 @@ class PlayerController extends ChangeNotifier {
         ));
   }
 
+  /// Pone a sonar una lista de canciones suelta —una tira de la portada, por
+  /// ejemplo— empezando por la de la posición [desde].
+  ///
+  /// ⚠️ **No es lo mismo que llamar a [playTrack] con la canción pulsada**, y
+  /// la diferencia solo se nota al darle a "siguiente". Una canción suelta no
+  /// tiene nada detrás: Spotify marca el salto como prohibido, [next] intenta
+  /// entonces reiniciar la lista que sonaba, no hay ninguna, y el único efecto
+  /// visible es que **la misma canción vuelve a empezar**. Mandando la tira
+  /// entera sí hay por dónde seguir.
+  ///
+  /// Se pide la posición y no la uri porque una lista puede traer repetidos:
+  /// en "Vuelve a escuchar" es de lo más normal que la misma canción salga dos
+  /// veces, y buscarla por uri empezaría siempre por la primera aparición.
+  Future<void> playLista(List<String> uris, {int desde = 0}) {
+    // Estas listas no son un contexto de Spotify —no tienen uri propia— y
+    // `GET /me/player` no las devuelve, así que hay que guardarlas aquí o al
+    // llegar al final no habría manera de saber qué se estaba escuchando. Es
+    // exactamente la misma razón por la que existe `_lastContextUri`.
+    _lastContextUri = null;
+    _lastUris = List.unmodifiable(uris);
+    return _withDevice(() => api.play(
+          deviceId: ourDeviceId,
+          uris: uris,
+          offsetPosition: desde,
+        ));
+  }
+
   Future<void> playTrack(String uri) {
     // Una canción suelta no es una lista: al acabar no hay adónde volver.
     _lastContextUri = null;
+    _lastUris = null;
     return _withDevice(() => api.play(deviceId: ourDeviceId, uris: [uri]));
   }
 
