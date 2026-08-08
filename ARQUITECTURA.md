@@ -113,6 +113,25 @@ que importan:
   ejecutable en uso. De eso se encarga `onSalirParaActualizar`, que es el mismo cierre
   ordenado del menú de la bandeja: mata los sidecars antes de irse.
 
+⚠️ **`taskkill` no espera a que el proceso muera, y eso salía por pantalla en cada
+actualización.** El `InitializeSetup()` del `.iss` mata los tres procesos, pero
+`ewWaitUntilTerminated` espera a que termine **taskkill**, no NeoFy: taskkill vuelve en cuanto
+*pide* la muerte del proceso. Como el actualizador lanza el instalador y la app sale a
+continuación, las dos cosas ocurren a la vez, e Inno se ponía a copiar con
+`flutter_windows.dll` todavía mapeada: *"no se puede borrar el fichero"*, y **se arreglaba
+solo dándole a Reintentar**. Parecía cosa de permisos y no lo era — un error de permisos no se
+cura reintentando, y el instalador no los necesita. Ahora `EsperarAQueMuera()` sondea
+`tasklist` hasta que los tres desaparecen de verdad, con un margen previo de cuatro segundos
+para que NeoFy termine de cerrarse **por las buenas** en vez de morir a mitad.
+
+⚠️ **En silencio hay que relanzar la app a mano.** La línea de `[Run]` que la abre al terminar
+lleva `postinstall skipifsilent`, que es lo correcto para una instalación normal (es la casilla
+del final del asistente) pero se saltaba entera con el `/SILENT` del actualizador: la app se
+cerraba para dejarse actualizar y **no volvía nunca**, mientras Ajustes había prometido
+"NeoFy se reiniciará". Hay una segunda línea con `Check: WizardSilent` que cubre ese caso, y
+va con `runasoriginaluser` para que NeoFy no acabe corriendo como administrador si alguien
+elevó el instalador a mano.
+
 El instalador conserva `%APPDATA%\neofy` entera, así que actualizar **no** hace perder la
 sesión ni los ajustes.
 

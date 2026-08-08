@@ -69,7 +69,15 @@ Name: "{autodesktop}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: desktop
 Name: "{userstartup}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: startup
 
 [Run]
+; Instalación normal: la casilla de "ejecutar ahora" del final del asistente.
 Filename: "{app}\{#Ejecutable}"; Description: "{cm:LaunchProgram,{#Nombre}}"; Flags: nowait postinstall skipifsilent
+; ⚠️ Y en silencio hay que lanzarla igualmente, sin casilla que marcar. Una
+; actualización desde la propia app va con `/SILENT` (ver `updater.dart`), y
+; ahí `skipifsilent` se saltaba la línea de arriba: la app se cerraba para
+; dejarse actualizar y no volvía nunca, mientras Ajustes había prometido que
+; "NeoFy se reiniciará". `runasoriginaluser` importa si alguien elevó el
+; instalador a mano: sin él, NeoFy se quedaría corriendo como administrador.
+Filename: "{app}\{#Ejecutable}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 ; Los sidecars sobreviven a un cierre a lo bruto de la app. Si el usuario
@@ -91,18 +99,70 @@ var
   PaginaClientId: TInputQueryWizardPage;
   EditRedirect: TNewEdit;
 
+// ¿Hay algún proceso con ese nombre?
+//
+// El código de salida lo da `find`, que sale con 1 si no encuentra la línea:
+// `tasklist` sale con 0 tanto si hay proceso como si no, así que preguntarle a
+// él directamente no distingue los dos casos.
+function ProcesoVivo(Nombre: String): Boolean;
+var
+  Codigo: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'),
+                 '/C tasklist /FI "IMAGENAME eq ' + Nombre + '" /NH | ' +
+                 'find /I "' + Nombre + '" >nul',
+                 '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0);
+end;
+
+// Espera a que el proceso desaparezca de la lista, como mucho `Intentos`
+// cuartos de segundo. Devuelve si se fue.
+function EsperarAQueMuera(Nombre: String; Intentos: Integer): Boolean;
+var
+  i: Integer;
+begin
+  for i := 1 to Intentos do
+  begin
+    if not ProcesoVivo(Nombre) then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Sleep(250);
+  end;
+  Result := not ProcesoVivo(Nombre);
+end;
+
 // Instalar encima de una copia en marcha deja ficheros bloqueados y el
-// instalador falla a mitad. Se avisa y se cierra todo antes de empezar.
+// instalador falla a mitad. Se cierra todo antes de empezar.
 function InitializeSetup(): Boolean;
 var
   Codigo: Integer;
 begin
+  // Cuando la actualización sale de la propia app, NeoFy ya se está cerrando
+  // por las buenas mientras esto corre (`updater.dart` lanza el instalador y
+  // acto seguido sale). Se le dan cuatro segundos para que termine él solo:
+  // así para los sidecars por las buenas y suelta la bandeja y MPRIS.
+  EsperarAQueMuera('neofy.exe', 16);
+
+  // Y lo que siga vivo —un cuelgue, o alguien que ha ejecutado el instalador a
+  // mano con la app abierta—, a la fuerza.
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM neofy.exe', '',
        SW_HIDE, ewWaitUntilTerminated, Codigo);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM librespot.exe', '',
        SW_HIDE, ewWaitUntilTerminated, Codigo);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM metadata-sidecar.exe', '',
        SW_HIDE, ewWaitUntilTerminated, Codigo);
+
+  // ⚠️ **Esperar aquí no es opcional, y es el motivo de que exista todo esto.**
+  // `ewWaitUntilTerminated` espera a que termine `taskkill`, no a que termine
+  // NeoFy: taskkill vuelve en cuanto *pide* la muerte del proceso. Durante ese
+  // rato `flutter_windows.dll` sigue mapeada y el copiado falla con un "no se
+  // puede borrar el fichero" que **se arregla solo dándole a Reintentar**, que
+  // es exactamente el error que salía en cada actualización. Parecía cosa de
+  // permisos y no lo era: un error de permisos no se cura reintentando.
+  EsperarAQueMuera('neofy.exe', 40);
+  EsperarAQueMuera('librespot.exe', 40);
+  EsperarAQueMuera('metadata-sidecar.exe', 40);
   Result := True;
 end;
 
