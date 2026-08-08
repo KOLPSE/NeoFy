@@ -50,7 +50,7 @@ void main() {
     testWidgets('los artistas caben en su tira al ${escala}x', (tester) async {
       await _pintar(
         tester,
-        TiraDeArtistas(artistas: const [_artista, _artista], onPlay: (_) {}),
+        TiraDeArtistas(artistas: const [_artista, _artista], onAbrir: (_) {}),
         escala,
       );
       expect(tester.takeException(), isNull);

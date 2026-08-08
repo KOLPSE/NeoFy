@@ -474,6 +474,28 @@ class SpotifyApi {
         .toList();
   }
 
+  /// Las canciones más populares de un artista, con su duración.
+  ///
+  /// Devuelve **10 como mucho**: es el tope del endpoint, no un límite nuestro.
+  ///
+  /// ✅ **Funciona en Modo Desarrollo**, comprobado con
+  /// `dart run tool/probe_artist.dart` contra la cuenta real (200, y las de la
+  /// ficha del artista y sus álbumes también). Merece decirlo porque no era
+  /// evidente: aquí `/v1/tracks?ids=` da 403 y las canciones de una playlist
+  /// ajena también, así que **poder reproducir algo no implica poder leerlo** y
+  /// había que comprobarlo antes de construir una pantalla encima.
+  ///
+  /// `market=from_token` hace que Spotify devuelva las populares **en el país
+  /// de la cuenta**, que es lo que el usuario espera ver.
+  Future<List<Track>> artistTopTracks(String id) async {
+    final j = await _request('GET', '/artists/$id/top-tracks',
+        query: {'market': 'from_token'}) as Map<String, dynamic>;
+    return ((j['tracks'] as List<dynamic>?) ?? const [])
+        .map((t) => Track.fromJson(t as Map<String, dynamic>?))
+        .whereType<Track>()
+        .toList();
+  }
+
   /// Historial reciente, **sin repetidas**: si has puesto la misma canción
   /// cuatro veces seguidas, Spotify la devuelve cuatro veces y una fila de
   /// "vuelve a escuchar" con la misma carátula cuatro veces no sirve de nada.

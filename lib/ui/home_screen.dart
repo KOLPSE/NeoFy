@@ -24,12 +24,17 @@ class HomeScreen extends StatefulWidget {
     required this.player,
     required this.likes,
     required this.onReauth,
+    required this.onAbrirArtista,
   });
 
   final HomeStore home;
   final PlayerController player;
   final LikedStore likes;
   final Future<void> Function() onReauth;
+
+  /// Pulsar un artista abre su pantalla en vez de ponerlo a sonar: primero se
+  /// ve qué se va a reproducir, y desde allí se decide.
+  final void Function(Artist) onAbrirArtista;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -103,8 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _Titulo('Tus artistas', theme),
               TiraDeArtistas(
                 artistas: home.artistas,
-                // El contexto de un artista pone sus canciones más populares.
-                onPlay: (a) => widget.player.playContext(a.uri),
+                onAbrir: widget.onAbrirArtista,
               ),
             ],
             if (home.masEscuchadas.isNotEmpty) ...[
@@ -308,12 +312,15 @@ class TiraDeCanciones extends StatelessWidget {
 }
 
 class TiraDeArtistas extends StatelessWidget {
-  const TiraDeArtistas({super.key, required this.artistas, required this.onPlay});
+  const TiraDeArtistas({super.key, required this.artistas, required this.onAbrir});
 
   static const double _lado = 108;
 
   final List<Artist> artistas;
-  final void Function(Artist) onPlay;
+
+  /// Abre el artista; **no** lo reproduce. Antes pulsar aquí ponía música de
+  /// golpe sin enseñar qué iba a sonar.
+  final void Function(Artist) onAbrir;
 
   @override
   Widget build(BuildContext context) {
@@ -326,7 +333,7 @@ class TiraDeArtistas extends StatelessWidget {
       itemBuilder: (context, i) {
         final a = artistas[i];
         return InkWell(
-          onTap: () => onPlay(a),
+          onTap: () => onAbrir(a),
           borderRadius: BorderRadius.circular(_lado),
           child: Padding(
             padding: const EdgeInsets.all(_margenTarjeta),

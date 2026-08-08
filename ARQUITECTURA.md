@@ -228,6 +228,14 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   la clave con las canciones**, `?fields=` no la recupera, las playlists editoriales de
   Spotify dan **404**, y `GET /v1/tracks?ids=` tambien da **403** (los albumes, en cambio,
   si traen sus pistas). No hay ninguna via oficial: de ahi el sidecar.
+- **Los endpoints de artista sí se dejan leer, al contrario que los de pista.** Verificado con
+  `dart run tool/probe_artist.dart` contra la cuenta real: `/artists/{id}/top-tracks` (200, 10
+  canciones con `duration_ms`), `/artists/{id}`, `/artists/{id}/albums` y
+  `/albums/{id}/tracks` responden todos **200** en Modo Desarrollo. Merece anotarse porque la
+  intuición aquí engaña en las dos direcciones: `/v1/tracks?ids=` da 403 y las canciones de
+  una playlist ajena también, así que **poder reproducir algo no implica poder leerlo** — y
+  había que comprobarlo antes de construir la pantalla de artista encima. `market=from_token`
+  devuelve las populares del país de la cuenta.
 - **Las carátulas de playlist son WebP y vienen con `width`/`height` a `null`** (las de
   canción son JPEG con 640/300/64 bien puestos). Flutter decodifica WebP sin problema;
   lo que importa es que `pickImage` caiga en la única imagen disponible y no la descarte.

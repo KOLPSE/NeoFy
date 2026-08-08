@@ -15,6 +15,7 @@ import '../core/settings.dart';
 import '../core/updater.dart';
 import '../core/spotify_api.dart';
 import 'art_image.dart';
+import 'artist_screen.dart';
 import 'home_screen.dart';
 import 'liked_screen.dart';
 import 'now_playing_bar.dart';
@@ -23,7 +24,7 @@ import 'playlist_screen.dart';
 import 'queue_screen.dart';
 import 'search_screen.dart';
 
-enum _View { home, search, queue, liked, playlist }
+enum _View { home, search, queue, liked, playlist, artist }
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -74,6 +75,10 @@ class _AppShellState extends State<AppShell> {
 
   _View _view = _View.home;
   Playlist? _selected;
+
+  /// El artista abierto desde la portada. No hay entrada en el panel lateral
+  /// para esto: se llega pulsando su foto y se sale volviendo a Inicio.
+  Artist? _artista;
   bool _loading = false;
   bool _hasMore = true;
   bool _playlistsExpanded = true;
@@ -335,6 +340,10 @@ class _AppShellState extends State<AppShell> {
           player: widget.player,
           likes: widget.likes,
           onReauth: widget.onReauth,
+          onAbrirArtista: (a) => setState(() {
+            _artista = a;
+            _view = _View.artist;
+          }),
         );
       case _View.search:
         return SearchScreen(
@@ -368,6 +377,18 @@ class _AppShellState extends State<AppShell> {
           sidecar: widget.sidecar,
           playlist: pl,
           likes: widget.likes,
+        );
+      case _View.artist:
+        final a = _artista;
+        if (a == null) return const SizedBox.shrink();
+        return ArtistScreen(
+          // La clave obliga a reconstruir el State al cambiar de artista: sin
+          // ella, abrir otro dejaría la lista del anterior en pantalla.
+          key: ValueKey(a.id),
+          api: widget.api,
+          player: widget.player,
+          likes: widget.likes,
+          artist: a,
         );
     }
   }
