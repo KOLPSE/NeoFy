@@ -63,12 +63,54 @@ mismo: el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el
 
 | Distribución | Cómo |
 |---|---|
-| **Arch**, Manjaro, EndeavourOS | `yay -S neofy-bin` |
+| **Arch**, Manjaro, EndeavourOS | Repositorio propio, ver abajo |
 | **Debian**, Ubuntu, Mint, Pop!_OS | `sudo apt install ./neofy_x.y.z_amd64.deb` |
 | **Fedora**, RHEL | `sudo dnf install ./neofy-x.y.z-1.x86_64.rpm` |
 | **openSUSE** | `sudo zypper install ./neofy-x.y.z-1.x86_64.rpm` |
 
-Los `.deb` y `.rpm` se descargan de [Releases](../../releases); el de Arch se compila solo.
+Los `.deb` y `.rpm` se descargan de [Releases](../../releases).
+
+#### Arch: repositorio propio (recomendado)
+
+NeoFy publica su propio repositorio pacman en GitHub, así que **se actualiza con el resto
+del sistema** y no hace falta el AUR ni compilar nada. Al final de `/etc/pacman.conf`:
+
+```ini
+[neofy]
+SigLevel = Optional TrustAll
+Server = https://github.com/KOLPSE/NeoFy/releases/download/repo
+```
+
+Y después:
+
+```bash
+sudo pacman -Sy neofy-bin
+```
+
+A partir de ahí, cada `sudo pacman -Syu` lo mantiene al día.
+
+> `SigLevel = Optional TrustAll` significa que **los paquetes no van firmados con GPG**:
+> pacman se fía de lo que descargue de esa URL. La descarga va por HTTPS desde GitHub, que
+> es lo mismo en lo que confías al bajar el instalador de Windows, pero conviene saberlo.
+
+#### Arch: sin tocar pacman.conf
+
+Si prefieres no añadir un repositorio, cada release trae el paquete suelto:
+
+```bash
+sudo pacman -U https://github.com/KOLPSE/NeoFy/releases/download/v0.1.3/neofy-bin-0.1.3-1-x86_64.pkg.tar.zst
+```
+
+Se instala igual, pero las actualizaciones hay que repetirlas a mano.
+
+#### Arch: compilando el paquete
+
+También está el `PKGBUILD` en `linux/packaging/`, para quien prefiera montarlo él:
+
+```bash
+git clone https://github.com/KOLPSE/NeoFy && cd NeoFy/linux/packaging
+makepkg -si
+```
 
 > **En GNOME** hace falta además la extensión de AppIndicator para que aparezca el icono de
 > la bandeja. Sin ella NeoFy funciona igual, pero el botón de cerrar cierra del todo en vez

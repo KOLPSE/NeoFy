@@ -632,7 +632,29 @@ Un instalador por plataforma, y los tres instalan **exactamente el mismo árbol 
 | `NeoFy-x.y.z-windows-x64.exe` | `release.ps1` → Inno Setup | Windows |
 | `neofy_x.y.z_amd64.deb` | `build_linux_packages.sh` → `dpkg-deb` | Debian, Ubuntu |
 | `neofy-x.y.z-1.x86_64.rpm` | `build_linux_packages.sh` → `rpmbuild` | Fedora, openSUSE |
-| `NeoFy-x.y.z-linux-x86_64.tar.gz` | `build_linux_bundle.sh` | **No es una descarga**: es lo que se baja el PKGBUILD del AUR |
+| `neofy-bin-x.y.z-1-x86_64.pkg.tar.zst` | el job `arch` → `makepkg` | Arch, Manjaro |
+| `NeoFy-x.y.z-linux-x86_64.tar.gz` | `build_linux_bundle.sh` | **No es una descarga**: es lo que se baja el PKGBUILD |
+
+### Arch tiene además su propio repositorio pacman
+
+El AUR exige una cuenta con clave SSH registrada y, cuando se cae, deja a los usuarios sin
+vía de instalación. Por eso el paquete de Arch se publica **dos veces**: suelto en la release
+de cada versión (para un `pacman -U` de una sola orden) y como **repositorio pacman** en una
+release de etiqueta fija `repo`, cuya URL no cambia nunca. Añadiendo cuatro líneas a
+`pacman.conf`, NeoFy se actualiza con el resto del sistema en cada `pacman -Syu`.
+
+La base de datos la genera `repo-add` en el propio job de Arch. Dos detalles:
+
+- **`repo-add` deja `neofy.db` y `neofy.files` como enlaces simbólicos**, y una release de
+  GitHub no guarda enlaces. Se suben como ficheros reales, que son además los nombres exactos
+  que pide pacman.
+- ⚠️ **La release `repo` se crea con `--latest=false`, y no es opcional.** Si quedara marcada
+  como la última, `releases/latest` devolvería la etiqueta `repo` y `core/updater.dart` la
+  leería como número de versión: la app dejaría de ver las versiones de verdad.
+
+Los paquetes **no van firmados con GPG** (`SigLevel = Optional TrustAll`): pacman se fía de
+lo que baje de esa URL, protegida por el HTTPS de GitHub. Firmarlos exigiría gestionar una
+clave y distribuir su parte pública, que es un problema distinto y mayor.
 
 El bundle de Flutter **no se puede repartir por `/usr`**: el ejecutable busca `data/` y `lib/`
 a su lado, de ahí que todo vaya a `/opt/neofy` con un enlace en `/usr/bin`. El enlace es

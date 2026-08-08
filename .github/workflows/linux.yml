@@ -174,15 +174,28 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
 
+    # Publica el paquete y la base de datos del repositorio pacman.
+    permissions:
+      contents: write
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Las ordenes `gh` se lanzan desde /tmp, fuera del clon, asi que hay que
+      # decirle a que repositorio se refieren.
+      GH_REPO: ${{ github.repository }}
+
     steps:
       - name: Dependencias
         # Exactamente las que declara el PKGBUILD. Que este paso funcione ya
         # demuestra que los nombres existen en los repositorios de Arch, que es
         # justo lo que no se puede verificar desde Debian.
+        #
+        # github-cli no es del paquete: hace falta para publicar, y el contenedor
+        # de Arch no lo trae de serie como si hace el runner de Ubuntu.
         run: |
           pacman -Syu --noconfirm --needed \
             gtk3 libayatana-appindicator libpulse openssl xdg-utils \
-            base-devel sudo
+            base-devel sudo github-cli
 
       - uses: actions/checkout@v4
 
@@ -306,3 +319,74 @@ jobs:
           pacman -R --noconfirm neofy-bin
           test ! -e /opt/neofy || { echo "::error::quedan restos en /opt/neofy"; exit 1; }
           echo "Y desinstala limpio."
+
+      - name: El paquete de Arch, para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: neofy-arch
+          path: /tmp/pkg/*.pkg.tar.zst
+          retention-days: 30
+
+      # Arch se queda fuera de los instaladores del job anterior porque su
+      # paquete se monta aqui, que es donde hay un Arch de verdad. Se publica en
+      # dos sitios y cada uno resuelve una cosa distinta.
+      - name: Publicar el paquete y el repositorio pacman
+        if: github.event_name == 'release' || inputs.tag != ''
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          pkg="$(ls /tmp/pkg/neofy-bin-*.pkg.tar.zst)"
+          nombre="$(basename "$pkg")"
+
+          # 1. Suelto, en la release de la version: se instala con una sola
+          #    orden apuntando a la url, sin configurar nada.
+          gh release upload "$tag" "$pkg" --clobber
+          echo "  $nombre subido a $tag"
+
+          # 2. Como repositorio pacman, en una release de etiqueta fija para que
+          #    la url que la gente pone en pacman.conf no cambie nunca.
+          cd /tmp/pkg
+          repo-add neofy.db.tar.gz "$nombre"
+          # repo-add deja neofy.db y neofy.files como enlaces simbolicos, y una
+          # release de GitHub no guarda enlaces: se suben como ficheros reales,
+          # que son ademas los nombres exactos que pide pacman.
+          cp -L neofy.db.tar.gz neofy.db
+          cp -L neofy.files.tar.gz neofy.files
+
+          # ⚠️ --latest=false NO es opcional. Si esta release quedara marcada
+          # como la ultima, `releases/latest` devolveria la etiqueta "repo" y el
+          # actualizador de la app (core/updater.dart) la leeria como numero de
+          # version: dejaria de ver las versiones de verdad.
+          # Las notas van por fichero: escritas en linea, sus saltos romperian
+          # el bloque de YAML que contiene este script.
+          cat > /tmp/notas-repo.md <<'NOTAS'
+          Esta release **no contiene una version de NeoFy**: es el repositorio
+          pacman para Arch. Su etiqueta no cambia nunca, para que la url que se
+          pone en `pacman.conf` siga siendo valida version tras version. Las
+          versiones de verdad estan en la lista de releases.
+
+          En `/etc/pacman.conf`, al final:
+
+              [neofy]
+              SigLevel = Optional TrustAll
+              Server = https://github.com/KOLPSE/NeoFy/releases/download/repo
+
+          Y despues:
+
+              sudo pacman -Sy neofy-bin
+
+          A partir de ahi se actualiza con el resto del sistema en cada
+          `sudo pacman -Syu`.
+          NOTAS
+          # El heredoc va indentado para no romper el YAML; se quita aqui.
+          sed -i 's/^          //' /tmp/notas-repo.md
+
+          if ! gh release view repo >/dev/null 2>&1; then
+            gh release create repo --latest=false \
+              --title 'Repositorio pacman para Arch (no es una version)' \
+              --notes-file /tmp/notas-repo.md
+          fi
+
+          gh release upload repo \
+            "$nombre" neofy.db neofy.files neofy.db.tar.gz neofy.files.tar.gz \
+            --clobber
+          echo "  repositorio pacman actualizado con $nombre"
