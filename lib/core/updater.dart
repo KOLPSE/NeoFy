@@ -25,8 +25,9 @@ enum EstadoActualizacion {
 /// bajarlo y lanzarlo.
 ///
 /// ⚠️ **En Linux avisa pero no instala**, y no es una carencia sino lo
-/// correcto: allí NeoFy se distribuye como paquete (`neofy-bin` en el AUR) y es
-/// pacman quien lleva la cuenta de qué ficheros son de quién. Una app que se
+/// correcto: allí NeoFy se distribuye como paquete (`neofy-bin`, en su propio
+/// repositorio) y es pacman quien lleva la cuenta de qué ficheros son de quién.
+/// Una app que se
 /// sobrescribe a sí misma por su cuenta deja la base de datos del gestor
 /// mintiendo, y a la primera actualización del paquete se pisan los dos. Se
 /// enseña que hay versión nueva y el comando con el que actualizarla.
@@ -57,9 +58,10 @@ class Updater extends ChangeNotifier {
   /// aviso de la clase.
   static bool get seInstalaSolo => Platform.isWindows;
 
-  /// Qué hacer cuando no se instala sola. Es el comando del AUR, que es como se
-  /// distribuye en Linux.
-  static const String comandoDeActualizacion = 'yay -Syu neofy-bin';
+  /// Qué hacer cuando no se instala sola. En Linux NeoFy se reparte por el
+  /// repositorio pacman propio (ver el README), así que se actualiza con
+  /// pacman a secas: nada de ayudantes del AUR, que ya no se usa.
+  static const String comandoDeActualizacion = 'sudo pacman -Syu neofy-bin';
 
   Future<void> buscar() async {
     if (estado == EstadoActualizacion.buscando ||

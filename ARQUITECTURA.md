@@ -609,11 +609,12 @@ de Dart y en Skia, no en las arenas de glibc.
 
 ### El actualizador avisa pero no instala
 
-En Linux NeoFy se distribuye como paquete (`neofy-bin` en el AUR) y es pacman quien lleva la
-cuenta de qué ficheros son de quién. Una app que se sobrescribe a sí misma deja la base de
-datos del gestor mintiendo. `Updater.buscar()` sigue funcionando igual —la comparación por
-tramos numéricos no cambia—, pero al detectar novedad se para y Ajustes enseña
-`yay -Syu neofy-bin` en vez del botón de instalar.
+En Linux NeoFy se distribuye como paquete (`neofy-bin`, desde su propio repositorio pacman) y
+es pacman quien lleva la cuenta de qué ficheros son de quién. Una app que se sobrescribe a sí
+misma deja la base de datos del gestor mintiendo. `Updater.buscar()` sigue funcionando igual
+—la comparación por tramos numéricos no cambia—, pero al detectar novedad se para y Ajustes
+enseña `sudo pacman -Syu neofy-bin` en vez del botón de instalar. **Nada de `yay` ni de otros
+ayudantes del AUR**: el paquete no está en el AUR, así que ese comando no encontraría nada.
 
 ### Cómo se compila y se publica
 

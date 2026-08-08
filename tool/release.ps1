@@ -170,6 +170,6 @@ Write-Host 'Los instaladores de Linux (.deb y .rpm) los añade GitHub Actions a 
 Write-Host 'release y tardan unos veinte minutos: el workflow "Linux" se dispara solo al' -ForegroundColor Yellow
 Write-Host 'publicarla. La release queda incompleta hasta que termine.' -ForegroundColor Yellow
 Write-Host ''
-Write-Host 'Cuando acabe, para actualizar el AUR: coge el sha256 del tarball que imprime el'
-Write-Host 'workflow, ponlo en linux/packaging/PKGBUILD junto con el pkgver y sube el'
-Write-Host 'PKGBUILD y su .SRCINFO al repositorio de neofy-bin.'
+Write-Host 'Cuando acabe: coge el sha256 del tarball que imprime el workflow y ponlo en'
+Write-Host 'linux/packaging/PKGBUILD junto con el pkgver. Los usuarios de Arch no tienen que'
+Write-Host 'hacer nada: el repositorio pacman propio se actualiza en el mismo workflow.'

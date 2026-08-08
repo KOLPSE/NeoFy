@@ -96,7 +96,7 @@ class LibrespotManager extends ChangeNotifier {
   ///
   /// Junto al ejecutable es donde lo dejan las dos cadenas de empaquetado: el
   /// `install(PROGRAMS ...)` de CMake en Windows y el mismo en Linux, que en un
-  /// paquete del AUR acaba en `/opt/neofy`.
+  /// paquete de Arch acaba en `/opt/neofy`.
   static File? findBinary() {
     final nombre = 'librespot$sufijoEjecutable';
     final candidates = <String>[

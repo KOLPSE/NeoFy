@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Empaqueta NeoFy para Linux: compila la app, junta los dos sidecars y saca un
-# tarball listo para el PKGBUILD del AUR.
+# tarball listo para el PKGBUILD (linux/packaging/PKGBUILD).
 #
 #   ./tool/build_linux_bundle.sh
 #
@@ -44,7 +44,7 @@ for bin in librespot metadata-sidecar; do
 done
 
 # Los ficheros de escritorio viajan dentro del tarball para que el PKGBUILD no
-# tenga que descargarlos aparte ni llevarlos duplicados en el AUR.
+# tenga que descargarlos aparte ni llevarlos duplicados.
 cp linux/packaging/xyz.neogex.neofy.desktop "$bundle/"
 cp -r linux/packaging/icons "$bundle/"
 cp LICENSE "$bundle/"

@@ -8,8 +8,9 @@
 #
 #   ./tool/build_linux_bundle.sh && ./tool/build_linux_packages.sh
 #
-# Arch no sale de aqui: alli se instala con `yay -S neofy-bin`, y su PKGBUILD
-# (linux/packaging/PKGBUILD) se baja el tarball de la release.
+# Arch no sale de aqui: alli se instala con `sudo pacman -S neofy-bin` desde el
+# repositorio propio (ver el README), y su PKGBUILD (linux/packaging/PKGBUILD),
+# que lo construye el job `arch` del workflow, se baja el tarball de la release.
 #
 # Requiere dpkg-deb (viene en Debian y Ubuntu) y rpmbuild (paquete `rpm`).
 #

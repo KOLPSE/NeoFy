@@ -3,7 +3,7 @@
 # Cada release acaba con un instalador por plataforma: el .exe de Inno Setup lo
 # sube tool/release.ps1 desde Windows, y el .deb y el .rpm salen de aqui. El
 # tarball se sube tambien, pero no es una descarga para usuarios: es lo que se
-# baja el PKGBUILD del AUR, que necesita una url estable.
+# baja el PKGBUILD de Arch, que necesita una url estable.
 #
 # Va en un workflow aparte del de `ci.yml` a proposito: aquello son treinta
 # segundos de analyze y tests en cada push, y esto son veinte minutos de
@@ -142,7 +142,7 @@ jobs:
           retention-days: 30
 
       # Los dos instaladores, mas el tarball: ese no es una descarga para
-      # usuarios sino lo que se baja el PKGBUILD del AUR, que necesita una url
+      # usuarios sino lo que se baja el PKGBUILD de Arch, que necesita una url
       # estable en la release.
       # Se sube al publicar una release, y tambien a mano indicando una etiqueta
       # ya publicada. Lo segundo existe porque este paso ya fallo una vez con
@@ -160,7 +160,7 @@ jobs:
             dist/neofy-*-1.x86_64.rpm \
             dist/NeoFy-*-linux-x86_64.tar.gz \
             --clobber
-          echo "sha256 para el PKGBUILD del AUR:"
+          echo "sha256 para el sha256sums del PKGBUILD:"
           sha256sum dist/NeoFy-*-linux-x86_64.tar.gz
 
   # Lo unico que ningun otro paso puede comprobar: que un binario compilado en
@@ -239,7 +239,8 @@ jobs:
 
       - name: Que el PKGBUILD y kVersion no se hayan desincronizado
         # Si el pkgver se queda atras, el PKGBUILD se baja el tarball de una
-        # version anterior y publica en el AUR algo que no es lo que dice ser.
+        # version anterior y se publica como neofy-bin algo que no es lo que
+        # dice ser.
         run: |
           version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
           pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
@@ -272,34 +273,17 @@ jobs:
           sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
           ls -la /tmp/pkg/*.pkg.tar.zst
 
-      # El AUR exige un .SRCINFO junto al PKGBUILD, y solo lo puede generar
-      # makepkg — que no existe fuera de Arch. Se genera aqui, se enseña en el
-      # log para poder copiarlo, y si ya hay uno en el repositorio se comprueba
-      # que no se hayan desincronizado: un .SRCINFO viejo hace que el AUR anuncie
-      # una version distinta de la que el PKGBUILD instala.
-      - name: Generar y comprobar el .SRCINFO
+      # El paso de arriba compila una COPIA PARCHEADA del PKGBUILD (source y
+      # sha256sums cambiados), asi que el fichero tal y como esta en el
+      # repositorio —el que se lleva quien quiera montarselo con makepkg— no lo
+      # llega a leer nadie. Aqui se le pasa makepkg por encima para que un error
+      # de sintaxis o un campo mal puesto salga en el CI y no en su maquina.
+      - name: Que el PKGBUILD de verdad sea valido
         run: |
           install -dm755 /tmp/srcinfo
-          # Del PKGBUILD DE VERDAD, no de la copia parcheada del paso anterior:
-          # lo que se sube al AUR tiene que describir la descarga de la release,
-          # no el tarball local del CI.
           cp linux/packaging/PKGBUILD /tmp/srcinfo/
           chown -R builder /tmp/srcinfo
-          sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo' \
-            > /tmp/srcinfo/SRCINFO.generado
-          echo '----- .SRCINFO -----'
-          cat /tmp/srcinfo/SRCINFO.generado
-          echo '----- fin -----'
-          if [ -f linux/packaging/.SRCINFO ]; then
-            if diff -u linux/packaging/.SRCINFO /tmp/srcinfo/SRCINFO.generado; then
-              echo ".SRCINFO al dia."
-            else
-              echo "::error::linux/packaging/.SRCINFO no coincide con el PKGBUILD. Regeneralo con: makepkg --printsrcinfo > .SRCINFO"
-              exit 1
-            fi
-          else
-            echo "::warning::Todavia no hay linux/packaging/.SRCINFO en el repositorio."
-          fi
+          sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
 
       - name: Instalarlo y comprobar donde queda todo
         run: |

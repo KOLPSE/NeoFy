@@ -1,17 +1,18 @@
 # Maintainer: KOLPSE <https://github.com/KOLPSE>
 #
-# Copia canonica del PKGBUILD que se publica en el AUR como `neofy-bin`. Vive
-# aqui para que se actualice junto al codigo; el AUR es un repositorio git
-# aparte al que se sube este mismo fichero mas su .SRCINFO.
+# Receta con la que se construye `neofy-bin`, el paquete de Arch. NO va al AUR:
+# el job `arch` de .github/workflows/linux.yml lo compila con makepkg y publica
+# el .pkg.tar.zst en la release y en el repositorio pacman propio (etiqueta
+# `repo`). Vive aqui para que se actualice junto al codigo, y sigue sirviendo a
+# quien prefiera montarselo el mismo con makepkg.
 #
 # Es un paquete -bin porque compilar desde fuentes obligaria a cada usuario a
 # bajarse Flutter entero y a compilar dos binarios de Rust cuyo target/ pasa de
 # 3 GB. El tarball lo genera GitHub Actions sobre ubuntu-latest, cuya glibc es
 # mas antigua que la de Arch: por eso el binario corre aqui.
 #
-# Para subir de version: cambiar pkgver, actualizar sha256sums (el propio
-# workflow lo imprime al terminar) y regenerar .SRCINFO con
-#   makepkg --printsrcinfo > .SRCINFO
+# Para subir de version: cambiar pkgver y actualizar sha256sums (el propio
+# workflow lo imprime al terminar).
 
 pkgname=neofy-bin
 _pkgname=neofy
