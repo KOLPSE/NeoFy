@@ -417,9 +417,10 @@ el de rendimiento se mantiene pegado al techo. Qué hace:
   leyendo de un vistazo. Cuesta cero bytes.
 - **La caché de bitmaps baja a 1 MB** y se vacía al entrar.
 - **Se apaga el sidecar de metadatos** (~12 MB). Se pierde poder leer playlists ajenas.
-- **Se le pide a Windows que recoja las páginas** (`EmptyWorkingSet`) al entrar, al esconder
-  la app en la bandeja, y cada 30 s mientras el total pase del techo. No se pierde nada: las
-  páginas vuelven solas con un fallo blando.
+- **Se le devuelve al sistema lo que esté retenido sin usar** al entrar, al esconder la app en
+  la bandeja, y cada 30 s mientras el total pase del techo (`devolverMemoriaAlSistema()`). En
+  Windows es `EmptyWorkingSet`; en Linux, `malloc_trim(0)` (ver "Lo que se pierde"). No se
+  pierde nada en ninguna de las dos: lo recuperado vuelve solo en cuanto haga falta.
 - **El audio no se toca**: mismo bitrate, misma caché, mismo librespot.
 
 ⚠️ **El working set depende de si la ventana está en primer plano**: Windows poda por su
@@ -560,8 +561,17 @@ en tres de los cuatro casos **la solución de Linux es mejor que la de Windows**
   `/proc/<pid>/cmdline` que sigue siendo el mismo proceso — un pid se recicla, y matar a ciegas
   el número apuntado sería tan malo como el `pkill`.
 - **La memoria se mide por `/proc`**, que sale más simple que el FFI a `psapi`. El parseo está
-  en `rssDeStatm()` y `ticksDeStat()`, aparte y probadas con cadenas fijas para que valgan
-  también en el runner de Windows del CI. Dos trampas: el segundo campo de `/proc/<pid>/stat`
+  en `pssDeSmapsRollup()`, `rssDeStatm()` y `ticksDeStat()`, aparte y probadas con cadenas
+  fijas para que valgan también en el runner de Windows del CI.
+  ⚠️ **Se mide el PSS de `/proc/<pid>/smaps_rollup`, no el RSS**, y la diferencia aquí es
+  enorme: el residente cuenta **enteras** las páginas compartidas, y una app GTK arrastra
+  muchísimas (GTK, GLib, Pango, Cairo, HarfBuzz, fontconfig, dbus y el driver de Mesa, además
+  de `libflutter_linux_gtk.so`). Nada de eso es memoria de NeoFy —está compartida con el resto
+  del escritorio— pero el RSS se la imputa toda, y por eso el mismo binario parecía gastar el
+  doble en Linux que en Windows sin gastar nada más. El PSS reparte cada página entre quienes
+  la usan, que es justo lo que esta clase dice medir. Si no hay `smaps_rollup` (kernel anterior
+  al 4.14, o `/proc` con `hidepid`) se cae al RSS, que sobreestima pero nunca miente hacia
+  abajo. Dos trampas más: el segundo campo de `/proc/<pid>/stat`
   es el nombre del proceso **entre paréntesis y puede llevar espacios y paréntesis dentro**,
   así que hay que contar desde el último `)` o se desalinean todos los campos sin dar error; y
   los ticks se devuelven en unidades de 100 ns para que el cálculo del porcentaje sea el mismo
@@ -601,11 +611,24 @@ nada.
 
 ### Lo que se pierde
 
-**`EmptyWorkingSet` no tiene equivalente.** El modo rendimiento conserva sus otros tres efectos
-—no bajar imágenes, caché de bitmaps a 1 MB y apagar el sidecar de metadatos—, que son los que
-de verdad pesan, pero la parte de devolverle páginas al sistema es un no-op documentado en
-`vaciarWorkingSet()`. `malloc_trim` no serviría de mucho: la memoria de Flutter está en el heap
-de Dart y en Skia, no en las arenas de glibc.
+**`EmptyWorkingSet` no tiene equivalente exacto.** El kernel no acepta que un proceso le pida
+podarse, así que la parte de devolverle páginas al sistema no puede ser la misma. Lo que sí se
+puede es obligar al asignador a soltar lo que ya está libre, y eso es lo que hace
+`devolverMemoriaAlSistema()` en Linux: **`malloc_trim(0)`**, en los mismos tres momentos que el
+`EmptyWorkingSet` de Windows (al encender el modo, al esconderse en la bandeja y cada 30 s
+mientras el total pase del techo).
+
+⚠️ Esto **antes estaba descartado** aquí mismo, con el argumento de que la memoria de Flutter
+vive en el heap de Dart y en Skia y no en las arenas de glibc. Es verdad a medias y por eso
+engañaba: el heap de Dart no pasa por `malloc`, pero las cachés ráster de Skia, los búferes de
+decodificación de imágenes y todo el lado GTK/GDK sí. Y justo antes de esas tres llamadas se
+acaba de vaciar la caché de imágenes, así que sin un trim glibc se queda esas páginas y el
+residente no baja ni un byte **aunque la memoria ya esté libre**. El trim no puede tocar los
+sidecars, que son procesos aparte con su propio asignador.
+
+Se busca con `DynamicLibrary.process()` y no abriendo `libc.so.6` por nombre: el fichero se
+llama distinto según la libc, y **con musl la función no existe**. Si no aparece, se queda en
+`null` y no se llama a nadie.
 
 ### El actualizador avisa pero no instala
 

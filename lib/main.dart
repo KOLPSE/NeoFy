@@ -329,9 +329,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _aplicarTechoDeMemoria(activo);
     if (activo) {
       unawaited(_sidecar.stop());
-      // Soltar la caché no basta: hasta que Windows no recoja las páginas, la
-      // memoria sigue contando como residente. Se le pide que las recoja ya.
-      ResourceMonitor.vaciarWorkingSet([_librespot.pid, _sidecar.pid]);
+      // Soltar la caché no basta: hasta que el sistema no recoja las páginas
+      // —o glibc no suelte sus arenas en Linux—, la memoria sigue contando
+      // como residente aunque ya esté libre. Se pide que la recojan ya.
+      ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
     } else if (_sessionStarted) {
       unawaited(_startSidecar());
     }
@@ -343,7 +344,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   void _aplicarTechoDeMemoria(bool activo) {
     _ram.techoBytes = activo ? _techoRendimiento : null;
     if (activo) {
-      ResourceMonitor.vaciarWorkingSet([_librespot.pid, _sidecar.pid]);
+      ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
     }
   }
 
@@ -568,9 +569,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     final cache = PaintingBinding.instance.imageCache;
     cache.clear();
     cache.clearLiveImages();
-    // Y que Windows se lleve las páginas que quedan sin usar: escondida en la
-    // bandeja, la app no necesita tener nada residente.
-    ResourceMonitor.vaciarWorkingSet([_librespot.pid, _sidecar.pid]);
+    // Y que el sistema se lleve las páginas que quedan sin usar: escondida en
+    // la bandeja, la app no necesita tener nada residente. Aquí es donde más
+    // se nota, porque la caché de imágenes se acaba de vaciar entera.
+    ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
   }
 
   @override

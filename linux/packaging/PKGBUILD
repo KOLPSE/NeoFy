@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.1.6
+pkgver=0.1.7
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')

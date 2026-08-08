@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -16,8 +17,8 @@ import 'package:flutter/foundation.dart';
 ///
 /// En Windows se lee con `GetProcessMemoryInfo` y `GetProcessTimes` por FFI
 /// —`dart:ffi` viene con el SDK— en vez de lanzar `tasklist` cada pocos
-/// segundos, que costaría más que lo que mide. En Linux sale más barato
-/// todavía y sin FFI ninguna: `/proc/<pid>/statm` y `/proc/<pid>/stat`.
+/// segundos, que costaría más que lo que mide. En Linux se lee de `/proc`, sin
+/// FFI ninguna: el PSS de `smaps_rollup` y los ticks de `stat`.
 class UsoDeRecursos {
   const UsoDeRecursos({
     this.app = 0,
@@ -93,6 +94,11 @@ typedef _GetTimesDart = int Function(
 typedef _EmptyWorkingSetC = Int32 Function(IntPtr);
 typedef _EmptyWorkingSetDart = int Function(int);
 
+// glibc: `int malloc_trim(size_t pad)`. Devuelve al sistema la memoria libre
+// que el asignador tiene retenida en sus arenas.
+typedef _MallocTrimC = Int32 Function(IntPtr);
+typedef _MallocTrimDart = int Function(int);
+
 class ResourceMonitor extends ChangeNotifier {
   ResourceMonitor({required this.pidsDeSidecars});
 
@@ -107,8 +113,8 @@ class ResourceMonitor extends ChangeNotifier {
 
   /// Techo que mantener, en bytes, o `null` para no hacer nada.
   ///
-  /// Lo pone el modo rendimiento. Cuando el total lo pasa, se le pide a Windows
-  /// que recoja las páginas que la app no está usando. No es un límite duro
+  /// Lo pone el modo rendimiento. Cuando el total lo pasa, se le devuelve al
+  /// sistema lo que la app tenga retenido sin usar. No es un límite duro
   /// —nadie puede prometerle a un proceso que no crecerá—, pero sí mantiene el
   /// residente pegado al objetivo en vez de dejarlo subir y quedarse arriba.
   int? techoBytes;
@@ -142,6 +148,25 @@ class ResourceMonitor extends ChangeNotifier {
       _psapi?.lookupFunction<_GetMemC, _GetMemDart>('GetProcessMemoryInfo');
   static final _emptyWorkingSet = _psapi
       ?.lookupFunction<_EmptyWorkingSetC, _EmptyWorkingSetDart>('EmptyWorkingSet');
+
+  /// `malloc_trim` del propio proceso, o `null` donde no exista.
+  ///
+  /// Se busca en el proceso ya cargado (`DynamicLibrary.process()`, que en
+  /// Windows ni siquiera está soportado) en vez de abrir `libc.so.6` por
+  /// nombre: el fichero se llama distinto según la libc, y con musl la función
+  /// directamente no existe. Si no aparece, se queda en `null` y no se llama a
+  /// nadie — un sistema sin glibc no es un error, solo no tiene esta palanca.
+  static final _mallocTrim = _buscarMallocTrim();
+
+  static _MallocTrimDart? _buscarMallocTrim() {
+    if (!Platform.isLinux) return null;
+    try {
+      return DynamicLibrary.process()
+          .lookupFunction<_MallocTrimC, _MallocTrimDart>('malloc_trim');
+    } catch (_) {
+      return null;
+    }
+  }
 
   void start() {
     _muestrear();
@@ -185,7 +210,7 @@ class ResourceMonitor extends ChangeNotifier {
         nuevo.total > techo &&
         ahora.difference(_ultimaPoda) > _entrePodas) {
       _ultimaPoda = ahora;
-      vaciarWorkingSet(pidsDeSidecars());
+      devolverMemoriaAlSistema(pidsDeSidecars());
     }
 
     if (nuevo.pareceIgualQue(uso)) return;
@@ -193,23 +218,37 @@ class ResourceMonitor extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Le pide a Windows que devuelva al sistema las páginas residentes que no
-  /// hagan falta ahora mismo, en los tres procesos.
+  /// Devuelve al sistema la memoria que la app tiene retenida sin usar.
   ///
-  /// Es lo que hace Windows por su cuenta al minimizar una ventana, y aquí se
-  /// pide a mano al esconderse en la bandeja y al encender el modo rendimiento.
-  /// No se pierde nada: las páginas pasan a la lista de espera del sistema y
-  /// vuelven solas si se necesitan; lo único que cuesta es un fallo de página
-  /// blando la primera vez. A cambio, la memoria que la app tenía retenida
-  /// queda libre para el resto del equipo, que es lo que se está midiendo.
+  /// Se llama al encender el modo rendimiento, al esconderse en la bandeja y
+  /// cada 30 s mientras el total pase del techo. Las dos plataformas tienen
+  /// mecanismos distintos y **ninguno pierde nada**: lo recuperado vuelve solo
+  /// en cuanto haga falta.
   ///
-  /// ⚠️ **En Linux no hace nada, y es correcto.** No hay equivalente de
-  /// `EmptyWorkingSet`: el kernel decide por su cuenta qué recupera y no acepta
-  /// que un proceso le pida podarse. `malloc_trim` tampoco serviría de mucho
-  /// porque la memoria de Flutter está en el heap de Dart y en Skia, no en las
-  /// arenas de glibc. El modo rendimiento conserva allí sus otros tres efectos,
-  /// que son los que de verdad pesan (ver `settings.dart`).
-  static void vaciarWorkingSet(List<int?> procesos) {
+  /// - **Windows: `EmptyWorkingSet`** en los tres procesos. Saca las páginas
+  ///   del working set y las manda a la lista de espera del sistema; volver a
+  ///   tocarlas cuesta un fallo de página blando. Es lo mismo que hace Windows
+  ///   por su cuenta al minimizar una ventana.
+  /// - **Linux: `malloc_trim(0)`**, y solo en el proceso propio. No hay
+  ///   equivalente de `EmptyWorkingSet` —el kernel no acepta que un proceso le
+  ///   pida podarse— pero sí se puede obligar al asignador a soltar lo que ya
+  ///   está libre.
+  ///
+  /// ⚠️ **Por qué `malloc_trim` sí vale la pena aquí**, en contra de lo que
+  /// parece: es verdad que el heap de Dart no pasa por `malloc`, pero el resto
+  /// del proceso sí. Las cachés ráster de Skia, los búferes de decodificación
+  /// de imágenes y todo el lado GTK/GDK piden por ahí, y justo antes de esta
+  /// llamada se acaba de vaciar la caché de imágenes: sin un trim, glibc se
+  /// queda esas páginas en sus arenas y el residente no baja ni un byte aunque
+  /// la memoria ya esté libre. El trim no puede hacer nada con los sidecars,
+  /// que son procesos aparte con su propio asignador.
+  static void devolverMemoriaAlSistema(List<int?> procesos) {
+    if (Platform.isLinux) {
+      // El argumento es cuánto dejar sin devolver en lo alto del heap. Cero:
+      // que suelte todo lo que pueda.
+      _mallocTrim?.call(0);
+      return;
+    }
     final abrir = _openProcess;
     final vaciar = _emptyWorkingSet;
     final cerrar = _closeHandle;
@@ -238,11 +277,34 @@ class ResourceMonitor extends ChangeNotifier {
   }
 
   /// Lo mismo por `/proc`, que es texto plano y no necesita FFI.
+  ///
+  /// ⚠️ **Se mide el PSS y no el RSS**, y la diferencia en Linux es enorme. El
+  /// residente cuenta **enteras** las páginas compartidas, y una app GTK las
+  /// tiene a montones: además de `libflutter_linux_gtk.so`, están GTK, GLib,
+  /// Pango, Cairo, HarfBuzz, fontconfig, dbus y el driver de Mesa. Nada de eso
+  /// es memoria de NeoFy —está compartida con el resto del escritorio— pero el
+  /// RSS se la imputa toda, y por eso el mismo binario "gasta" el doble aquí
+  /// que en Windows sin gastar nada más. El PSS reparte cada página compartida
+  /// entre los procesos que la usan, que es exactamente lo que esta clase dice
+  /// medir: lo que la app le cuesta al equipo.
+  ///
+  /// `smaps_rollup` es más caro que `statm` porque el kernel recorre todos los
+  /// mapeos para sumarlo, pero es un fichero pequeño y esto va cada 3 s. Si no
+  /// existe (kernel anterior al 4.14, o `/proc` montado con `hidepid`) se cae
+  /// al RSS de siempre, que sobreestima pero nunca miente hacia abajo.
   static (int, int) _medirLinux(int proceso) {
     try {
-      final rss = rssDeStatm(File('/proc/$proceso/statm').readAsStringSync());
       final ticks = ticksDeStat(File('/proc/$proceso/stat').readAsStringSync());
-      return (rss, ticks);
+
+      var bytes = 0;
+      final rollup = File('/proc/$proceso/smaps_rollup');
+      if (rollup.existsSync()) {
+        bytes = pssDeSmapsRollup(rollup.readAsStringSync());
+      }
+      if (bytes == 0) {
+        bytes = rssDeStatm(File('/proc/$proceso/statm').readAsStringSync());
+      }
+      return (bytes, ticks);
     } catch (_) {
       // El proceso ha muerto entre una muestra y la siguiente, que es de lo más
       // normal con sidecars que se reinician solos.
@@ -250,7 +312,29 @@ class ResourceMonitor extends ChangeNotifier {
     }
   }
 
-  /// Tamaño en bytes de `/proc/<pid>/statm`.
+  /// Bytes de la línea `Pss:` de `/proc/<pid>/smaps_rollup`, o 0 si no está.
+  ///
+  /// El fichero son pares `Campo:   <n> kB`, uno por línea. Se busca `Pss`
+  /// **exacto**: hay varios campos que empiezan igual (`Pss_Dirty`,
+  /// `Pss_Anon`, `Pss_File`, `Pss_Shmem`) y quedarse con el primero que empiece
+  /// por "Pss" daría un número plausible pero equivocado, que es la peor clase
+  /// de error para algo que solo se mira de reojo.
+  @visibleForTesting
+  static int pssDeSmapsRollup(String rollup) {
+    for (final linea in const LineSplitter().convert(rollup)) {
+      final dosPuntos = linea.indexOf(':');
+      if (dosPuntos < 0) continue;
+      if (linea.substring(0, dosPuntos).trim() != 'Pss') continue;
+      final resto = linea.substring(dosPuntos + 1).trim();
+      final numero = resto.split(RegExp(r'\s+')).first;
+      final kb = int.tryParse(numero);
+      return kb == null ? 0 : kb * 1024;
+    }
+    return 0;
+  }
+
+  /// Residente en bytes de `/proc/<pid>/statm`. Es el plan B de [_medirLinux]
+  /// cuando no hay `smaps_rollup`.
   ///
   /// Los campos son `size resident shared text lib data dt`, **en páginas**. El
   /// que interesa es el segundo: `size` es el espacio de direcciones virtual,

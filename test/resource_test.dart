@@ -43,6 +43,38 @@ void main() {
   // Se prueba el parseo con cadenas fijas y no leyendo /proc de verdad, para
   // que estos tests valgan tambien en el runner de Windows del CI.
   group('/proc (Linux)', () {
+    test('smaps_rollup da el Pss, que es lo que la app le cuesta al equipo', () {
+      // El RSS cuenta enteras las librerias compartidas (GTK, Mesa, Pango...),
+      // que no son memoria de NeoFy. El Pss reparte cada pagina entre quienes
+      // la usan: 61.234 kB frente a los 198.104 kB de Rss del mismo proceso.
+      const rollup = 'Rss:              198104 kB\n'
+          'Pss:               61234 kB\n'
+          'Pss_Dirty:         44100 kB\n'
+          'Shared_Clean:     130000 kB\n'
+          'Private_Dirty:     40000 kB\n';
+      expect(ResourceMonitor.pssDeSmapsRollup(rollup), 61234 * 1024);
+    });
+
+    test('no se confunde Pss con Pss_Dirty ni con Pss_Anon', () {
+      // Quedarse con el primer campo que empiece por "Pss" daria un numero
+      // plausible y equivocado, que es la peor clase de error para algo que
+      // solo se mira de reojo. Aqui el Pss de verdad va el ultimo a proposito.
+      const rollup = 'Pss_Dirty:          1000 kB\n'
+          'Pss_Anon:            700 kB\n'
+          'Pss_File:            200 kB\n'
+          'Pss_Shmem:           100 kB\n'
+          'Pss:               54321 kB\n';
+      expect(ResourceMonitor.pssDeSmapsRollup(rollup), 54321 * 1024);
+    });
+
+    test('un smaps_rollup sin Pss vale cero, para poder caer al statm', () {
+      // Devolver cero es lo que hace que _medirLinux use el RSS de plan B en
+      // vez de ensenar una app que no gasta nada.
+      expect(ResourceMonitor.pssDeSmapsRollup(''), 0);
+      expect(ResourceMonitor.pssDeSmapsRollup('Rss: 198104 kB'), 0);
+      expect(ResourceMonitor.pssDeSmapsRollup('Pss: no-es-un-numero kB'), 0);
+    });
+
     test('statm da el residente, no el espacio virtual', () {
       // size resident shared text lib data dt, en paginas de 4 KiB. El primero
       // es el espacio de direcciones, que con Skia son gigas y no mide nada.
