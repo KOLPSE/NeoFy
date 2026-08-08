@@ -143,7 +143,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   /// Cambios de la salida de audio del sistema. Ver [_reiniciarAudio].
   late final AudioDeviceWatcher _audio =
-      AudioDeviceWatcher(onCambio: _reiniciarAudio);
+      AudioDeviceWatcher(
+          onCambio: () => _reiniciarAudio(motivo: 'Windows cambió de altavoz'));
 
   /// Lo mismo que [_mediaKeys], pero en Linux: allí las teclas multimedia las
   /// reparte el escritorio entre los reproductores que hablan MPRIS. De regalo,
@@ -191,7 +192,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     // Las dos vías por las que se detecta que el audio se ha quedado mudo: que
     // Windows cambie de altavoces, y que el propio librespot se queje en su log.
     _audio.start();
-    _librespot.onFalloDeAudio = () => unawaited(_reiniciarAudio());
+    _librespot.onFalloDeAudio = (linea) =>
+        unawaited(_reiniciarAudio(motivo: 'error en el log: $linea'));
     _ram.start();
     // Una comprobación al arrancar, sin molestar: si hay algo nuevo, aparece en
     // Ajustes con un punto. No se instala nada sin que el usuario lo pida.
@@ -277,8 +279,13 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   /// Reiniciar el sidecar corta el sonido un par de segundos, así que no se
   /// hace a la ligera: solo con un aviso del sistema, con un error del backend
   /// de audio en el log, o porque lo pida el usuario desde Ajustes.
-  Future<void> _reiniciarAudio({bool porElUsuario = false}) async {
+  Future<void> _reiniciarAudio({bool porElUsuario = false, String motivo = '?'}) async {
     if (!_sessionStarted || _reiniciandoAudio) return;
+    // Reiniciar corta el sonido un par de segundos y se ve igual que una pausa,
+    // así que queda dicho quién lo pidió: si alguien reporta que la música se
+    // para sola, esta línea distingue un reinicio de audio de una pausa de
+    // verdad, que son problemas completamente distintos.
+    debugPrint('Reiniciando el audio (motivo: $motivo)');
     // Un cambio de salida llega en ráfaga de avisos y un fallo de audio, en
     // ráfaga de líneas de log. Sin esta ventana, la app se pasaría el rato
     // reiniciando el sidecar y cortando la misma música que intenta salvar.
@@ -562,7 +569,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       settings: _settings,
       updater: _updater,
       onSalirParaActualizar: _quit,
-      onReiniciarAudio: () => _reiniciarAudio(porElUsuario: true),
+      onReiniciarAudio: () =>
+          _reiniciarAudio(porElUsuario: true, motivo: 'botón de Ajustes'),
       librespot: _librespot,
       sidecar: _sidecar,
       onReauth: _reauth,

@@ -99,11 +99,43 @@ class MprisService {
     final objeto = _objeto;
     if (objeto == null) return;
     final e = estado();
-    final firma = '${e.track?.uri}|${e.estadoDeReproduccion}|${e.volumen}|'
-        '${e.puedeSaltar}|${e.puedeVolver}';
-    if (firma == _ultimaFirma) return;
-    _ultimaFirma = firma;
-    unawaited(objeto.emitirCambios());
+    final track = e.track;
+    final caratula = track == null ? null : caratulaEnDisco(track);
+    // La carátula entra en la firma a propósito: cuando termina de bajarse, la
+    // firma cambia sola y se vuelve a anunciar con ella. Sin eso, el anuncio
+    // del cambio de canción llega **antes** que la descarga y el escritorio se
+    // queda con el hueco para siempre.
+    final firma = '${track?.uri}|${e.estadoDeReproduccion}|${e.volumen}|'
+        '${e.puedeSaltar}|${e.puedeVolver}|$caratula';
+    if (firma != _ultimaFirma) {
+      _ultimaFirma = firma;
+      unawaited(objeto.emitirCambios());
+    }
+    if (track != null && caratula == null) _bajarCaratula(track);
+  }
+
+  /// Uri de la canción cuya carátula se está bajando, para no pedir la misma
+  /// una y otra vez en cada sondeo mientras la descarga está en curso.
+  String? _bajando;
+
+  /// Se trae la carátula que falta y vuelve a anunciar los metadatos.
+  ///
+  /// El escritorio no sabe volver a preguntar: si el anuncio del cambio de
+  /// canción va sin `artUrl`, ahí se queda. Así que cuando no está en disco se
+  /// pide y se reanuncia al llegar.
+  void _bajarCaratula(Track track) {
+    final url = track.artMedium ?? track.artSmall;
+    if (url == null || _bajando == track.uri) return;
+    _bajando = track.uri;
+    unawaited(ArtCache.file(url).then((_) {
+      _bajando = null;
+      // Bajar tarda, y para entonces puede estar sonando otra cosa: reanunciar
+      // la carátula de la canción anterior dejaría el escritorio desincronizado.
+      if (estado().track?.uri != track.uri) return;
+      notificarCambio();
+    }).catchError((_) {
+      _bajando = null;
+    }));
   }
 
   /// Anuncia un salto de posición.
@@ -188,16 +220,31 @@ Map<String, Object> metadatosMpris(Track? track) {
         track.artists.isEmpty ? const <String>[] : track.artists.split(', '),
   };
 
-  // La carátula se sirve desde el fichero que ya hay en disco: el escritorio la
-  // pinta sin bajar nada y sin gastar cuota. Si aún no está descargada se omite
-  // la clave — no se puede esperar a una descarga para contestar por D-Bus, y
-  // dar la url http haría que el escritorio se la bajara por su cuenta.
-  final url = track.artMedium ?? track.artSmall;
-  if (url != null) {
-    final fichero = ArtCache.ficheroSiEstaEnDisco(url);
-    if (fichero != null) datos['mpris:artUrl'] = fichero.uri.toString();
-  }
+  final caratula = caratulaEnDisco(track);
+  if (caratula != null) datos['mpris:artUrl'] = caratula;
   return datos;
+}
+
+/// La carátula de [track] que **ya esté descargada**, como `file://`, o `null`.
+///
+/// Se sirve desde disco para que el escritorio la pinte sin bajar nada y sin
+/// gastar cuota; no se puede esperar a una descarga para contestar por D-Bus, y
+/// dar la url `http` haría que el escritorio se la bajara por su cuenta.
+///
+/// ⚠️ **Se prueban las dos variantes, y esa es la corrección de un fallo real**:
+/// unas carátulas salían en el reproductor del sistema y otras no, sin patrón
+/// aparente. La causa es que [ArtImage] elige qué variante descarga **según los
+/// píxeles reales** en los que va a pintarla: las filas de una lista caben en la
+/// de 64 y las tarjetas de la portada necesitan la de 300. Pidiendo aquí solo la
+/// mediana, las canciones que solo se habían visto en una lista no tenían ese
+/// fichero y se quedaban sin carátula.
+String? caratulaEnDisco(Track track) {
+  for (final url in [track.artMedium, track.artSmall]) {
+    if (url == null) continue;
+    final fichero = ArtCache.ficheroSiEstaEnDisco(url);
+    if (fichero != null) return fichero.uri.toString();
+  }
+  return null;
 }
 
 /// El objeto que se cuelga de `/org/mpris/MediaPlayer2`.
@@ -309,6 +356,12 @@ class _ObjetoMpris extends DBusObject {
     if (call.interface != _player) {
       return DBusMethodErrorResponse.unknownInterface();
     }
+
+    // Se deja rastro de quién pide qué. En Linux, MPRIS es **la única vía** por
+    // la que algo de fuera puede pausar la música (las teclas multimedia van por
+    // aquí), así que cuando alguien reporta que se pausa sola, esta línea dice
+    // si vino de fuera y de qué programa.
+    debugPrint('MPRIS: ${call.name} <- ${call.sender}');
 
     switch (call.name) {
       case 'PlayPause':

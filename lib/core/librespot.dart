@@ -62,7 +62,10 @@ class LibrespotManager extends ChangeNotifier {
   /// Se llama cuando el log delata que la salida de audio se ha roto. Quien
   /// escucha decide qué hacer (reiniciar el sidecar y retomar la canción);
   /// aquí no se sabe nada de la Web API ni de lo que estuviera sonando.
-  void Function()? onFalloDeAudio;
+  ///
+  /// Recibe la línea que lo disparó: reiniciar corta el sonido y se parece
+  /// mucho a una pausa, así que hay que poder decir **qué** lo provocó.
+  void Function(String linea)? onFalloDeAudio;
 
   /// Últimas líneas del log del proceso. Es lo único que tenemos para
   /// diagnosticar cuando librespot no arranca, así que se conserva un trozo.
@@ -200,7 +203,7 @@ class LibrespotManager extends ChangeNotifier {
     logTail.add(line);
     if (logTail.length > 200) logTail.removeAt(0);
 
-    if (esFalloDeAudio(line)) onFalloDeAudio?.call();
+    if (esFalloDeAudio(line)) onFalloDeAudio?.call(line);
 
     // Durante el login, librespot escribe la URL de autorización en el log en
     // vez de abrir el navegador. La abrimos nosotros para que el usuario no

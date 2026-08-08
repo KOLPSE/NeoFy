@@ -1,4 +1,9 @@
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/models.dart';
 import 'package:neofy/core/mpris.dart';
 
@@ -92,6 +97,48 @@ void main() {
       // url http haria que el escritorio se la bajara por su cuenta. En el test
       // la cache esta vacia, asi que la clave no debe aparecer siquiera.
       expect(metadatosMpris(_track()).containsKey('mpris:artUrl'), isFalse);
+    });
+  });
+
+  // Unas caratulas salian en el reproductor del sistema y otras no, sin patron
+  // aparente. La causa: ArtImage elige que variante descarga segun los pixeles
+  // en los que va a pintarla —las filas caben en la de 64, las tarjetas de la
+  // portada necesitan la de 300—, asi que pedir aqui solo la mediana dejaba sin
+  // caratula a todo lo que solo se hubiera visto en una lista.
+  group('caratula: se prueban las dos variantes', () {
+    final dir = Directory(p.join(cacheDir().path, 'art'));
+
+    File ficheroDe(String url) =>
+        File(p.join(dir.path, '${sha1.convert(url.codeUnits)}.img'));
+
+    setUp(() => dir.createSync(recursive: true));
+
+    test('vale la pequena cuando la mediana no esta bajada', () {
+      final f = ficheroDe('https://i.scdn.co/image/pequena');
+      f.writeAsBytesSync([1, 2, 3]);
+      addTearDown(() => f.existsSync() ? f.deleteSync() : null);
+
+      final url = metadatosMpris(_track())['mpris:artUrl'] as String?;
+      expect(url, isNotNull);
+      expect(url, startsWith('file:'));
+      expect(url, contains(sha1.convert('https://i.scdn.co/image/pequena'.codeUnits).toString()));
+    });
+
+    test('se prefiere la mediana cuando estan las dos', () {
+      final pequena = ficheroDe('https://i.scdn.co/image/pequena');
+      final mediana = ficheroDe('https://i.scdn.co/image/mediana');
+      pequena.writeAsBytesSync([1]);
+      mediana.writeAsBytesSync([1]);
+      addTearDown(() {
+        if (pequena.existsSync()) pequena.deleteSync();
+        if (mediana.existsSync()) mediana.deleteSync();
+      });
+
+      // La mediana se ve mejor en el widget del escritorio, que la pinta grande.
+      expect(
+        metadatosMpris(_track())['mpris:artUrl'] as String?,
+        contains(sha1.convert('https://i.scdn.co/image/mediana'.codeUnits).toString()),
+      );
     });
   });
 }
