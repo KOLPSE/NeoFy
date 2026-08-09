@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.1.11
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')
@@ -35,6 +35,10 @@ depends=(
   # Solo lo pide el sidecar de metadatos: librespot va con rustls, pero
   # librespot-core arrastra native-tls por sus features por defecto.
   'openssl'
+  # yt-dlp, el descodificador de NeoTube, se empaqueta como zipapp (3 MB) y no
+  # como el binario autonomo de 40 MB: necesita un interprete. Se ejecuta
+  # directamente por su shebang.
+  'python'
 )
 optdepends=(
   'gnome-shell-extension-appindicator: icono de bandeja en GNOME'
@@ -51,7 +55,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('c0ed5002c8c068e083c75c9378593f40bd71166c276a4534d005c48cd14e898a')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/$_tarball"
@@ -63,6 +67,8 @@ package() {
   install -Dm755 neofy "$pkgdir/opt/$_pkgname/neofy"
   install -Dm755 librespot "$pkgdir/opt/$_pkgname/librespot"
   install -Dm755 metadata-sidecar "$pkgdir/opt/$_pkgname/metadata-sidecar"
+  # Sin el, NeoTube no reproduce nada.
+  install -Dm755 yt-dlp "$pkgdir/opt/$_pkgname/yt-dlp"
 
   # El enlace es seguro: Dart resuelve Platform.resolvedExecutable al destino
   # real, asi que findBinary() sigue encontrando los sidecars en /opt.
