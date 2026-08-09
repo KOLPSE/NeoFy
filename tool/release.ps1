@@ -62,31 +62,31 @@ $token = $env:GITHUB_TOKEN
 if (-not $token) {
   # El mismo token que usa git push, sin guardar nada en el proyecto.
   #
-  # ⚠️ **No se le puede pasar la petición con una tubería de PowerShell**, y
-  # esto ya costó un ensayo abortado. PowerShell 5.1 escribe a la entrada de un
-  # programa nativo con saltos de línea de Windows, así que a `git` le llegaba
-  # `protocol=https\r`; Git rechaza desde hace unas versiones cualquier línea de
-  # credencial que lleve un CR, descarta la línea entera y luego se queja de que
-  # **falta** el campo protocol, que es un mensaje que manda a mirar justo al
-  # sitio equivocado. Escribiendo por .NET se controla el salto de línea y llega
-  # lo que Git espera.
-  $arranque = New-Object System.Diagnostics.ProcessStartInfo
-  $arranque.FileName = 'git'
-  $arranque.Arguments = 'credential fill'
-  $arranque.RedirectStandardInput = $true
-  $arranque.RedirectStandardOutput = $true
-  $arranque.UseShellExecute = $false
-  $arranque.CreateNoWindow = $true
-  $git = [System.Diagnostics.Process]::Start($arranque)
-  $git.StandardInput.NewLine = "`n"
-  $git.StandardInput.Write("protocol=https`nhost=github.com`n`n")
-  $git.StandardInput.Close()
-  $respuesta = $git.StandardOutput.ReadToEnd()
-  $git.WaitForExit()
-  $token = $respuesta -split "`n" |
-           Where-Object { $_ -like 'password=*' } |
-           Select-Object -First 1
-  if ($token) { $token = $token.Substring(9).Trim() }
+  # ⚠️ **La petición se le da por un fichero redirigido, no por una tubería**, y
+  # esto costó un ensayo abortado.
+  #
+  # Con `"protocol=https`nhost=github.com`n`n" | git credential fill`, en una
+  # sesión de PowerShell no interactiva `git` no llega a leer nada de la entrada
+  # y muere con *"refusing to work with credential missing protocol field"* —
+  # que es un mensaje que manda a mirar al sitio equivocado, porque el campo iba
+  # puesto: lo que falla es que no lee. Escribirlo por .NET a la entrada estándar
+  # tampoco vale, da exactamente lo mismo. Con `<` sobre un fichero funciona
+  # siempre, interactivo o no.
+  #
+  # El fichero no lleva ningún secreto: solo el host que se le pregunta. El que
+  # vuelve por la salida —ese sí— no toca el disco en ningún momento.
+  $peticion = Join-Path ([System.IO.Path]::GetTempPath()) "neofy-credencial-$PID.txt"
+  try {
+    [System.IO.File]::WriteAllBytes(
+      $peticion,
+      [System.Text.Encoding]::ASCII.GetBytes("protocol=https`nhost=github.com`n`n"))
+    $token = cmd /c "git credential fill < `"$peticion`"" |
+             Where-Object { $_ -like 'password=*' } |
+             Select-Object -First 1
+    if ($token) { $token = $token.Substring(9).Trim() }
+  } finally {
+    Remove-Item $peticion -Force -ErrorAction SilentlyContinue
+  }
 }
 if (-not $token) {
   Mal ('No hay token de GitHub. Guarda la credencial haciendo un `git push`, ' +
