@@ -39,6 +39,10 @@ depends=(
   # como el binario autonomo de 40 MB: necesita un interprete. Se ejecuta
   # directamente por su shebang.
   'python'
+  # La WebView del login de NeoTube. Es dependencia dura aunque no se use
+  # NeoTube: el plugin se enlaza al compilar, asi que sin ella el ejecutable
+  # ni arranca.
+  'webkit2gtk-4.1'
 )
 optdepends=(
   'gnome-shell-extension-appindicator: icono de bandeja en GNOME'

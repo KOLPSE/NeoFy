@@ -92,7 +92,7 @@ Version: $version
 Section: sound
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9)
+Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9), libwebkit2gtk-4.1-0
 Installed-Size: $tamano_kb
 Maintainer: KOLPSE <117825722+KOLPSE@users.noreply.github.com>
 Homepage: https://github.com/KOLPSE/NeoFy
@@ -155,7 +155,7 @@ License:        MIT
 URL:            https://github.com/KOLPSE/NeoFy
 BuildArch:      x86_64
 AutoReqProv:    no
-Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9
+Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9, webkit2gtk4.1
 
 %description
 NeoFy reproduce Spotify en unos 150 MB de memoria, frente a los 400-700 MB del

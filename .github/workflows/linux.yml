@@ -68,11 +68,18 @@ jobs:
         # ejecutar: el plugin de tray_manager lo busca con pkg-config desde su
         # CMakeLists y, si no esta, `flutter build linux` ni siquiera llega a
         # generar los ficheros de build.
+        #
+        # ⚠️ libwebkit2gtk-4.1-dev es lo mismo pero para la WebView del login de
+        # NeoTube (desktop_webview_window). Su CMakeLists prueba primero
+        # webkit2gtk-4.1 y, si no lo encuentra, EXIGE webkit2gtk-4.0, que ya no
+        # existe en Ubuntu 24.04: sin el paquete -4.1, `flutter build linux`
+        # muere con "The following required packages were not found".
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang cmake ninja-build pkg-config libgtk-3-dev \
-            libayatana-appindicator3-dev libpulse-dev libssl-dev rpm
+            libayatana-appindicator3-dev libpulse-dev libssl-dev rpm \
+            libwebkit2gtk-4.1-dev
 
       - uses: subosito/flutter-action@v2
         with:
@@ -200,6 +207,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed \
             gtk3 libayatana-appindicator libpulse openssl xdg-utils \
+            python webkit2gtk-4.1 \
             base-devel sudo github-cli
 
       - uses: actions/checkout@v4
