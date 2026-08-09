@@ -392,6 +392,113 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   `start()` hace `taskkill /F /IM librespot.exe` antes de lanzar el suyo. Es seguro porque
   la app es de instancia única.
 
+## NeoTube: trampas de la API interna de YouTube Music
+
+NeoTube es el **segundo modo completo** de la app (`lib/core/app_mode.dart`): su propia
+sesión, su propia biblioteca y su propio reproductor. No es una pestaña dentro de NeoFy.
+
+La API que usa (`youtubei/v1`, en `lib/core/yt_music_api.dart`) no tiene documentación
+oficial para terceros. Todo lo de aquí abajo está **verificado contra la cuenta real** con
+`tool/probe_yt.dart`, que imprime qué renderers trae cada respuesta y de qué clave cuelgan
+sus elementos. A diferencia de las sondas de Spotify, esta **solo lee** y no rota nada: se
+puede ejecutar con la app abierta.
+
+- **`APISID` y `SAPISID` son cookies distintas, y firmar con la primera te deja anónimo.**
+  La API se autentica con la cabecera `Cookie` más una firma `SAPISIDHASH` calculada sobre
+  la cookie `SAPISID`. Buscar esa cookie por sufijo (`name.endsWith('APISID')`) parece
+  razonable para tolerar las variantes `__Secure-1PAPISID`/`__Secure-3PAPISID`... salvo que
+  **`APISID` a secas también acaba en `APISID`** y llega antes en la lista de la WebView.
+  Y así es como falla, que es lo peor de todo: **Google no contesta 401 ni 403, contesta 200
+  con la sesión anónima**. La portada llegaba llena (de recomendaciones genéricas para nadie)
+  y solo la biblioteca delataba el problema, con un `messageRenderer` que dice "Inicia sesión
+  para escuchar tus canciones favoritas" donde deberían estar tus playlists. Por eso
+  `YtAuth._nombresDeFirma` es una **lista cerrada y ordenada** y no una búsqueda por sufijo.
+- **`gridRenderer` guarda sus elementos en `items`; todo lo demás, en `contents`.** La
+  biblioteca entera (`FEmusic_liked_playlists`, `FEmusic_liked_albums`…) llega dentro de un
+  `gridRenderer`. Un parseo que solo mire `contents` ve cero elementos y pinta la pantalla
+  vacía sin un solo error de por medio.
+- **Una lista no se reproduce por `videoId`, porque no tiene.** Las tarjetas de listas y
+  álbumes traen un `browseId` (`VL…` para listas, `MPREb_…` para álbumes, `UC…` para
+  artistas) con el que hay que pedir sus pistas *después*. Aplanarlo todo a "pista sin
+  `videoId`" es lo que dejaba únicamente canciones sueltas reproducibles. El `playlistId`
+  que quiere `browse` es el `browseId` **sin el prefijo `VL`**: con él puesto dos veces, 400.
+- **Las mezclas y radios de la portada solo responden por `next`, no por `browse`.** Sus ids
+  empiezan por `RD` y `browse` sobre `VLRD…` falla. `next` es el endpoint que usa el propio
+  reproductor web para llenar su cola, y traga casi cualquier id: es el camino principal para
+  las mezclas y el plan B para todo lo demás.
+- **El `playlistId` de una mezcla no está en la tarjeta, sino en su botón de play.** Hay que
+  bajar hasta
+  `thumbnailOverlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer.playNavigationEndpoint.watchPlaylistEndpoint`.
+- **Las listas y los álbumes llegan en `twoColumnBrowseResultsRenderer`, y la pestaña solo
+  trae la cabecera.** Las pistas están en `secondaryContents`. Quedarse con la pestaña y dar
+  la lista por vacía es el error fácil aquí.
+- **La cabecera de una lista *propia* va envuelta.** Si la puedes editar llega dentro de
+  `musicEditablePlaylistDetailHeaderRenderer`; las ajenas y "Música que me gusta" llegan como
+  `musicResponsiveHeaderRenderer`, y los álbumes todavía como `musicDetailHeaderRenderer`
+  colgando de la raíz.
+- **Una lista larga llega en trozos de 100**, con dos formatos de continuación vivos a la
+  vez: el moderno manda el token en el cuerpo y contesta con `onResponseReceivedActions`; el
+  antiguo lo manda por la URL (`ctoken`/`continuation`/`type=next`) y contesta con
+  `continuationContents`. Se prueban los dos.
+- **La biblioteca no es un `browseId`, son cuatro.** Playlists, álbumes, canciones y artistas
+  viven en endpoints distintos y se piden en paralelo.
+- **La primera tarjeta de la rejilla de biblioteca es el botón "Nueva lista"**: tiene título y
+  carátula, pero no lleva a ningún sitio. Se filtra por `YtItem.tieneDestino`.
+- **El buscador con el filtro de "solo canciones" no puede devolver listas.** Es una obviedad
+  vista así, pero pasarle `params` de canciones era justo lo que impedía llegar a una playlist
+  desde la búsqueda.
+
+### Los dos modos comparten ventana, teclado y altavoces
+
+El aislamiento entre NeoFy y NeoTube **no sale gratis**, porque `ModeHost` mantiene los dos
+shells **montados a la vez** (es lo que conserva el scroll y el estado de cada uno al
+alternar). Tres cosas hubo que separar a mano:
+
+- **El teclado.** `IgnorePointer` solo tapa el ratón: un evento de teclado va por el árbol de
+  foco, no por el de punteros. El `Focus` de `AppShell` seguía escuchando con NeoTube en
+  pantalla, y el espacio reanudaba Spotify. Y no bastaba con que cada shell filtrara por su
+  cuenta, porque un evento que un `Focus` ignora sube a sus **ancestros**, nunca a un
+  hermano. Los atajos viven ahora en `ui/atajos.dart`, **por encima de los dos**, y reparten
+  según el modo activo. `ModeHost` añade además `ExcludeFocus` sobre el modo que no se ve.
+  ⚠️ Ese `ExcludeFocus` desengancha el foco del shell saliente y lo sube al *scope* raíz, que
+  está por encima del nodo de los atajos: por eso `AtajosDeReproduccion` escucha `modoApp` y
+  lo recupera. Sin eso, el espacio se quedaba mudo justo después de alternar.
+- **Los mandos de fuera.** Teclas multimedia, panel de Windows, MPRIS y menú de la bandeja
+  iban **siempre** a Spotify. Ahora pasan por `_alternar`/`_siguiente`/`_anterior` de
+  `main.dart`, que miran el modo activo, y el estado que se anuncia al escritorio es el del
+  modo activo (`_estadoDeNeoTube` construye un `Track` al vuelo, que es el vocabulario que
+  hablan MPRIS y SMTC).
+- **Los altavoces.** Cambiar de modo pausa el modo que se deja, y arrancar cualquier pista en
+  NeoTube pausa Spotify (`YtPlayer.alEmpezarAReproducir`). Se pausa, **no** se apaga:
+  librespot es lo que mantiene el dispositivo registrado en Spotify Connect y matarlo
+  obligaría a esperar a que se vuelva a registrar. De paso, con NeoTube delante el sondeo de
+  la Web API baja a su ritmo lento: son 1.200 peticiones a la hora para no enseñar nada.
+
+⚠️ **El `mpris:trackid` es una ruta de objeto D-Bus**, y solo admite `[A-Za-z0-9_]`. Los
+`videoId` de YouTube traen `-` con frecuencia: sin sanearlo, D-Bus rechaza el diccionario
+entero y el widget del escritorio se queda sin título ni carátula.
+
+### yt-dlp: el tercer sidecar
+
+NeoTube no reproduce **nada** sin `yt-dlp`, que es quien resuelve la URL del stream de cada
+pista. Se trata como un sidecar más: `YtPlayer.findYtDlpBinary()` lo busca junto al
+ejecutable, luego en `tool/ytdlp-build/bin/` (el árbol de desarrollo) y, por último, **en el
+PATH** — a diferencia de librespot, es el mismo binario que empaqueta cualquier
+distribución, así que el del usuario sirve igual y suele estar más fresco.
+
+- **No se compila, se baja** (`tool/fetch_ytdlp.ps1` / `.sh`), y se rebaja **en cada
+  empaquetado**, no se cachea: YouTube le rompe los extractores cada pocas semanas y el de
+  la release anterior puede estar ya muerto.
+- **En Linux se empaqueta el *zipapp* (3 MB), no el binario autónomo (40 MB)**, y por eso
+  el `.deb`, el `.rpm` y el `PKGBUILD` declaran `python3 >= 3.9`. Son 40 MB menos en cada
+  uno de los cuatro artefactos, y python3 está en cualquier escritorio actual. Si algún día
+  se cambia por `yt-dlp_linux`, hay que quitar esas dependencias.
+- El workflow no se limita a comprobar que el fichero está: ejecuta **`yt-dlp --version`**
+  tras instalar el `.deb` y el paquete de Arch. Un zipapp sin intérprete existe, es
+  ejecutable y no arranca — y eso, sin esta comprobación, solo se descubre pulsando una
+  canción en una copia ya instalada.
+- Ajustes → NeoTube enseña la versión y la ruta del que se está usando, por lo mismo.
+
 ## RAM: cómo se mide
 
 **El Administrador de tareas engaña.** Agrupa por ventanas de nivel superior, y los dos

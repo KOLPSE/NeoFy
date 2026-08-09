@@ -1,12 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/material.dart';
+// `hide Track`: media_kit llama `Track` a su pista de audio/vídeo de libmpv y
+// choca con el `Track` de Spotify de `core/models.dart`, que es el que habla el
+// panel del sistema. Aquí solo hace falta `MediaKit.ensureInitialized()`.
+import 'package:media_kit/media_kit.dart' hide Track;
 import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/app_config.dart';
+import 'core/app_mode.dart';
 import 'core/art_cache.dart';
 import 'core/audio_device.dart';
 import 'core/auth.dart';
@@ -15,6 +21,7 @@ import 'core/librespot.dart';
 import 'core/liked_store.dart';
 import 'core/media_keys.dart';
 import 'core/metadata_sidecar.dart';
+import 'core/models.dart';
 import 'core/mpris.dart';
 import 'core/player_state.dart';
 import 'core/resource_monitor.dart';
@@ -22,7 +29,13 @@ import 'core/settings.dart';
 import 'core/smtc.dart';
 import 'core/spotify_api.dart';
 import 'core/updater.dart';
+import 'core/yt_auth.dart';
+import 'core/yt_music_api.dart';
+import 'core/yt_player.dart';
+import 'ui/atajos.dart';
 import 'ui/login_screen.dart';
+import 'ui/mode_host.dart';
+import 'ui/neotube_shell.dart';
 import 'ui/shell.dart';
 
 /// Instancia única: la primera escucha en un puerto local; las siguientes le
@@ -52,8 +65,18 @@ Future<bool> _acquireSingleInstance() async {
   }
 }
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // La ventana de login de NeoTube (`YtAuth.login()`) es una WebView de
+  // verdad, y en Windows `desktop_webview_window` la dibuja relanzando este
+  // mismo `neofy.exe` con argumentos especiales para pintar solo su barra de
+  // título — por eso esta comprobación va la primera de todas, antes incluso
+  // del candado de instancia única: si entra por aquí, no es una segunda
+  // NeoFy, es esa ventanita.
+  if (runWebViewTitleBarWidget(args)) return;
+  // Registra los plugins nativos de media_kit (libmpv). Hace falta antes de
+  // crear ningún `Player`, aunque el usuario no llegue a entrar en NeoTube.
+  MediaKit.ensureInitialized();
 
   if (!await _acquireSingleInstance()) {
     exit(0);
@@ -74,11 +97,30 @@ Future<void> main() async {
   await windowManager.setPreventClose(true);
 
   final config = await AppConfig.load();
+  // El modo persistido se aplica aquí y no en el constructor de `Settings`:
+  // `Settings` se crea más tarde, durante el primer build de `RootScreen`,
+  // que ya cuelga del `ValueListenableBuilder<AppMode>` de arriba — mutar
+  // `modoApp` en ese momento marcaba un ancestro sucio a mitad de un build en
+  // curso ("setState() called during build"). Dejándolo ya correcto aquí, la
+  // asignación que hace `Settings` después es un no-op (mismo valor).
+  modoApp.value = AppMode.fromNombre(config.modo);
   // Podar la caché de carátulas fuera del camino crítico del arranque.
   unawaited(ArtCache.prune());
 
   runApp(SpotifyNativeApp(config: config));
 }
+
+/// Semillas de color de cada modo. NeoTube usa un rojo propio y no el rojo
+/// saturado de la marca de YouTube — mismo motivo que el icono de NeoFy no es
+/// el logo de Spotify recoloreado: no sugerir patrocinio de nadie.
+///
+/// Es el mismo rojo que `kColorFavorito` (`ui/like_button.dart`) y no uno
+/// nuevo: varios tonos de rojo probados como semilla de `ColorScheme.fromSeed`
+/// salían sucios/marrones en modo oscuro (la paleta tonal de Material 3 baja
+/// mucho el croma de las superficies), y este es el único rojo de la app ya
+/// validado visualmente.
+const Color kSeedNeoFy = Color(0xFF1DB954);
+const Color kSeedNeoTube = Color(0xFFE53935);
 
 class SpotifyNativeApp extends StatelessWidget {
   const SpotifyNativeApp({super.key, required this.config});
@@ -87,17 +129,26 @@ class SpotifyNativeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF1DB954); // verde Spotify
-    return MaterialApp(
-      title: 'NeoFy',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: seed), useMaterial3: true),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
-      home: RootScreen(config: config),
+    return ValueListenableBuilder<AppMode>(
+      valueListenable: modoApp,
+      builder: (context, modo, _) {
+        final seed = modo == AppMode.neotube ? kSeedNeoTube : kSeedNeoFy;
+        return MaterialApp(
+          title: 'NeoFy',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: seed), useMaterial3: true),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+            useMaterial3: true,
+          ),
+          themeMode: ThemeMode.system,
+          // No hace falta envolver nada en `AnimatedTheme` a mano: `MaterialApp`
+          // ya interpola internamente su `theme`/`darkTheme` con uno — por
+          // eso basta con cambiar el `seedColor` de golpe en cada build para
+          // que el giro a rojo (o de vuelta a verde) se vea como transición.
+          home: RootScreen(config: config),
+        );
+      },
     );
   }
 }
@@ -133,35 +184,71 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final LibrespotManager _librespot = LibrespotManager(widget.config);
   final MetadataSidecar _sidecar = MetadataSidecar();
 
+  /// El trío de NeoTube. Nada de esto depende de que el usuario llegue a
+  /// entrar en ese modo — se crea igual que `_auth`/`_api`/`_player`, solo
+  /// que no arranca ningún proceso hasta la primera reproducción real.
+  final YtAuth _ytAuth = YtAuth();
+  late final YtMusicApi _ytApi = YtMusicApi(_ytAuth);
+  final YtPlayer _ytPlayer = YtPlayer();
+
   /// Teclas multimedia del sistema, incluido el botón de los cascos. Llegan
   /// aunque la ventana esté escondida en la bandeja.
+  ///
+  /// Van al **modo activo**, no a NeoFy siempre: con NeoTube delante, el botón
+  /// de los cascos tiene que parar lo que se está oyendo, no reanudar Spotify
+  /// por detrás. Ver [_reproductorActivo].
   late final MediaKeys _mediaKeys = MediaKeys(
-    onPlayPause: () => _mandoDeFuera('playPause', _player.togglePlay),
-    onNext: () => _mandoDeFuera('next', _player.next),
-    onPrevious: () => _mandoDeFuera('previous', _player.previous),
-    onPause: () => _mandoDeFuera('pause', _player.pause),
+    onPlayPause: () => _mandoDeFuera('playPause', _alternar),
+    onNext: () => _mandoDeFuera('next', _siguiente),
+    onPrevious: () => _mandoDeFuera('previous', _anterior),
+    onPause: () => _mandoDeFuera('pause', _pausar),
   );
+
+  /// Cuál de los dos reproductores manda ahora mismo.
+  ///
+  /// Es la pieza que faltaba para que los dos modos sean de verdad dos modos:
+  /// las teclas multimedia, el panel del sistema, la bandeja y el espacio del
+  /// teclado iban **siempre** a Spotify, así que desde NeoTube cualquiera de
+  /// ellos reanudaba música del otro modo por debajo.
+  bool get _mandaNeoTube => modoApp.value.esNeoTube;
+
+  Future<void> _alternar() =>
+      _mandaNeoTube ? _ytPlayer.alternar() : _player.togglePlay();
+
+  Future<void> _siguiente() => _mandaNeoTube ? _ytPlayer.siguiente() : _player.next();
+
+  Future<void> _anterior() => _mandaNeoTube ? _ytPlayer.anterior() : _player.previous();
+
+  Future<void> _pausar() => _mandaNeoTube ? _ytPlayer.pause() : _player.pause();
+
+  Future<void> _saltarA(int ms) => _mandaNeoTube
+      ? _ytPlayer.seek(Duration(milliseconds: ms))
+      : _player.seek(ms);
 
   /// Los controles multimedia de Windows: el panel del centro de control y los
   /// botones bajo la miniatura de la barra de tareas. Es el equivalente de
   /// [_mpris] en Windows, y como allí, lo que consigue es que el sistema sepa
   /// que esto es un reproductor de audio.
   late final SmtcService _smtc = SmtcService(
-    onPlayPause: () => _mandoDeFuera('playPause', _player.togglePlay),
+    onPlayPause: () => _mandoDeFuera('playPause', _alternar),
     // Igual que en MPRIS: `Play` no es el toggle. El panel del sistema manda
     // `Play` a secas y mapearlo al toggle pausaría lo que ya está sonando.
     onPlay: () => _mandoDeFuera('play', _reproducirSiEstaParado),
-    onPause: () => _mandoDeFuera('pause', _player.pause),
-    onNext: () => _mandoDeFuera('next', _player.next),
-    onPrevious: () => _mandoDeFuera('previous', _player.previous),
-    onSeek: (ms) => _mandoDeFuera('seek', () => _player.seek(ms)),
+    onPause: () => _mandoDeFuera('pause', _pausar),
+    onNext: () => _mandoDeFuera('next', _siguiente),
+    onPrevious: () => _mandoDeFuera('previous', _anterior),
+    onSeek: (ms) => _mandoDeFuera('seek', () => _saltarA(ms)),
     estado: _estadoParaElSistema,
   );
 
   /// Lo que hay que enseñar fuera de la ventana, igual para las dos
   /// plataformas: el panel de Windows y el widget del escritorio en Linux piden
-  /// exactamente lo mismo.
-  EstadoDelSistema _estadoParaElSistema() => EstadoDelSistema(
+  /// exactamente lo mismo. Y lo que enseñan es el **modo activo**: si no, con
+  /// NeoTube sonando el escritorio anunciaba la última canción de Spotify.
+  EstadoDelSistema _estadoParaElSistema() =>
+      _mandaNeoTube ? _estadoDeNeoTube() : _estadoDeNeoFy();
+
+  EstadoDelSistema _estadoDeNeoFy() => EstadoDelSistema(
         track: _player.state.track,
         sonando: _player.state.isPlaying,
         // La posición interpolada en local, que se actualiza cada 250 ms sin
@@ -171,6 +258,39 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         puedeVolver: _player.state.canSkipPrevious,
         volumen: _player.state.volumePercent,
       );
+
+  /// NeoTube reproduce en este mismo proceso, así que aquí no hay nada
+  /// interpolado ni sondeado: `media_kit` da la posición exacta.
+  ///
+  /// El `Track` se construye al vuelo porque es el vocabulario que hablan
+  /// MPRIS y el panel de Windows; no se guarda en ningún sitio ni pretende ser
+  /// un modelo de NeoTube (ese es `YtTrack`).
+  EstadoDelSistema _estadoDeNeoTube() {
+    final t = _ytPlayer.actual;
+    if (t == null) return EstadoDelSistema.vacio;
+    final estado = _ytPlayer.player.state;
+    return EstadoDelSistema(
+      track: Track(
+        id: t.videoId,
+        uri: 'https://music.youtube.com/watch?v=${t.videoId}',
+        name: t.titulo,
+        artists: t.artista,
+        album: '',
+        artSmall: t.miniatura,
+        artMedium: t.miniatura,
+        durationMs: (estado.duration > Duration.zero
+                ? estado.duration
+                : (t.duracion ?? Duration.zero))
+            .inMilliseconds,
+        isLocal: false,
+      ),
+      sonando: estado.playing,
+      posicionMs: estado.position.inMilliseconds,
+      puedeSaltar: _ytPlayer.puedeSaltar,
+      puedeVolver: _ytPlayer.puedeVolver,
+      volumen: estado.volume.round(),
+    );
+  }
 
   /// Cuándo llegó la última orden de fuera de la ventana, y cuál era.
   DateTime _ultimoMando = DateTime.fromMillisecondsSinceEpoch(0);
@@ -210,15 +330,15 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   /// reparte el escritorio entre los reproductores que hablan MPRIS. De regalo,
   /// NeoFy sale en el widget de reproducción del sistema con carátula.
   late final MprisService _mpris = MprisService(
-    onPlayPause: _player.togglePlay,
+    onPlayPause: _alternar,
     // ⚠️ `Play` no es `togglePlay`: MPRIS distingue las dos cosas y el
     // escritorio manda `Play` a secas cuando el usuario le da al botón de
     // reproducir. Mapearlo al toggle pausaría lo que ya está sonando.
     onPlay: _reproducirSiEstaParado,
-    onPause: _player.pause,
-    onNext: _player.next,
-    onPrevious: _player.previous,
-    onSeek: (us) => _player.seek(us ~/ 1000),
+    onPause: _pausar,
+    onNext: _siguiente,
+    onPrevious: _anterior,
+    onSeek: (us) => _saltarA(us ~/ 1000),
     onRaise: () {
       windowManager.show();
       windowManager.focus();
@@ -229,6 +349,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   bool _booting = true;
   bool _sessionStarted = false;
   bool _reiniciandoAudio = false;
+
+  /// ¿Se ve la ventana? Junto con el modo activo decide el ritmo de sondeo de
+  /// la Web API — ver [_ajustarSondeoDeNeoFy].
+  bool _ventanaVisible = true;
+  StreamSubscription<bool>? _subYtSonando;
   DateTime _ultimoReinicioDeAudio = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -257,6 +382,20 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _audio.start();
     _librespot.onFalloDeAudio = (linea) =>
         unawaited(_reiniciarAudio(motivo: 'error en el log: $linea'));
+    // Los dos modos comparten altavoces: que empiece a sonar NeoTube tiene que
+    // callar a Spotify, sin excepción. Se hace aquí y no solo al cambiar de
+    // modo porque una pista puede arrancar sola al terminar la anterior.
+    _ytPlayer.alEmpezarAReproducir = _player.pause;
+    _ytPlayer.onSalto = (ms) {
+      _mpris.notificarSalto(ms * 1000);
+      _smtc.notificarSalto(ms);
+    };
+    // El panel del sistema tiene que enterarse de lo que hace NeoTube igual
+    // que de lo que hace NeoFy: cambio de pista (el notificador) y play/pausa
+    // (el stream de media_kit, que el notificador no cubre).
+    _ytPlayer.addListener(_avisarAlSistema);
+    _subYtSonando = _ytPlayer.player.stream.playing.listen((_) => _avisarAlSistema());
+    modoApp.addListener(_alCambiarDeModoDeApp);
     _ram.start();
     // Una comprobación al arrancar, sin molestar: si hay algo nuevo, aparece en
     // Ajustes con un punto. No se instala nada sin que el usuario lo pida.
@@ -272,9 +411,12 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   void dispose() {
     windowManager.removeListener(this);
     trayManager.removeListener(this);
+    modoApp.removeListener(_alCambiarDeModoDeApp);
     _mediaKeys.stop();
     _player.removeListener(_avisarAlSistema);
     _player.onSalto = null;
+    _ytPlayer.removeListener(_avisarAlSistema);
+    unawaited(_subYtSonando?.cancel());
     unawaited(_mpris.stop());
     unawaited(_smtc.stop());
     _audio.stop();
@@ -286,6 +428,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _updater.dispose();
     _librespot.dispose();
     _sidecar.dispose();
+    _ytPlayer.dispose();
     super.dispose();
   }
 
@@ -302,6 +445,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     if (_auth.isLoggedIn) {
       await _startSession();
     }
+    // La sesión de NeoTube no bloquea el arranque de NeoFy: es independiente
+    // y no hay ningún proceso que levantar solo por tener el token guardado.
+    unawaited(_ytAuth.loadStored().then((_) {
+      if (mounted) setState(() {});
+    }));
     if (mounted) setState(() => _booting = false);
   }
 
@@ -455,6 +603,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   }
 
   Future<void> _reproducirSiEstaParado() async {
+    if (_mandaNeoTube) {
+      if (_ytPlayer.player.state.playing) return;
+      await _ytPlayer.resume();
+      return;
+    }
     if (_player.state.isPlaying) return;
     await _player.togglePlay();
   }
@@ -579,12 +732,14 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
     switch (menuItem.key) {
+      // Al modo activo, como las teclas multimedia: desde NeoTube, el menú de
+      // la bandeja no debe manejar Spotify a espaldas del usuario.
       case 'playpause':
-        unawaited(_player.togglePlay());
+        unawaited(_alternar());
       case 'next':
-        unawaited(_player.next());
+        unawaited(_siguiente());
       case 'previous':
-        unawaited(_player.previous());
+        unawaited(_anterior());
       case 'show':
         windowManager.show();
         windowManager.focus();
@@ -631,10 +786,15 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   void onWindowMinimize() => _alEsconderse();
 
   @override
-  void onWindowRestore() => _player.setWindowVisible(true);
+  void onWindowRestore() => _alVerse();
 
   @override
-  void onWindowFocus() => _player.setWindowVisible(true);
+  void onWindowFocus() => _alVerse();
+
+  void _alVerse() {
+    _ventanaVisible = true;
+    _ajustarSondeoDeNeoFy();
+  }
 
   /// Un reproductor de música se pasa la vida escondido en la bandeja, y ahí
   /// no hay ni una imagen que mirar: los bitmaps decodificados que quedaran en
@@ -643,7 +803,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   /// No se pierde nada: las carátulas siguen en disco, así que al volver se
   /// vuelven a decodificar sin bajar nada de la red.
   void _alEsconderse() {
-    _player.setWindowVisible(false);
+    _ventanaVisible = false;
+    _ajustarSondeoDeNeoFy();
     final cache = PaintingBinding.instance.imageCache;
     cache.clear();
     cache.clearLiveImages();
@@ -652,6 +813,49 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     // se nota, porque la caché de imágenes se acaba de vaciar entera.
     ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
   }
+
+  /// Lo mismo que [_alEsconderse], pero disparado al cambiar de modo (ver
+  /// `ModeToggleText.onSufijoBorrado`): a mitad de la animación del botón,
+  /// con el sufijo ya borrado y el nuevo aún sin escribir. La caché de
+  /// imágenes de Flutter es una sola, compartida por NeoFy y NeoTube — no
+  /// hace falta saber cuál de los dos la llenó, basta con vaciarla justo
+  /// antes de que el modo saliente deje de pintarse, que es cuando no sirve
+  /// para nada tenerla ocupando RAM.
+  void _liberarRamDelModoSaliente() {
+    final cache = PaintingBinding.instance.imageCache;
+    cache.clear();
+    cache.clearLiveImages();
+    ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
+  }
+
+  /// Cambiar de modo **calla el modo que se deja**.
+  ///
+  /// NeoFy y NeoTube no son dos pestañas de un mismo reproductor: son dos
+  /// reproductores, cada uno con su sesión y su audio, y comparten unos únicos
+  /// altavoces. Que Spotify siguiera sonando (o simplemente "activo", listo
+  /// para que el espacio o los cascos lo reanudaran) con NeoTube delante era el
+  /// síntoma que más se notaba de que el aislamiento no estaba hecho.
+  ///
+  /// Se pausa, no se apaga: librespot sigue vivo porque es lo que mantiene el
+  /// dispositivo registrado en Spotify Connect, y matarlo obligaría a esperar
+  /// otra vez a que se registre al volver.
+  void _alCambiarDeModoDeApp() {
+    if (_mandaNeoTube) {
+      unawaited(_player.pause());
+    } else {
+      unawaited(_ytPlayer.pause());
+    }
+    _ajustarSondeoDeNeoFy();
+    // El panel del sistema tiene que dejar de anunciar el modo que se acaba de
+    // dejar: quien manda ahora es el otro.
+    _avisarAlSistema();
+  }
+
+  /// La Web API solo hace falta sondearla deprisa cuando NeoFy está delante.
+  /// Con NeoTube en pantalla, Spotify está pausado y mirando: sondear cada 3 s
+  /// serían 1.200 peticiones a la hora para no enseñar nada.
+  void _ajustarSondeoDeNeoFy() =>
+      _player.setWindowVisible(_ventanaVisible && !_mandaNeoTube);
 
   @override
   Widget build(BuildContext context) {
@@ -665,31 +869,72 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         onLoggedIn: _onLoggedIn,
       );
     }
-    return AppShell(
-      api: _api,
-      auth: _auth,
-      player: _player,
-      likes: _likes,
-      home: _home,
-      ram: _ram,
-      settings: _settings,
-      updater: _updater,
-      onSalirParaActualizar: _quit,
-      onReiniciarAudio: () =>
-          _reiniciarAudio(porElUsuario: true, motivo: 'botón de Ajustes'),
-      librespot: _librespot,
-      sidecar: _sidecar,
-      onReauth: _reauth,
-      onLogout: () async {
-        await _sidecar.stop();
-        await _librespot.stop();
-        await _auth.logout();
-        // Sin sesión no hay nada sonando: el panel del sistema tiene que
-        // quedarse vacío, no con la última canción de la sesión anterior.
-        await _smtc.stop();
-        _sessionStarted = false;
-        if (mounted) setState(() {});
-      },
+    // Los atajos van **por encima** de los dos modos y reparten según cuál
+    // esté activo. Antes vivían dentro de `AppShell`, que sigue montado detrás
+    // de NeoTube: por eso el espacio reanudaba Spotify desde NeoTube.
+    return AtajosDeReproduccion(
+      onPlayPause: () => unawaited(_alternar()),
+      onNext: () => unawaited(_siguiente()),
+      onPrevious: () => unawaited(_anterior()),
+      child: _modos(),
     );
+  }
+
+  Widget _modos() {
+    return ModeHost(
+      neofy: AppShell(
+        api: _api,
+        auth: _auth,
+        player: _player,
+        likes: _likes,
+        home: _home,
+        ram: _ram,
+        settings: _settings,
+        updater: _updater,
+        onSalirParaActualizar: _quit,
+        onReiniciarAudio: () =>
+            _reiniciarAudio(porElUsuario: true, motivo: 'botón de Ajustes'),
+        librespot: _librespot,
+        sidecar: _sidecar,
+        onReauth: _reauth,
+        onToggleMode: _alternarModo,
+        onLiberarRam: _liberarRamDelModoSaliente,
+        onLogout: () async {
+          await _sidecar.stop();
+          await _librespot.stop();
+          await _auth.logout();
+          // Sin sesión no hay nada sonando: el panel del sistema tiene que
+          // quedarse vacío, no con la última canción de la sesión anterior.
+          await _smtc.stop();
+          _sessionStarted = false;
+          if (mounted) setState(() {});
+        },
+      ),
+      neotube: NeoTubeShell(
+        onToggleMode: _alternarModo,
+        onLiberarRam: _liberarRamDelModoSaliente,
+        auth: _ytAuth,
+        api: _ytApi,
+        player: _ytPlayer,
+        // Las mismas piezas que recibe `AppShell`: Ajustes es un único
+        // diálogo compartido, no una copia por modo.
+        ram: _ram,
+        settings: _settings,
+        updater: _updater,
+        onSalirParaActualizar: _quit,
+        onLogout: () async {
+          await _ytPlayer.stop();
+          await _ytAuth.logout();
+          if (mounted) setState(() {});
+        },
+      ),
+    );
+  }
+
+  /// El botón NeoFy/NeoTube de cualquiera de los dos shells llega aquí.
+  void _alternarModo() {
+    final destino =
+        _settings.modo == AppMode.neofy ? AppMode.neotube : AppMode.neofy;
+    unawaited(_settings.setModo(destino));
   }
 }

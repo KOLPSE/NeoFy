@@ -152,6 +152,17 @@ class MprisService {
   }
 }
 
+/// Convierte un id de pista en una ruta de objeto D-Bus válida.
+///
+/// Solo `[A-Za-z0-9_]` sobrevive; el resto se sustituye por `_`. Un id vacío
+/// (las pistas locales de Spotify) cae en una ruta fija.
+String _rutaDeTrack(String id) {
+  final limpio = id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+  return limpio.isEmpty
+      ? '/xyz/neogex/neofy/desconocida'
+      : '/xyz/neogex/neofy/track/$limpio';
+}
+
 /// Los metadatos de la canción, con los nombres del vocabulario xesam que
 /// espera la especificación.
 ///
@@ -161,13 +172,16 @@ Map<String, Object> metadatosMpris(Track? track) {
   if (track == null) return const {};
   final datos = <String, Object>{
     // ⚠️ El trackid es una **ruta de objeto**, no una cadena cualquiera: tiene
-    // que empezar por `/` y no puede acabar en `/`. Los ids de Spotify son
-    // alfanuméricos y valen, pero las pistas locales llegan con el id vacío y
-    // dejarían `/xyz/neogex/neofy/track/`, que es inválida: D-Bus rechazaría el
+    // que empezar por `/`, no puede acabar en `/` y solo admite letras,
+    // dígitos y `_`. Los ids de Spotify son alfanuméricos y valen, pero las
+    // pistas locales llegan con el id vacío y dejarían
+    // `/xyz/neogex/neofy/track/`, que es inválida: D-Bus rechazaría el
     // diccionario entero y se perdería hasta el título por no tener id.
-    'mpris:trackid': track.id.isEmpty
-        ? '/xyz/neogex/neofy/desconocida'
-        : '/xyz/neogex/neofy/track/${track.id}',
+    //
+    // Los de NeoTube (`videoId` de YouTube) traen además `-` con frecuencia,
+    // que **tampoco** vale en una ruta de objeto: de ahí el saneado, o media
+    // biblioteca de YouTube desaparecería del widget del escritorio.
+    'mpris:trackid': _rutaDeTrack(track.id),
     // MPRIS trabaja en microsegundos y la Web API en milisegundos. Sin
     // convertir, una canción de tres minutos se anuncia como de 0,2 segundos.
     'mpris:length': track.durationMs * 1000,

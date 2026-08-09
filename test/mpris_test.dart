@@ -88,6 +88,16 @@ void main() {
       expect(ruta.endsWith('/'), isFalse);
     });
 
+    test('un videoId de YouTube no deja una ruta invalida', () {
+      // NeoTube anuncia sus pistas por aqui, y los videoId de YouTube traen `-`
+      // y `_` a menudo. Una ruta de objeto solo admite [A-Za-z0-9_]: con el
+      // guion dentro, D-Bus rechaza el diccionario entero y el widget del
+      // escritorio se queda sin titulo ni caratula.
+      final ruta = metadatosMpris(_track(id: 'dQw4w9WgX-Q'))['mpris:trackid'] as String;
+      expect(ruta, '/xyz/neogex/neofy/track/dQw4w9WgX_Q');
+      expect(RegExp(r'^(/[A-Za-z0-9_]+)+$').hasMatch(ruta), isTrue);
+    });
+
     test('sin cancion no hay metadatos que dar', () {
       expect(metadatosMpris(null), isEmpty);
     });

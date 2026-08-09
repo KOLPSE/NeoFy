@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../core/app_mode.dart';
 import '../core/auth.dart';
 import '../core/home_store.dart';
 import '../core/librespot.dart';
@@ -18,6 +18,7 @@ import 'art_image.dart';
 import 'artist_screen.dart';
 import 'home_screen.dart';
 import 'liked_screen.dart';
+import 'mode_toggle_text.dart';
 import 'now_playing_bar.dart';
 import 'settings_dialog.dart';
 import 'playlist_screen.dart';
@@ -43,6 +44,8 @@ class AppShell extends StatefulWidget {
     required this.onReiniciarAudio,
     required this.onLogout,
     required this.onReauth,
+    required this.onToggleMode,
+    this.onLiberarRam,
   });
 
   final SpotifyApi api;
@@ -64,6 +67,15 @@ class AppShell extends StatefulWidget {
   final MetadataSidecar sidecar;
   final Future<void> Function() onLogout;
   final Future<void> Function() onReauth;
+
+  /// Pulsado en el nombre de la app en la barra lateral: dispara el cambio a
+  /// NeoTube. Ver `mode_toggle_text.dart` y `mode_host.dart`.
+  final VoidCallback onToggleMode;
+
+  /// Se llama a mitad de la animación del botón, con NeoFy todavía en
+  /// pantalla: hueco para soltar la caché de imágenes antes de irse a
+  /// NeoTube. Ver `ModeToggleText.onSufijoBorrado`.
+  final VoidCallback? onLiberarRam;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -233,49 +245,15 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// ¿Está el usuario escribiendo?
+  /// El teclado ya no se escucha aquí: lo hace [AtajosDeReproduccion], por
+  /// encima de los dos modos.
   ///
-  /// En escritorio, una tecla llega **por dos vías a la vez**: como evento de
-  /// teclado al árbol de foco y como texto al campo por el canal de entrada del
-  /// motor. Sin esta comprobación, escribir un espacio en el buscador metería
-  /// el espacio *y además* pausaría la música.
-  static bool get _escribiendo {
-    final ctx = FocusManager.instance.primaryFocus?.context;
-    if (ctx == null) return false;
-    return ctx.widget is EditableText ||
-        ctx.findAncestorStateOfType<EditableTextState>() != null;
-  }
-
-  KeyEventResult _alPulsarTecla(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    // Las teclas multimedia se registran además a nivel de sistema en el runner
-    // de C++ para que funcionen con la app de fondo; esto cubre el caso de
-    // tenerla delante, que es el que llega por el árbol de foco.
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.mediaPlayPause:
-        unawaited(widget.player.togglePlay());
-      case LogicalKeyboardKey.mediaTrackNext:
-        unawaited(widget.player.next());
-      case LogicalKeyboardKey.mediaTrackPrevious:
-        unawaited(widget.player.previous());
-      case LogicalKeyboardKey.space:
-        if (_escribiendo) return KeyEventResult.ignored;
-        unawaited(widget.player.togglePlay());
-      default:
-        return KeyEventResult.ignored;
-    }
-    return KeyEventResult.handled;
-  }
-
+  /// ⚠️ Tenerlo en este shell era un fallo con NeoTube delante. `ModeHost`
+  /// mantiene los dos shells montados a la vez, así que este `Focus` seguía
+  /// recibiendo el espacio con NeoTube en pantalla y pausaba/reanudaba
+  /// Spotify. Ver el comentario de `ui/atajos.dart`.
   @override
-  Widget build(BuildContext context) {
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _alPulsarTecla,
-      child: _scaffold(context),
-    );
-  }
+  Widget build(BuildContext context) => _scaffold(context);
 
   Widget _scaffold(BuildContext context) {
     return Scaffold(
@@ -316,6 +294,8 @@ class _AppShellState extends State<AppShell> {
                     updater: widget.updater,
                     onSalirParaActualizar: widget.onSalirParaActualizar,
                     onReiniciarAudio: widget.onReiniciarAudio,
+                    onToggleMode: widget.onToggleMode,
+                    onLiberarRam: widget.onLiberarRam,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -415,6 +395,8 @@ class _Sidebar extends StatelessWidget {
     required this.updater,
     required this.onSalirParaActualizar,
     required this.onReiniciarAudio,
+    required this.onToggleMode,
+    this.onLiberarRam,
   });
 
   final List<Playlist> playlists;
@@ -436,6 +418,8 @@ class _Sidebar extends StatelessWidget {
   final Updater updater;
   final Future<void> Function() onSalirParaActualizar;
   final Future<void> Function() onReiniciarAudio;
+  final VoidCallback onToggleMode;
+  final VoidCallback? onLiberarRam;
 
   /// La playlist que está sonando, si es una de las del panel. Es la que se
   /// deja a la vista cuando la sección está plegada.
@@ -459,17 +443,11 @@ class _Sidebar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                Icon(Icons.graphic_eq, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text('NeoFy',
-                      style: theme.textTheme.titleSmall,
-                      overflow: TextOverflow.ellipsis),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
+            child: ModeToggleText(
+              modo: AppMode.neofy,
+              onTap: onToggleMode,
+              onSufijoBorrado: onLiberarRam,
             ),
           ),
           _NavTile(
@@ -567,7 +545,11 @@ class _Sidebar extends StatelessWidget {
                         settings: settings,
                         updater: updater,
                         onSalirParaActualizar: onSalirParaActualizar,
-                        onReiniciarAudio: onReiniciarAudio,
+                        // Reiniciar la salida es reiniciar librespot: no tiene
+                        // equivalente en NeoTube, que reproduce aquí mismo.
+                        propiosDelModo: [
+                          ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
+                        ],
                       ),
                     ),
                     icon: const Icon(Icons.tune, size: 18),

@@ -6,17 +6,25 @@ import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/updater.dart';
 
-/// Ajustes: lo que gasta la app y el modo rendimiento. Nada más.
+/// Ajustes: lo que gasta la app, el modo rendimiento y las actualizaciones.
 ///
 /// El consumo se enseña aquí y no en una barra permanente porque es un dato de
 /// diagnóstico, no algo que haga falta mirar mientras escuchas música.
+///
+/// **El mismo diálogo sirve a los dos modos.** Casi todo lo que hay dentro es
+/// de la app entera y no de uno de ellos: la memoria y la CPU las gasta un
+/// único proceso, el modo rendimiento toca la caché de imágenes que comparten
+/// los dos, y la actualización trae un solo binario. Duplicar el diálogo
+/// habría significado mantener dos copias de eso para que solo cambiara un
+/// bloque — de ahí [propiosDelModo], que es justo ese bloque: en NeoFy,
+/// reiniciar la salida de audio de librespot; en NeoTube, el estado de yt-dlp.
 Future<void> mostrarAjustes(
   BuildContext context, {
   required ResourceMonitor monitor,
   required Settings settings,
   required Updater updater,
   required Future<void> Function() onSalirParaActualizar,
-  required Future<void> Function() onReiniciarAudio,
+  List<Widget> propiosDelModo = const [],
 }) {
   return showDialog<void>(
     context: context,
@@ -25,7 +33,7 @@ Future<void> mostrarAjustes(
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
-      onReiniciarAudio: onReiniciarAudio,
+      propiosDelModo: propiosDelModo,
     ),
   );
 }
@@ -36,7 +44,7 @@ class _DialogoAjustes extends StatelessWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
-    required this.onReiniciarAudio,
+    required this.propiosDelModo,
   });
 
   final ResourceMonitor monitor;
@@ -47,8 +55,8 @@ class _DialogoAjustes extends StatelessWidget {
   /// ejecutable en uso.
   final Future<void> Function() onSalirParaActualizar;
 
-  /// Reabrir la salida de audio sin cerrar la app.
-  final Future<void> Function() onReiniciarAudio;
+  /// Los bloques que solo tienen sentido en el modo desde el que se abrió.
+  final List<Widget> propiosDelModo;
 
   @override
   Widget build(BuildContext context) {
@@ -103,8 +111,10 @@ class _DialogoAjustes extends StatelessWidget {
                 ),
               ),
             ),
-            const Divider(height: 12),
-            _ReiniciarAudio(onReiniciar: onReiniciarAudio),
+            for (final bloque in propiosDelModo) ...[
+              const Divider(height: 12),
+              bloque,
+            ],
             const Divider(height: 12),
             _Actualizaciones(
               updater: updater,
@@ -123,23 +133,25 @@ class _DialogoAjustes extends StatelessWidget {
   }
 }
 
-/// Salida de emergencia para cuando la música se queda muda.
+/// Salida de emergencia para cuando la música se queda muda. **Solo NeoFy**:
+/// es librespot lo que se reinicia, y NeoTube no lo usa (reproduce en este
+/// mismo proceso). Se pasa por `mostrarAjustes(propiosDelModo:)`.
 ///
 /// La app ya reinicia el audio sola al cambiar la salida del sistema o al ver
 /// un error del backend en el log, pero no todo se detecta: un driver que se
 /// atasca o una aplicación que se queda el dispositivo en modo exclusivo no
 /// avisan a nadie. Esto es lo mismo que hacía el usuario cerrando y abriendo la
 /// app, pero sin perder la sesión ni la canción.
-class _ReiniciarAudio extends StatefulWidget {
-  const _ReiniciarAudio({required this.onReiniciar});
+class ReiniciarAudioDeNeoFy extends StatefulWidget {
+  const ReiniciarAudioDeNeoFy({super.key, required this.onReiniciar});
 
   final Future<void> Function() onReiniciar;
 
   @override
-  State<_ReiniciarAudio> createState() => _ReiniciarAudioState();
+  State<ReiniciarAudioDeNeoFy> createState() => _ReiniciarAudioState();
 }
 
-class _ReiniciarAudioState extends State<_ReiniciarAudio> {
+class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
   bool _enMarcha = false;
 
   Future<void> _reiniciar() async {
@@ -217,8 +229,15 @@ class _Actualizaciones extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('NeoFy ${updater.versionActual}',
-                      style: theme.textTheme.bodyMedium),
+                  // El nombre del modo activo, no siempre "NeoFy": el binario
+                  // y la versión son los mismos para los dos, pero la app se
+                  // presenta con la identidad del modo en el que estás (es lo
+                  // que hace también el título de la barra lateral).
+                  Text(
+                    '${modoApp.value.esNeoTube ? 'NeoTube' : 'NeoFy'} '
+                    '${updater.versionActual}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     switch (estado) {

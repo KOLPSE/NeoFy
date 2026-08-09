@@ -167,11 +167,18 @@ class AppConfig {
   /// `core/settings.dart`.
   bool performanceMode;
 
+  /// Modo activo: `'neofy'` o `'neotube'`. Se guarda como cadena y no como el
+  /// `enum AppMode` porque este fichero no depende de `core/app_mode.dart` —
+  /// `AppMode.fromNombre`/`.nombre` hacen la conversión en el lado de
+  /// `Settings`.
+  String modo;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
     this.bitrate = 320,
     this.performanceMode = false,
+    this.modo = 'neofy',
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -186,6 +193,7 @@ class AppConfig {
         initialVolume: (map['initialVolume'] as int?) ?? 60,
         bitrate: (map['bitrate'] as int?) ?? 320,
         performanceMode: (map['performanceMode'] as bool?) ?? false,
+        modo: (map['modo'] as String?) ?? 'neofy',
       );
     } catch (_) {
       // Un config corrupto no debe impedir arrancar: se vuelve a los valores
@@ -200,6 +208,7 @@ class AppConfig {
       'initialVolume': initialVolume,
       'bitrate': bitrate,
       'performanceMode': performanceMode,
+      'modo': modo,
     }));
   }
 }

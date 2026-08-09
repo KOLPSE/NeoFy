@@ -23,6 +23,15 @@ dependencies:
   # puro, sin transitivas nativas, y sustituye a las ~60 lineas de C++ que en
   # Windows hicieron falta para lo mismo (windows/runner/flutter_window.cpp).
   dbus: ^0.7.10
+  # Tercera excepcion consciente: el audio de NeoTube no puede ir por
+  # librespot (es protocolo Spotify Connect puro, solo sirve para Spotify),
+  # asi que hace falta un reproductor de verdad en Dart. media_kit envuelve
+  # libmpv, ya soporta Windows y Linux sin trabajo aparte, y reproduce URLs de
+  # streaming directamente sin arrastrar nada de video.
+  media_kit: ^1.2.6
+  media_kit_libs_windows_audio: ^1.0.9
+  media_kit_libs_linux: ^1.2.1
+  desktop_webview_window: ^0.3.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
