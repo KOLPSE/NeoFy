@@ -116,6 +116,7 @@ jobs:
           rpm -qlp "$rpm" > /tmp/rpm.txt
 
           for f in /opt/neofy/neofy /opt/neofy/librespot /opt/neofy/metadata-sidecar \
+                   /opt/neofy/yt-dlp \
                    /usr/bin/neofy /usr/share/applications/xyz.neogex.neofy.desktop; do
             grep -q "^\.\?$f\$" /tmp/deb.txt || { echo "El .deb no trae $f"; exit 1; }
             grep -q "^$f\$"     /tmp/rpm.txt || { echo "El .rpm no trae $f"; exit 1; }
@@ -126,6 +127,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends "$PWD/$deb"
           test -x /opt/neofy/neofy
           test -L /usr/bin/neofy
+          # yt-dlp es un zipapp: que este ejecutable no basta, tiene que poder
+          # ARRANCAR. Si falta python3 o es viejo, esto es lo unico que lo pilla
+          # antes de que un usuario descubra que NeoTube no reproduce nada.
+          /opt/neofy/yt-dlp --version
           sudo apt-get remove -y neofy
           echo "Los dos paquetes instalan y desinstalan."
 
@@ -291,6 +296,10 @@ jobs:
           test -x /opt/neofy/neofy          || { echo "::error::falta /opt/neofy/neofy"; exit 1; }
           test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
           test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
+          test -x /opt/neofy/yt-dlp         || { echo "::error::falta yt-dlp"; exit 1; }
+          # Igual que en el .deb: que el zipapp arranque de verdad con el
+          # python de Arch, no solo que el fichero este.
+          /opt/neofy/yt-dlp --version       || { echo "::error::yt-dlp no arranca"; exit 1; }
           test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
           test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
           test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "::error::falta el .desktop"; exit 1; }

@@ -136,6 +136,22 @@ else()
   message(WARNING "No se encuentra metadata-sidecar; compilalo con: cargo build --release --manifest-path tool/metadata-sidecar/Cargo.toml")
 endif()
 
+# yt-dlp: el descodificador de NeoTube, que resuelve la URL del stream de cada
+# pista. Sin el, NeoTube no reproduce nada. No se compila: lo baja
+# tool/fetch_ytdlp.sh del release del propio proyecto.
+#
+# El que se empaqueta es el zipapp (3 MB), no el binario autonomo de 40 MB: por
+# eso los paquetes llevan python3 en sus dependencias. Se ejecuta directamente
+# gracias a su shebang.
+set(YTDLP_BIN "${CMAKE_CURRENT_SOURCE_DIR}/../tool/ytdlp-build/bin/yt-dlp")
+if(EXISTS "${YTDLP_BIN}")
+  install(PROGRAMS "${YTDLP_BIN}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+else()
+  message(WARNING "No se encuentra yt-dlp; ejecuta tool/fetch_ytdlp.sh antes de empaquetar (NeoTube no reproducira nada sin el).")
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

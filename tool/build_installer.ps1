@@ -27,10 +27,23 @@ foreach ($f in @($librespot, $sidecar)) {
   if (-not (Test-Path $f)) { throw "No se encuentra $f" }
 }
 
+# yt-dlp: el descodificador de NeoTube. No se compila (es un binario que
+# publica el propio proyecto), pero sin él NeoTube no reproduce **nada**, y el
+# fallo solo se ve al pulsar una canción ya con la app instalada.
+#
+# Se rebaja de golpe cada vez que se empaqueta a propósito: YouTube le rompe
+# los extractores cada pocas semanas, así que el que haya cacheado de la
+# release anterior puede estar ya muerto.
+$ytdlp = "tool\ytdlp-build\bin\yt-dlp.exe"
+Paso "Actualizando yt-dlp (el descodificador de NeoTube)"
+& powershell -ExecutionPolicy Bypass -File tool\fetch_ytdlp.ps1
+if ($LASTEXITCODE -ne 0) { throw "Falló la descarga de yt-dlp" }
+if (-not (Test-Path $ytdlp)) { throw "No se encuentra $ytdlp" }
+
 # --- 2. La app -------------------------------------------------------------
 Paso "Compilando NeoFy"
 # Con la app abierta, el enlazador no puede escribir el .exe.
-foreach ($n in @('neofy', 'librespot', 'metadata-sidecar')) {
+foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
   Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
@@ -63,6 +76,11 @@ $release = "build\windows\x64\runner\Release"
 Paso "Copiando los sidecars junto al ejecutable"
 Copy-Item $librespot $release -Force
 Copy-Item $sidecar   $release -Force
+Copy-Item $ytdlp     $release -Force
+# El .iss empaqueta Release\* entero, así que con copiarlos aquí ya viajan.
+foreach ($n in @('librespot.exe', 'metadata-sidecar.exe', 'yt-dlp.exe')) {
+  if (-not (Test-Path (Join-Path $release $n))) { throw "No llegó $n al Release" }
+}
 Get-ChildItem $release -Filter *.exe | ForEach-Object {
   "  {0,-24} {1,7:N1} MB" -f $_.Name, ($_.Length / 1MB)
 }

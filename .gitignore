@@ -18,6 +18,9 @@ windows/flutter/generated_plugins.cmake
 # tool\build_librespot.ps1 (Windows) o tool/build_sidecars.sh (Linux) y se
 # distribuyen ya montados en los artefactos de GitHub Releases.
 tool/librespot-build/
+# yt-dlp se baja, no se versiona. En Linux no lleva extension, asi que el
+# *.exe de mas abajo no lo cubre.
+tool/ytdlp-build/
 tool/metadata-sidecar/target/
 *.exe
 

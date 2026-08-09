@@ -31,8 +31,8 @@ arbol="dist/NeoFy-$version-linux-x86_64"
 [ -d "$arbol" ] || { echo "Falta $arbol. Ejecuta tool/build_linux_bundle.sh primero." >&2; exit 1; }
 
 # Un paquete sin librespot instala una app que no suena, y eso solo se descubre
-# usandola: mejor que se caiga aqui.
-for bin in neofy librespot metadata-sidecar; do
+# usandola: mejor que se caiga aqui. Con yt-dlp igual, pero para NeoTube.
+for bin in neofy librespot metadata-sidecar yt-dlp; do
     [ -x "$arbol/$bin" ] || { echo "El arbol no trae $bin" >&2; exit 1; }
 done
 
@@ -45,7 +45,7 @@ montar_raiz() {
         "$destino/usr/share/applications"
 
     cp -r "$arbol/data" "$arbol/lib" "$destino/opt/neofy/"
-    for bin in neofy librespot metadata-sidecar; do
+    for bin in neofy librespot metadata-sidecar yt-dlp; do
         install -Dm755 "$arbol/$bin" "$destino/opt/neofy/$bin"
     done
 
@@ -92,7 +92,7 @@ Version: $version
 Section: sound
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils
+Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9)
 Installed-Size: $tamano_kb
 Maintainer: KOLPSE <117825722+KOLPSE@users.noreply.github.com>
 Homepage: https://github.com/KOLPSE/NeoFy
@@ -155,7 +155,7 @@ License:        MIT
 URL:            https://github.com/KOLPSE/NeoFy
 BuildArch:      x86_64
 AutoReqProv:    no
-Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs
+Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9
 
 %description
 NeoFy reproduce Spotify en unos 150 MB de memoria, frente a los 400-700 MB del
