@@ -19,6 +19,7 @@ import 'core/mpris.dart';
 import 'core/player_state.dart';
 import 'core/resource_monitor.dart';
 import 'core/settings.dart';
+import 'core/smtc.dart';
 import 'core/spotify_api.dart';
 import 'core/updater.dart';
 import 'ui/login_screen.dart';
@@ -135,11 +136,70 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   /// Teclas multimedia del sistema, incluido el botón de los cascos. Llegan
   /// aunque la ventana esté escondida en la bandeja.
   late final MediaKeys _mediaKeys = MediaKeys(
-    onPlayPause: _player.togglePlay,
-    onNext: _player.next,
-    onPrevious: _player.previous,
-    onPause: _player.pause,
+    onPlayPause: () => _mandoDeFuera('playPause', _player.togglePlay),
+    onNext: () => _mandoDeFuera('next', _player.next),
+    onPrevious: () => _mandoDeFuera('previous', _player.previous),
+    onPause: () => _mandoDeFuera('pause', _player.pause),
   );
+
+  /// Los controles multimedia de Windows: el panel del centro de control y los
+  /// botones bajo la miniatura de la barra de tareas. Es el equivalente de
+  /// [_mpris] en Windows, y como allí, lo que consigue es que el sistema sepa
+  /// que esto es un reproductor de audio.
+  late final SmtcService _smtc = SmtcService(
+    onPlayPause: () => _mandoDeFuera('playPause', _player.togglePlay),
+    // Igual que en MPRIS: `Play` no es el toggle. El panel del sistema manda
+    // `Play` a secas y mapearlo al toggle pausaría lo que ya está sonando.
+    onPlay: () => _mandoDeFuera('play', _reproducirSiEstaParado),
+    onPause: () => _mandoDeFuera('pause', _player.pause),
+    onNext: () => _mandoDeFuera('next', _player.next),
+    onPrevious: () => _mandoDeFuera('previous', _player.previous),
+    onSeek: (ms) => _mandoDeFuera('seek', () => _player.seek(ms)),
+    estado: _estadoParaElSistema,
+  );
+
+  /// Lo que hay que enseñar fuera de la ventana, igual para las dos
+  /// plataformas: el panel de Windows y el widget del escritorio en Linux piden
+  /// exactamente lo mismo.
+  EstadoDelSistema _estadoParaElSistema() => EstadoDelSistema(
+        track: _player.state.track,
+        sonando: _player.state.isPlaying,
+        // La posición interpolada en local, que se actualiza cada 250 ms sin
+        // gastar ni una petición. Ver "Sondeo: por qué es como es".
+        posicionMs: _player.progressMs.value,
+        puedeSaltar: _player.state.canSkipNext,
+        puedeVolver: _player.state.canSkipPrevious,
+        volumen: _player.state.volumePercent,
+      );
+
+  /// Cuándo llegó la última orden de fuera de la ventana, y cuál era.
+  DateTime _ultimoMando = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _ultimoMandoQue;
+
+  /// Ejecuta una orden que viene de fuera **una sola vez**.
+  ///
+  /// ⚠️ En Windows una misma pulsación puede llegar por **dos vías a la vez**.
+  /// El runner registra las teclas multimedia con `RegisterHotKey`, y desde que
+  /// la app se anuncia como reproductor Windows también las reparte por el
+  /// panel del sistema. Normalmente gana el atajo global y el panel ni las ve,
+  /// pero eso depende de quién registró qué antes y de si otra app se adelantó
+  /// —cosa que `RegisterMediaKeys` tolera a propósito—. Un play/pausa contado
+  /// dos veces se queda exactamente como estaba, y el síntoma sería que el botón
+  /// de los cascos "no funciona" unas veces sí y otras no.
+  ///
+  /// El cuarto de segundo es de sobra para descartar el duplicado (llega en el
+  /// mismo evento de entrada, con milisegundos de diferencia) y lo bastante
+  /// corto para no comerse un doble salto que el usuario quiera de verdad.
+  Future<void> _mandoDeFuera(String que, Future<void> Function() accion) async {
+    final ahora = DateTime.now();
+    if (que == _ultimoMandoQue &&
+        ahora.difference(_ultimoMando) < const Duration(milliseconds: 250)) {
+      return;
+    }
+    _ultimoMandoQue = que;
+    _ultimoMando = ahora;
+    await accion();
+  }
 
   /// Cambios de la salida de audio del sistema. Ver [_reiniciarAudio].
   late final AudioDeviceWatcher _audio =
@@ -159,16 +219,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     onNext: _player.next,
     onPrevious: _player.previous,
     onSeek: (us) => _player.seek(us ~/ 1000),
-    estado: () => EstadoMpris(
-      track: _player.state.track,
-      sonando: _player.state.isPlaying,
-      // La posición interpolada en local, que se actualiza cada 250 ms sin
-      // gastar ni una petición. Ver "Sondeo: por qué es como es".
-      posicionMs: _player.progressMs.value,
-      puedeSaltar: _player.state.canSkipNext,
-      puedeVolver: _player.state.canSkipPrevious,
-      volumen: _player.state.volumePercent,
-    ),
+    onRaise: () {
+      windowManager.show();
+      windowManager.focus();
+    },
+    estado: _estadoParaElSistema,
   );
 
   bool _booting = true;
@@ -183,12 +238,20 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     trayManager.addListener(this);
     _mediaKeys.start();
     unawaited(_mpris.start());
+    _smtc.start();
     // Se engancha al notificador general y no a `currentUri`: pausar no cambia
     // de canción, y con solo `currentUri` el widget del escritorio se quedaría
     // diciendo "reproduciendo" con la música parada. Que esto salte cada 3 s no
     // importa — `notificarCambio` compara una firma y no emite si no ha
     // cambiado nada.
-    _player.addListener(_mpris.notificarCambio);
+    _player.addListener(_avisarAlSistema);
+    // Un salto de la barra sí hay que anunciarlo aparte: los dos reproductores
+    // del sistema extrapolan la posición por su cuenta y sin esto se quedan
+    // enseñando el minuto de antes.
+    _player.onSalto = (ms) {
+      _mpris.notificarSalto(ms * 1000);
+      _smtc.notificarSalto(ms);
+    };
     // Las dos vías por las que se detecta que el audio se ha quedado mudo: que
     // Windows cambie de altavoces, y que el propio librespot se queje en su log.
     _audio.start();
@@ -210,8 +273,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     _mediaKeys.stop();
-    _player.removeListener(_mpris.notificarCambio);
+    _player.removeListener(_avisarAlSistema);
+    _player.onSalto = null;
     unawaited(_mpris.stop());
+    unawaited(_smtc.stop());
     _audio.stop();
     _player.dispose();
     _likes.dispose();
@@ -222,6 +287,14 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _librespot.dispose();
     _sidecar.dispose();
     super.dispose();
+  }
+
+  /// Los dos a la vez: solo uno está activo en cada plataforma, y el otro no
+  /// hace nada. Tenerlo en un único sitio evita que se queden contando cosas
+  /// distintas, que es justo lo que no se podría probar desde aquí.
+  void _avisarAlSistema() {
+    _mpris.notificarCambio();
+    _smtc.notificarCambio();
   }
 
   Future<void> _boot() async {
@@ -387,6 +460,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   }
 
   Future<void> _onLoggedIn() async {
+    // Cerrar sesión apaga el panel del sistema para no dejarlo enseñando la
+    // canción de una sesión que ya no existe; volver a entrar tiene que
+    // encenderlo otra vez o se quedaría muerto hasta el siguiente arranque.
+    _smtc.start();
     await _startSession();
     if (mounted) setState(() {});
   }
@@ -522,6 +599,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     await _sidecar.stop();
     await _librespot.stop();
     await _mpris.stop();
+    await _smtc.stop();
     try {
       // Si la bandeja no llegó a montarse, destruirla lanza; y morir aquí
       // dejaría la ventana abierta con los sidecars ya matados.
@@ -606,6 +684,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         await _sidecar.stop();
         await _librespot.stop();
         await _auth.logout();
+        // Sin sesión no hay nada sonando: el panel del sistema tiene que
+        // quedarse vacío, no con la última canción de la sesión anterior.
+        await _smtc.stop();
         _sessionStarted = false;
         if (mounted) setState(() {});
       },

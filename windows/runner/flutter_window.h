@@ -9,6 +9,9 @@
 #include <memory>
 
 #include "audio_device_watcher.h"
+#include "media_status.h"
+#include "system_media.h"
+#include "thumb_bar.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -37,6 +40,19 @@ class FlutterWindow : public Win32Window {
   // entera del cambio; avisando a Dart, la app puede reiniciarlo sola.
   void StartAudioDeviceWatcher();
 
+  // Los controles multimedia del sistema (panel del centro de control) y los
+  // botones bajo la miniatura de la barra de tareas. Los dos enseñan lo mismo,
+  // así que los alimenta un único canal desde Dart.
+  void StartSystemMedia();
+
+  // Traduce lo que llega por el canal al estado que quieren los dos.
+  void OnSystemMediaCall(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
+  // Le cuenta a Dart que alguien ha pulsado algo fuera de la ventana.
+  void EnviarComando(ComandoMultimedia comando, int64_t posicion_ms);
+
   // The project to run.
   flutter::DartProject project_;
 
@@ -56,6 +72,14 @@ class FlutterWindow : public Win32Window {
       audio_device_channel_;
 
   AudioDeviceWatcher audio_device_watcher_;
+
+  // Por donde Dart manda qué está sonando y por donde vuelven los botones del
+  // panel del sistema y de la miniatura de la barra de tareas.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      system_media_channel_;
+
+  SystemMediaControls system_media_;
+  ThumbBar thumb_bar_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

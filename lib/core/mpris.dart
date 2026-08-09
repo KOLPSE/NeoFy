@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 
-import 'art_cache.dart';
 import 'models.dart';
+import 'reproductor_del_sistema.dart';
+
+export 'reproductor_del_sistema.dart' show EstadoDelSistema, caratulaEnDisco;
 
 /// Integración con el escritorio de Linux por MPRIS.
 ///
@@ -33,6 +35,7 @@ class MprisService {
     required this.onNext,
     required this.onPrevious,
     required this.onSeek,
+    required this.onRaise,
     required this.estado,
   });
 
@@ -46,10 +49,15 @@ class MprisService {
   /// trabaja siempre en µs; la Web API, en ms.
   final Future<void> Function(int microsegundos) onSeek;
 
+  /// Sacar la ventana al frente. Es lo que hace el escritorio al pulsar el
+  /// nombre del reproductor en su widget, y con la app escondida en la bandeja
+  /// es la única forma de recuperarla sin tocar el icono.
+  final void Function() onRaise;
+
   /// De dónde se lee lo que hay que publicar. Se pide como función y no como
   /// valor porque el estado cambia cada pocos segundos y el objeto de D-Bus
   /// vive todo lo que dure la app.
-  final EstadoMpris Function() estado;
+  final EstadoDelSistema Function() estado;
 
   DBusClient? _cliente;
   _ObjetoMpris? _objeto;
@@ -111,32 +119,13 @@ class MprisService {
       _ultimaFirma = firma;
       unawaited(objeto.emitirCambios());
     }
-    if (track != null && caratula == null) _bajarCaratula(track);
+    if (track != null && caratula == null) {
+      _caratulas.asegurar(track, notificarCambio);
+    }
   }
 
-  /// Uri de la canción cuya carátula se está bajando, para no pedir la misma
-  /// una y otra vez en cada sondeo mientras la descarga está en curso.
-  String? _bajando;
-
-  /// Se trae la carátula que falta y vuelve a anunciar los metadatos.
-  ///
-  /// El escritorio no sabe volver a preguntar: si el anuncio del cambio de
-  /// canción va sin `artUrl`, ahí se queda. Así que cuando no está en disco se
-  /// pide y se reanuncia al llegar.
-  void _bajarCaratula(Track track) {
-    final url = track.artMedium ?? track.artSmall;
-    if (url == null || _bajando == track.uri) return;
-    _bajando = track.uri;
-    unawaited(ArtCache.file(url).then((_) {
-      _bajando = null;
-      // Bajar tarda, y para entonces puede estar sonando otra cosa: reanunciar
-      // la carátula de la canción anterior dejaría el escritorio desincronizado.
-      if (estado().track?.uri != track.uri) return;
-      notificarCambio();
-    }).catchError((_) {
-      _bajando = null;
-    }));
-  }
+  late final DescargadorDeCaratula _caratulas =
+      DescargadorDeCaratula(() => estado().track?.uri);
 
   /// Anuncia un salto de posición.
   ///
@@ -160,34 +149,6 @@ class MprisService {
         await cliente.close();
       } catch (_) {}
     }
-  }
-}
-
-/// Lo que MPRIS necesita saber del reproductor en un momento dado.
-class EstadoMpris {
-  const EstadoMpris({
-    required this.track,
-    required this.sonando,
-    required this.posicionMs,
-    required this.puedeSaltar,
-    required this.puedeVolver,
-    required this.volumen,
-  });
-
-  final Track? track;
-  final bool sonando;
-  final int posicionMs;
-  final bool puedeSaltar;
-  final bool puedeVolver;
-
-  /// 0..100, como lo da la Web API. MPRIS lo quiere de 0.0 a 1.0.
-  final int? volumen;
-
-  /// `Playing`, `Paused` o `Stopped`, que son los tres valores que admite la
-  /// especificación.
-  String get estadoDeReproduccion {
-    if (track == null) return 'Stopped';
-    return sonando ? 'Playing' : 'Paused';
   }
 }
 
@@ -223,28 +184,6 @@ Map<String, Object> metadatosMpris(Track? track) {
   final caratula = caratulaEnDisco(track);
   if (caratula != null) datos['mpris:artUrl'] = caratula;
   return datos;
-}
-
-/// La carátula de [track] que **ya esté descargada**, como `file://`, o `null`.
-///
-/// Se sirve desde disco para que el escritorio la pinte sin bajar nada y sin
-/// gastar cuota; no se puede esperar a una descarga para contestar por D-Bus, y
-/// dar la url `http` haría que el escritorio se la bajara por su cuenta.
-///
-/// ⚠️ **Se prueban las dos variantes, y esa es la corrección de un fallo real**:
-/// unas carátulas salían en el reproductor del sistema y otras no, sin patrón
-/// aparente. La causa es que [ArtImage] elige qué variante descarga **según los
-/// píxeles reales** en los que va a pintarla: las filas de una lista caben en la
-/// de 64 y las tarjetas de la portada necesitan la de 300. Pidiendo aquí solo la
-/// mediana, las canciones que solo se habían visto en una lista no tenían ese
-/// fichero y se quedaban sin carátula.
-String? caratulaEnDisco(Track track) {
-  for (final url in [track.artMedium, track.artSmall]) {
-    if (url == null) continue;
-    final fichero = ArtCache.ficheroSiEstaEnDisco(url);
-    if (fichero != null) return fichero.uri.toString();
-  }
-  return null;
 }
 
 /// El objeto que se cuelga de `/org/mpris/MediaPlayer2`.
@@ -346,12 +285,15 @@ class _ObjetoMpris extends DBusObject {
   @override
   Future<DBusMethodResponse> handleMethodCall(DBusMethodCall call) async {
     if (call.interface == _raiz) {
-      return switch (call.name) {
-        // Quien la llama es el widget del escritorio al pulsar el nombre del
-        // reproductor. Sacar la ventana de la bandeja lo hace main.dart.
-        'Raise' => DBusMethodSuccessResponse(),
-        _ => DBusMethodErrorResponse.unknownMethod(),
-      };
+      // Quien la llama es el widget del escritorio al pulsar el nombre del
+      // reproductor. Anunciar `CanRaise` y no hacer nada dejaba ese clic sin
+      // efecto, que con la ventana escondida en la bandeja es lo mismo que no
+      // poder recuperarla desde ahí.
+      if (call.name == 'Raise') {
+        servicio.onRaise();
+        return DBusMethodSuccessResponse();
+      }
+      return DBusMethodErrorResponse.unknownMethod();
     }
     if (call.interface != _player) {
       return DBusMethodErrorResponse.unknownInterface();

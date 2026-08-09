@@ -39,6 +39,11 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
     cada 120 ms.
   - `home_store.dart` — Datos de la portada (historial y lo más escuchado).
   - `media_keys.dart` — Recibe las teclas multimedia que registra el runner.
+  - `reproductor_del_sistema.dart` — Lo que hay que enseñar fuera de la ventana
+    (`EstadoDelSistema`) y de dónde sale la carátula. Lo comparten MPRIS y
+    Windows: ver "Que el sistema sepa que esto es un reproductor".
+  - `smtc.dart` — El gemelo de `mpris.dart` en Windows: panel multimedia del
+    sistema y botones de la miniatura de la barra de tareas.
   - `audio_device.dart` — Recibe del runner los cambios de la salida de audio de
     Windows. Ver "El audio que se queda mudo" más abajo.
   - `art_cache.dart` — Caché LRU de carátulas en disco (50 MB).
@@ -48,6 +53,9 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
   `neofy/media_keys`. Ver "Teclas de los cascos" más abajo.
 - **`windows/runner/audio_device_watcher.cpp`** — `IMMNotificationClient` que avisa por
   `neofy/audio_device` cuando Windows cambia el altavoz por defecto.
+- **`windows/runner/system_media.cpp`** y **`thumb_bar.cpp`** — Las dos caras de "esto
+  es un reproductor de audio" en Windows: el panel del centro de control y los botones
+  bajo la miniatura de la barra de tareas. Hablan con Dart por `neofy/system_media`.
 - **`lib/ui/`** — `shell.dart` (sidebar + contenido + barra), pantallas y `art_image.dart`.
   `tira_horizontal.dart` es la fila de tarjetas de la portada: con ratón, una lista
   horizontal dentro de una vertical no se puede mover (Flutter no permite arrastrar con el
@@ -555,6 +563,101 @@ llega por dos vías a la vez (evento de teclado al árbol de foco *y* texto al c
 canal del motor), así que sin comprobar si hay un `EditableText` enfocado, escribir un
 espacio en el buscador metería el espacio y además pausaría la música.
 
+## Que el sistema sepa que esto es un reproductor
+
+Recibir las teclas multimedia no basta para que el escritorio te trate como un
+reproductor. Hay que **anunciarse**, y entonces salen gratis los controles de fuera de la
+ventana: el panel del centro de control, la miniatura de la barra de tareas y el widget de
+medios del escritorio. Las dos plataformas lo hacen por sitios distintos y el reparto es el
+mismo de siempre: lo que necesita un HWND se hace en C++, lo que es lógica va en Dart.
+
+| | Linux | Windows |
+|---|---|---|
+| Cómo se anuncia | MPRIS por D-Bus (`core/mpris.dart`) | SMTC por WinRT (`windows/runner/system_media.cpp`) |
+| Dónde sale | Widget de medios de KDE/GNOME, vista previa de la barra de tareas | Panel del centro de control, pantalla de bloqueo |
+| Botones bajo la miniatura | los saca el escritorio de MPRIS | `ITaskbarList3` (`windows/runner/thumb_bar.cpp`) |
+| Código nativo | ninguno (`package:dbus` es Dart puro) | los dos ficheros de arriba |
+
+**`EstadoDelSistema` (`core/reproductor_del_sistema.dart`) es de los dos.** Las dos
+integraciones piden exactamente lo mismo —qué suena, si suena, por dónde va y qué botones
+tienen sentido—, así que `main.dart` lo construye una vez. Duplicarlo dejaría que las dos
+plataformas acabaran enseñando cosas distintas, que es justo lo que no se puede comprobar
+desde un solo equipo.
+
+Lo que costó descubrir, en las dos:
+
+- **La posición no se anuncia; los saltos sí.** Tanto MPRIS como Windows extrapolan la
+  posición por su cuenta desde la última que se les dio mientras el estado sea
+  "reproduciendo". Anunciarla en cada sondeo sería trabajo para nada —la especificación de
+  MPRIS lo prohíbe expresamente— pero sin avisar de los saltos, arrastrar la barra dentro
+  de NeoFy dejaba el panel del sistema en el minuto de antes hasta la canción siguiente.
+  De ahí `PlayerController.onSalto`, que es lo único que hay entre `seek()` y las dos.
+- **La firma de lo publicado no puede ser solo la canción.** El `ChangeNotifier` salta cada
+  3 s aunque no haya cambiado nada, así que hay que comparar; pero pausar no cambia de
+  canción, y comparando solo la uri el panel se quedaba diciendo "reproduciendo" con la
+  música parada. **La carátula entra en la firma a propósito**: cuando termina de bajarse,
+  la firma cambia sola y se reanuncia con ella. Sin eso, el aviso del cambio de canción
+  llega antes que la descarga y el hueco se queda hasta la canción siguiente, porque el
+  sistema no sabe volver a preguntar.
+- **Sin canción es `Stopped`, no `Paused`.** Es lo que decide si el sistema quita el
+  reproductor del panel o lo deja ahí con los botones muertos.
+- **`Play` no es `PlayPause`.** Las dos plataformas distinguen las tres cosas y mandan
+  `Play` a secas cuando el usuario pulsa reproducir: mapearlo al toggle pausa lo que ya
+  está sonando.
+- **La carátula se da desde disco, y en formatos distintos.** MPRIS quiere una url
+  `file://` y Windows la ruta a secas. Dar la url `http` haría que el sistema se la bajara
+  por su cuenta, y esperar a una descarga bloquearía la respuesta.
+
+### Windows: el panel del centro de control (SMTC)
+
+Va por la **ABI de WinRT con WRL**, no por C++/WinRT: el runner se compila con
+`_HAS_EXCEPTIONS=0` y C++/WinRT informa de los errores lanzando. WRL es de la misma familia
+que el COM que ya usa el vigilante de audio y no lanza nada. Detalles que importan:
+
+- Los controles se piden **por ventana** con `ISystemMediaTransportControlsInterop`. La
+  ruta de las apps de la Store (`GetForCurrentView`) no vale: una app de escritorio no
+  tiene "vista actual".
+- **`DisplayUpdater.Update()` es lo que publica.** Se pueden poner título, artista y
+  carátula y no cambiar nada en pantalla por olvidar esa línea.
+- La carátula se envuelve con `CreateRandomAccessStreamOverStream` sobre un
+  `SHCreateStreamOnFileEx`. Es la **única vía síncrona**: la de `StorageFile` es asíncrona
+  y esperarla bloquearía el hilo de la ventana. Se abre con `STGM_SHARE_DENY_NONE`, o la
+  poda de la caché de carátulas no podría borrar el fichero de lo que esté sonando.
+- **Los avisos llegan en un hilo del sistema.** Igual que el vigilante de audio, se hace un
+  `PostMessage` a la ventana y quien habla con Flutter es el hilo de siempre.
+
+⚠️ **Una misma pulsación puede llegar por dos vías a la vez.** El runner registra las teclas
+multimedia con `RegisterHotKey` y, desde que la app se anuncia como reproductor, Windows
+también las reparte por el panel. Normalmente gana el atajo global y el panel ni las ve,
+pero eso depende de quién registró qué antes y de si otra app se adelantó —cosa que
+`RegisterMediaKeys` tolera a propósito—. Un play/pausa contado dos veces **se queda
+exactamente como estaba**, y el síntoma sería que el botón de los cascos funciona unas veces
+sí y otras no. `_mandoDeFuera` en `main.dart` descarta el duplicado con una ventana de un
+cuarto de segundo: de sobra para el rebote (llega en el mismo evento de entrada) y lo
+bastante corto para no comerse un doble salto de verdad.
+
+### Windows: los botones de la miniatura de la barra de tareas
+
+`ITaskbarList3`, COM del de toda la vida. Tres cosas que no son obvias:
+
+- **Solo se pueden añadir cuando existe el botón de la barra de tareas**, y de eso avisa el
+  mensaje registrado `TaskbarButtonCreated`. Llamar antes no falla: no hace nada, que es
+  peor, porque no hay síntoma.
+- ⚠️ **`ThumbBarAddButtons` es de una sola vez por ventana, y ese aviso llega más de una
+  vez**: la barra de tareas lo manda también al volver a enseñar una ventana que se había
+  escondido en la bandeja, que en un reproductor pasa constantemente. Ahí el añadir falla y
+  hay que limitarse a `ThumbBarUpdateButtons`; si quien se reinició fue Explorer, la barra
+  nueva no sabe nada de nuestros botones y el que vale es el de añadir. Se prueban los dos.
+- **Los iconos se dibujan a mano** (triángulos y barras rasterizados con muestreo 4x4) en
+  vez de venir de un `.ico`. Así salen al tamaño que pida el sistema y **del color que toca
+  según el tema**, que es la diferencia entre verlos y no verlos: unos iconos blancos sobre
+  la barra de miniatura en tema claro no se ven. Se rehacen con `WM_SETTINGCHANGE` /
+  `ImmersiveColorSet` y con `WM_DPICHANGED`, y **los viejos se destruyen después** de que
+  la barra tenga los nuevos: la barra de tareas se queda con los HICON que le damos.
+
+De regalo, la miniatura enseña qué está sonando en vez del título de la ventana
+(`SetThumbnailTooltip`), que siempre era "NeoFy" y no decía nada.
+
 ## Linux
 
 El port a Arch fue barato porque casi nada de la app es de Windows: `spotify_api.dart`,
@@ -568,6 +671,13 @@ en tres de los cuatro casos **la solución de Linux es mejor que la de Windows**
   sale en el widget de reproducción de KDE y GNOME con carátula, y `playerctl` lo controla —
   la misma propiedad que hace que un Stream Deck funcione en Windows sin plugin. Va con
   `package:dbus`, que es Dart puro: **no hay una línea de código nativo en `linux/runner/`**.
+  Los controles de la vista previa de la barra de tareas de KDE salen de aquí también, y por
+  eso el `DesktopEntry` que se anuncia tiene que cuadrar con el nombre del `.desktop` y con
+  el `APPLICATION_ID`: es lo que asocia el reproductor con la ventana.
+  ⚠️ **`Raise` tiene que hacer algo.** Se anunciaba `CanRaise: true` y el método devolvía
+  éxito sin más, así que pulsar el nombre del reproductor en el widget del escritorio no
+  hacía nada — y con la app escondida en la bandeja, ese clic es de las pocas formas que hay
+  de recuperar la ventana.
 - **El vigilante de la salida de audio no existe, y no hace falta.** `audio_device_watcher.cpp`
   resuelve en Windows que librespot abre el altavoz una vez y no lo suelta. En Linux se compila
   librespot con el backend de **PulseAudio** y PipeWire mueve el flujo solo al cambiar de

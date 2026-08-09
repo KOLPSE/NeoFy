@@ -10,6 +10,8 @@ add_executable(${BINARY_NAME} WIN32
   "audio_device_watcher.cpp"
   "flutter_window.cpp"
   "main.cpp"
+  "system_media.cpp"
+  "thumb_bar.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -35,8 +37,17 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
-# COM: el vigilante del dispositivo de salida va por IMMNotificationClient.
+# COM: el vigilante del dispositivo de salida va por IMMNotificationClient, y
+# los botones de la miniatura de la barra de tareas por ITaskbarList3.
 target_link_libraries(${BINARY_NAME} PRIVATE "ole32.lib")
+# WinRT sin C++/WinRT: los controles multimedia del sistema se activan con
+# RoGetActivationFactory y las cadenas van en HSTRING.
+target_link_libraries(${BINARY_NAME} PRIVATE "runtimeobject.lib")
+# La carátula que se le pasa al panel del sistema se envuelve con
+# CreateRandomAccessStreamOverStream (shcore) sobre SHCreateStreamOnFileEx
+# (shlwapi), que es la única vía síncrona: la de StorageFile es asíncrona y
+# esperarla bloquearía el hilo de la ventana.
+target_link_libraries(${BINARY_NAME} PRIVATE "shcore.lib" "shlwapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

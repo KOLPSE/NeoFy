@@ -41,6 +41,28 @@ std::vector<std::string> GetCommandLineArguments() {
   return command_line_arguments;
 }
 
+std::wstring Utf16FromUtf8(const std::string& utf8_string) {
+  if (utf8_string.empty()) {
+    return std::wstring();
+  }
+  const int input_length = static_cast<int>(utf8_string.size());
+  const int target_length = ::MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, utf8_string.data(), input_length, nullptr,
+      0);
+  if (target_length <= 0) {
+    return std::wstring();
+  }
+  std::wstring utf16_string;
+  utf16_string.resize(static_cast<size_t>(target_length));
+  const int converted_length = ::MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, utf8_string.data(), input_length,
+      utf16_string.data(), target_length);
+  if (converted_length == 0) {
+    return std::wstring();
+  }
+  return utf16_string;
+}
+
 std::string Utf8FromUtf16(const wchar_t* utf16_string) {
   if (utf16_string == nullptr) {
     return std::string();

@@ -16,4 +16,9 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
+// El camino de vuelta: de la cadena UTF-8 que manda Dart al UTF-16 que quiere
+// Windows. Hace falta para el título y el artista que se enseñan en el panel
+// multimedia del sistema, que llevan acentos y de todo.
+std::wstring Utf16FromUtf8(const std::string& utf8_string);
+
 #endif  // RUNNER_UTILS_H_

@@ -24,7 +24,7 @@ Track _track({
       isLocal: false,
     );
 
-EstadoMpris _estado({Track? track, bool sonando = true}) => EstadoMpris(
+EstadoDelSistema _estado({Track? track, bool sonando = true}) => EstadoDelSistema(
       track: track,
       sonando: sonando,
       posicionMs: 42000,

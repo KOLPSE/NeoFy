@@ -484,12 +484,23 @@ class PlayerController extends ChangeNotifier {
     return true;
   }
 
+  /// Se avisa cuando la posición **da un salto**.
+  ///
+  /// Es lo único que los reproductores del sistema —el widget de MPRIS en Linux
+  /// y el panel multimedia en Windows— no pueden deducir solos: mientras la
+  /// música avanza extrapolan la posición por su cuenta desde la última que se
+  /// les dio, así que anunciarla cada pocos segundos sería trabajo para nada,
+  /// pero sin este aviso un arrastre de la barra dentro de NeoFy los deja
+  /// enseñando el minuto de antes hasta que cambie la canción.
+  void Function(int ms)? onSalto;
+
   Future<void> seek(int ms) async {
     _pendingSeekMs = ms;
     _pendingSeekAt = DateTime.now();
     progressMs.value = ms;
     _lastSyncedProgress = ms;
     _lastSync = DateTime.now();
+    onSalto?.call(ms);
     await _withDevice(() => api.seek(ms));
   }
 

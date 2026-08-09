@@ -89,6 +89,17 @@ Esto va por MPRIS, que sustituye al `RegisterHotKey` de Windows.
 - [ ] Pausa desde el widget del escritorio: ¿la app se entera?
 - [ ] Pausa desde **la app**: ¿el widget del escritorio se entera? (Este es el
       que más fácil se queda desincronizado.)
+- [ ] Arrastra la barra de progreso **dentro de la app**: ¿el widget del
+      escritorio salta al mismo punto? Antes no: se anunciaba `CanSeek` pero
+      nadie avisaba del salto, y el widget seguía extrapolando desde el minuto
+      de antes hasta que cambiaba la canción.
+- [ ] Con la app **escondida en la bandeja**, pulsa el nombre del reproductor en
+      el widget del escritorio (KDE: la cabecera del applet de medios). ¿Vuelve
+      la ventana? Se anunciaba `CanRaise` y el clic no hacía nada.
+- [ ] En KDE, deja el ratón sobre el icono de NeoFy en la barra de tareas: la
+      vista previa debería traer los controles de reproducción, que los saca de
+      MPRIS. Si no salen, di qué dice `playerctl -l` y si el icono del lanzador
+      es el correcto (dependen los dos de que el `DesktopEntry` cuadre).
 
 ## 6. Bandeja — y el plan B
 
