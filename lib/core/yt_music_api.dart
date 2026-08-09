@@ -47,11 +47,6 @@ class YtMusicApi {
 
   static const _base = 'music.youtube.com';
 
-  /// Clave pública del cliente web de YouTube Music. No es un secreto
-  /// nuestro: es la misma que usa el propio `music.youtube.com` en el
-  /// navegador y que reutilizan `ytmusicapi`/`yt-dlp`.
-  static const _apiKey = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
-
   /// `browseId` de cada pestaña de la biblioteca. Los mismos que usa
   /// `ytmusicapi`. La biblioteca **no es un solo `browseId`**: las playlists,
   /// los álbumes y las canciones guardadas viven en tres sitios distintos, y
@@ -98,7 +93,14 @@ class YtMusicApi {
     Map<String, String>? query,
   }) async {
     if (!auth.isLoggedIn) throw YtApiException('No hay sesión de NeoTube iniciada.');
-    final uri = Uri.https(_base, '/youtubei/v1/$endpoint', {'key': _apiKey, ...?query});
+    // Sin parámetro `key`. Autenticando por cookies + SAPISIDHASH, la API no
+    // lo pide: comprobado contra la cuenta real con tool/probe_yt.dart, que
+    // devuelve exactamente lo mismo con y sin el. Se quita porque era la clave
+    // pública del cliente web de YouTube Music -no un secreto nuestro, la
+    // misma que reparte music.youtube.com en su propio JavaScript- pero el
+    // escaneo de secretos de GitHub la marca igual, y aqui no hay nada que
+    // rotar: no es nuestra. La forma de no volver a verla es no llevarla.
+    final uri = Uri.https(_base, '/youtubei/v1/$endpoint', query);
     final res = await _http
         .post(
           uri,

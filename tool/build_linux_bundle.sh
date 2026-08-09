@@ -34,8 +34,13 @@ done
 # yt-dlp se rebaja cada vez que se empaqueta, no se cachea: YouTube le rompe
 # los extractores cada pocas semanas, asi que el de la release anterior puede
 # estar ya muerto. Y sin el, NeoTube no reproduce nada.
+#
+# Se invoca con `bash` y no como `./tool/fetch_ytdlp.sh` a proposito: el script
+# se subio una vez sin el bit de ejecucion (git en Windows no lo pone solo) y el
+# workflow murio con "Permission denied" y un exit 126, ya con la release
+# etiquetada. Con `bash` delante, el permiso deja de importar.
 echo "Actualizando yt-dlp (el descodificador de NeoTube)..."
-./tool/fetch_ytdlp.sh
+bash ./tool/fetch_ytdlp.sh
 [ -x 'tool/ytdlp-build/bin/yt-dlp' ] || { echo "Falta tool/ytdlp-build/bin/yt-dlp" >&2; exit 1; }
 
 echo "Compilando la app..."

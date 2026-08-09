@@ -30,7 +30,6 @@ import 'package:neofy/core/app_config.dart';
 import 'package:path/path.dart' as p;
 
 const _base = 'music.youtube.com';
-const _apiKey = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
 
 Future<void> main(List<String> args) async {
   final volcar = args.contains('--volcar');
@@ -74,7 +73,7 @@ Future<void> main(List<String> args) async {
     final origin = 'https://$_base';
     final hash = sha1.convert(utf8.encode('$epoch $sapisid $origin')).toString();
     final res = await http.post(
-      Uri.https(_base, '/youtubei/v1/browse', {'key': _apiKey}),
+      Uri.https(_base, '/youtubei/v1/browse'),
       headers: {
         'Content-Type': 'application/json',
         'Cookie': cabeceraCookie,

@@ -132,6 +132,54 @@ class YtPlayer extends ChangeNotifier {
     return null;
   }
 
+  /// PATH mínimo para volver a intentar una invocación que murió recorriendo
+  /// el PATH del usuario. Ver [_ejecutar].
+  static String get _pathMinimo => Platform.isWindows
+      ? [
+          '${Platform.environment['SystemRoot'] ?? r'C:\Windows'}\\system32',
+          Platform.environment['SystemRoot'] ?? r'C:\Windows',
+        ].join(';')
+      : '/usr/bin:/bin';
+
+  /// Lanza yt-dlp y, si se cae **recorriendo el PATH**, lo reintenta con uno
+  /// mínimo.
+  ///
+  /// El fallo real que arregla, en Windows 11:
+  ///
+  ///     ERROR: [WinError 448] The path cannot be traversed because it
+  ///     contains an untrusted mount point: 'C:\Users\...\.mavis\bin'
+  ///
+  /// Ese error es de *Redirection Guard*, la mitigación que impide seguir
+  /// junctions que podrían ser un ataque de enlaces. yt-dlp recorre el PATH
+  /// buscando ffmpeg y un runtime de JavaScript, y si alguna entrada es un
+  /// junction, revienta entero: ni resuelve la URL ni reproduce nada.
+  ///
+  /// Y lo que lo hace difícil de ver: **la mitigación se hereda del proceso
+  /// padre**. Lanzada desde el menú de inicio la app no la tiene, pero recién
+  /// actualizada la arranca el instalador, que sí — así que el sintoma aparece
+  /// justo despues de actualizar y desaparece al reabrir la app a mano, que es
+  /// lo que despista.
+  ///
+  /// No se le recorta el PATH de entrada a todo el mundo: yt-dlp lo usa para
+  /// encontrar ffmpeg y el runtime de JS, y quien los tenga instalados sale
+  /// perdiendo formatos. Se reintenta solo cuando se ha visto fallar.
+  static Future<ProcessResult> _ejecutar(String ruta, List<String> args) async {
+    final res = await Process.run(ruta, args).timeout(const Duration(seconds: 25));
+    if (res.exitCode == 0) return res;
+    final salida = '${res.stderr}';
+    final esDelPath = salida.contains('untrusted mount point') ||
+        salida.contains('WinError 448');
+    if (!esDelPath) return res;
+    debugPrint('[NeoTube] yt-dlp no pudo recorrer el PATH; reintento con uno mínimo');
+    return Process.run(
+      ruta,
+      args,
+      // Solo se pisa PATH: el resto del entorno (SystemRoot, TEMP…) sigue
+      // haciendo falta, y sin él ni siquiera arranca el intérprete embebido.
+      environment: {'PATH': _pathMinimo},
+    ).timeout(const Duration(seconds: 25));
+  }
+
   /// La versión de yt-dlp instalada, o `null` si no responde.
   ///
   /// Sirve para que Ajustes pueda decir algo mejor que "está el fichero": un
@@ -142,8 +190,7 @@ class YtPlayer extends ChangeNotifier {
     final bin = findYtDlpBinary();
     if (bin == null) return null;
     try {
-      final res = await Process.run(bin.path, ['--version'])
-          .timeout(const Duration(seconds: 10));
+      final res = await _ejecutar(bin.path, ['--version']);
       if (res.exitCode != 0) return null;
       final v = (res.stdout as String).trim();
       return v.isEmpty ? null : v;
@@ -173,10 +220,10 @@ class YtPlayer extends ChangeNotifier {
       throw YtPlayerException(
           'No se encuentra yt-dlp. Ejecuta tool/fetch_ytdlp.ps1 (o .sh en Linux).');
     }
-    final res = await Process.run(
+    final res = await _ejecutar(
       bin.path,
       ['-f', 'bestaudio', '-g', 'https://www.youtube.com/watch?v=$videoId'],
-    ).timeout(const Duration(seconds: 25));
+    );
     if (res.exitCode != 0) {
       throw YtPlayerException('yt-dlp no pudo resolver el vídeo: ${res.stderr}');
     }
