@@ -25,9 +25,14 @@ import 'spotify_api.dart';
 ///
 /// Lo que sí hay, además del historial y lo más escuchado:
 ///
-/// - **[novedades]**: `/browse/new-releases` sí contesta 200. No está
-///   personalizado —es el catálogo global, no tus gustos— pero es la única
-///   fuente real de "cosas nuevas" que queda.
+/// - **[novedades]**: `/browse/new-releases` sí contesta 200, pero no para
+///   todo el mundo — depende del Client ID de cada usuario, y en Modo
+///   Desarrollo el acceso a `/browse` se concede por app, no por cuenta. Visto
+///   con una app distinta a la de la sonda: 403 "Forbidden". Hay que tragarse
+///   ese error sí o sí: metido en el mismo `Future.wait` que el historial y lo
+///   más escuchado (como estaba al principio), tiraba la portada **entera**
+///   por una sección que ni siquiera es personalizada. Va aparte y con su
+///   propio try/catch.
 /// - **[paraTi]**: una aproximación casera al "hecho para ti", armada con las
 ///   canciones top de tus propios artistas top (`artistTopTracks`, que sí
 ///   funciona en Modo Desarrollo) y filtrando lo que ya sale en "vuelve a
@@ -66,20 +71,22 @@ class HomeStore extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      // En paralelo: son cuatro peticiones independientes y la portada no se
-      // pinta entera hasta que están las cuatro.
+      // En paralelo: son tres peticiones independientes y la portada no se
+      // pinta entera hasta que están las tres.
       final res = await Future.wait([
         api.recentlyPlayed(limit: 20),
         api.topTracks(limit: 20),
         api.topArtists(limit: 20),
-        api.newReleases(limit: 20),
       ]);
       recientes = res[0] as List<Track>;
       masEscuchadas = res[1] as List<Track>;
       artistas = res[2] as List<Artist>;
-      novedades = res[3] as List<Album>;
+      // Estas dos van fuera del Future.wait de arriba y con su propio
+      // try/catch cada una: son sucedáneos, no lo esencial de la portada, y
+      // que fallen no debe impedir ver el historial ni lo más escuchado.
+      novedades = await _cargarNovedades();
       // Depende de artistas y de lo anterior para descartar repetidos, así que
-      // va después y no dentro del Future.wait de arriba.
+      // va después.
       paraTi = await _armarParaTi();
       _cargado = true;
     } catch (e) {
@@ -87,6 +94,17 @@ class HomeStore extends ChangeNotifier {
     } finally {
       _cargando = false;
       notifyListeners();
+    }
+  }
+
+  /// Ver el comentario de cabecera de la clase: `/browse/new-releases` no está
+  /// disponible para todas las apps en Modo Desarrollo. Un 403 aquí no debe
+  /// tirar el resto de la portada.
+  Future<List<Album>> _cargarNovedades() async {
+    try {
+      return await api.newReleases(limit: 20);
+    } catch (_) {
+      return const [];
     }
   }
 
