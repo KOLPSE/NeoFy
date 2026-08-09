@@ -167,6 +167,14 @@ class AppConfig {
   /// `core/settings.dart`.
   bool performanceMode;
 
+  /// Volumen de NeoTube, 0..100.
+  ///
+  /// Aparte de [initialVolume] porque son dos reproductores distintos: aquel
+  /// se le pasa a librespot al arrancar y lo acaba mandando Spotify Connect;
+  /// este lo aplica `media_kit` en este mismo proceso. Compartir el campo
+  /// haría que bajar el volumen en un modo bajara el del otro.
+  int volumenNeoTube;
+
   /// Modo activo: `'neofy'` o `'neotube'`. Se guarda como cadena y no como el
   /// `enum AppMode` porque este fichero no depende de `core/app_mode.dart` —
   /// `AppMode.fromNombre`/`.nombre` hacen la conversión en el lado de
@@ -178,6 +186,7 @@ class AppConfig {
     this.initialVolume = 60,
     this.bitrate = 320,
     this.performanceMode = false,
+    this.volumenNeoTube = 60,
     this.modo = 'neofy',
   });
 
@@ -193,6 +202,7 @@ class AppConfig {
         initialVolume: (map['initialVolume'] as int?) ?? 60,
         bitrate: (map['bitrate'] as int?) ?? 320,
         performanceMode: (map['performanceMode'] as bool?) ?? false,
+        volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
         modo: (map['modo'] as String?) ?? 'neofy',
       );
     } catch (_) {
@@ -208,6 +218,7 @@ class AppConfig {
       'initialVolume': initialVolume,
       'bitrate': bitrate,
       'performanceMode': performanceMode,
+      'volumenNeoTube': volumenNeoTube,
       'modo': modo,
     }));
   }

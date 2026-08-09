@@ -189,7 +189,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   /// que no arranca ningún proceso hasta la primera reproducción real.
   final YtAuth _ytAuth = YtAuth();
   late final YtMusicApi _ytApi = YtMusicApi(_ytAuth);
-  final YtPlayer _ytPlayer = YtPlayer();
+  // El volumen viaja en el config, aparte del de NeoFy: son dos reproductores
+  // distintos y bajar uno no debe bajar el otro.
+  late final YtPlayer _ytPlayer = YtPlayer(volumenInicial: widget.config.volumenNeoTube);
 
   /// Teclas multimedia del sistema, incluido el botón de los cascos. Llegan
   /// aunque la ventana esté escondida en la bandeja.
@@ -288,7 +290,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       posicionMs: estado.position.inMilliseconds,
       puedeSaltar: _ytPlayer.puedeSaltar,
       puedeVolver: _ytPlayer.puedeVolver,
-      volumen: estado.volume.round(),
+      volumen: _ytPlayer.volumen,
     );
   }
 
@@ -386,6 +388,12 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     // callar a Spotify, sin excepción. Se hace aquí y no solo al cambiar de
     // modo porque una pista puede arrancar sola al terminar la anterior.
     _ytPlayer.alEmpezarAReproducir = _player.pause;
+    // Al soltar el mando, no en cada paso: si no, serían decenas de escrituras
+    // del config por cada vez que alguien mueve el volumen.
+    _ytPlayer.onVolumenFijado = (v) {
+      widget.config.volumenNeoTube = v;
+      unawaited(widget.config.save());
+    };
     _ytPlayer.onSalto = (ms) {
       _mpris.notificarSalto(ms * 1000);
       _smtc.notificarSalto(ms);

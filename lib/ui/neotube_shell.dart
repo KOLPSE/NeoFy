@@ -461,6 +461,8 @@ class _BarraInferior extends StatelessWidget {
                       onPressed:
                           player.puedeSaltar ? () => unawaited(player.siguiente()) : null,
                     ),
+                    const SizedBox(width: 8),
+                    _Volumen(player: player),
                   ],
                 ),
                 _Progreso(player: player),
@@ -469,6 +471,57 @@ class _BarraInferior extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// El mando del volumen, con el mismo aspecto que el de NeoFy.
+///
+/// A diferencia de aquel, este **sí** aplica el cambio en cada paso del
+/// arrastre: allí cada paso era una petición a la Web API de Spotify y
+/// saturarla acababa en 429 con el volumen parado en un valor al azar; aquí es
+/// libmpv en este mismo proceso, instantáneo y gratis. Lo que se retrasa hasta
+/// soltar es únicamente **guardarlo** en el config.
+class _Volumen extends StatelessWidget {
+  const _Volumen({required this.player});
+
+  final YtPlayer player;
+
+  static IconData _icono(int v) {
+    if (v <= 0) return Icons.volume_off;
+    if (v < 50) return Icons.volume_down;
+    return Icons.volume_up;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 150,
+      child: Row(
+        children: [
+          Icon(_icono(player.volumen), size: 18),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                value: player.volumen.toDouble(),
+                max: 100,
+                onChanged: (v) => unawaited(player.setVolumen(v.round())),
+                onChangeEnd: (v) => player.onVolumenFijado?.call(v.round()),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 26,
+            child: Text('${player.volumen}', style: theme.textTheme.bodySmall),
+          ),
+        ],
+      ),
     );
   }
 }

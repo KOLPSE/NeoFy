@@ -42,7 +42,13 @@ class YtPlayerException implements Exception {
 /// devuelve Google caducan (traen su propio `expire`), de ahí que la caché
 /// tenga fecha de caducidad propia y conservadora.
 class YtPlayer extends ChangeNotifier {
-  YtPlayer() : player = Player() {
+  YtPlayer({int volumenInicial = 60})
+      : volumen = volumenInicial.clamp(0, 100),
+        player = Player() {
+    // El volumen guardado se aplica ya, antes de que suene nada: aplicarlo al
+    // abrir la primera pista se oiría como un salto de volumen a mitad de la
+    // primera nota.
+    unawaited(player.setVolume(volumen.toDouble()));
     // Cuando una pista termina sola, sigue la cola. `completed` también se
     // emite al abrir un medio nuevo en algunas versiones, de ahí el control
     // de que haya sonado algo de verdad y no estemos ya cambiando de pista.
@@ -359,6 +365,28 @@ class YtPlayer extends ChangeNotifier {
   /// `onSalto` de `PlayerController`.
   void Function(int ms)? onSalto;
 
+  /// Volumen actual, 0..100. Se guarda aquí y no se lee de
+  /// `player.state.volume` porque la barra tiene que poder pintarlo antes de
+  /// que haya sonado nada.
+  int volumen;
+
+  /// Se llama al soltar el mando del volumen, para persistirlo. No en cada
+  /// paso del arrastre: eso serían decenas de escrituras del config por cada
+  /// vez que alguien mueve el mando.
+  void Function(int volumen)? onVolumenFijado;
+
+  /// Aplicar el volumen es instantáneo y local (libmpv, en este mismo
+  /// proceso), así que **sí** se hace en cada paso del arrastre — al revés que
+  /// en NeoFy, donde cada paso sería una petición a la Web API y Spotify
+  /// acababa devolviendo 429.
+  Future<void> setVolumen(int v) async {
+    final nuevo = v.clamp(0, 100);
+    if (nuevo == volumen) return;
+    volumen = nuevo;
+    notifyListeners();
+    await player.setVolume(nuevo.toDouble());
+  }
+
   Future<void> pause() => player.pause();
   Future<void> resume() => player.play();
 
@@ -366,7 +394,6 @@ class YtPlayer extends ChangeNotifier {
     await player.seek(d);
     onSalto?.call(d.inMilliseconds);
   }
-  Future<void> setVolumen(double v) => player.setVolume(v.clamp(0, 100));
 
   Future<void> stop() async {
     await player.stop();
