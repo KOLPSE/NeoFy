@@ -61,9 +61,32 @@ Write-Host '  árbol limpio, en main y sincronizado'
 $token = $env:GITHUB_TOKEN
 if (-not $token) {
   # El mismo token que usa git push, sin guardar nada en el proyecto.
-  $token = ("protocol=https`nhost=github.com`n`n" | git credential fill) |
+  #
+  # ⚠️ **No se le puede pasar la petición con una tubería de PowerShell**, y
+  # esto ya costó un ensayo abortado. PowerShell 5.1 escribe a la entrada de un
+  # programa nativo con saltos de línea de Windows, así que a `git` le llegaba
+  # `protocol=https\r`; Git rechaza desde hace unas versiones cualquier línea de
+  # credencial que lleve un CR, descarta la línea entera y luego se queja de que
+  # **falta** el campo protocol, que es un mensaje que manda a mirar justo al
+  # sitio equivocado. Escribiendo por .NET se controla el salto de línea y llega
+  # lo que Git espera.
+  $arranque = New-Object System.Diagnostics.ProcessStartInfo
+  $arranque.FileName = 'git'
+  $arranque.Arguments = 'credential fill'
+  $arranque.RedirectStandardInput = $true
+  $arranque.RedirectStandardOutput = $true
+  $arranque.UseShellExecute = $false
+  $arranque.CreateNoWindow = $true
+  $git = [System.Diagnostics.Process]::Start($arranque)
+  $git.StandardInput.NewLine = "`n"
+  $git.StandardInput.Write("protocol=https`nhost=github.com`n`n")
+  $git.StandardInput.Close()
+  $respuesta = $git.StandardOutput.ReadToEnd()
+  $git.WaitForExit()
+  $token = $respuesta -split "`n" |
            Where-Object { $_ -like 'password=*' } |
-           ForEach-Object { $_.Substring(9) }
+           Select-Object -First 1
+  if ($token) { $token = $token.Substring(9).Trim() }
 }
 if (-not $token) {
   Mal ('No hay token de GitHub. Guarda la credencial haciendo un `git push`, ' +
