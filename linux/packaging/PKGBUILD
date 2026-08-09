@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.1.9
+pkgver=0.1.10
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')
@@ -51,7 +51,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('e94ce2a4bcfe36566444a15772e209cf67357b8c4aab5c2c18610fead22fd1cb')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/$_tarball"

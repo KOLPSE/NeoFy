@@ -10,13 +10,15 @@ import 'art_image.dart';
 import 'tira_horizontal.dart';
 import 'track_tile.dart';
 
-/// Portada: lo último que has escuchado y lo que más pones.
+/// Portada: lo último que has escuchado, lo que más pones y dos secciones que
+/// intentan sustituir al Discover Weekly / Release Radar reales.
 ///
-/// **No hay mixes diarios ni radar de novedades, y no es un descuido**: las
-/// listas que Spotify genera para cada usuario no las expone la Web API. Los
-/// endpoints de `/browse` dan 403 en Modo Desarrollo y `/recommendations` está
-/// retirado; está comprobado en `tool/probe_home.dart`. Lo que se enseña aquí
-/// sale de la cuenta del propio usuario, que es lo que sí se puede leer.
+/// **No hay mixes diarios ni radar de novedades de verdad, y no es un
+/// descuido**: las listas que Spotify genera para cada usuario no las expone
+/// la Web API (`/recommendations` retirado, `/browse/featured-playlists` ya
+/// ni existe; comprobado en `tool/probe_home.dart`). "Hecho para ti" y
+/// "Novedades" son sucedáneos armados en `HomeStore` con lo que la API sí
+/// deja tocar — ver el comentario de esa clase para el detalle.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -104,11 +106,44 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
+            if (home.paraTi.isNotEmpty) ...[
+              _Titulo('Hecho para ti', theme),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '   Canciones de tus artistas top que no has escuchado hace poco',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              TiraDeCanciones(
+                tracks: home.paraTi,
+                onPlay: (i) => widget.player.playLista(
+                  [for (final t in home.paraTi) t.uri],
+                  desde: i,
+                ),
+              ),
+            ],
             if (home.artistas.isNotEmpty) ...[
               _Titulo('Tus artistas', theme),
               TiraDeArtistas(
                 artistas: home.artistas,
                 onAbrir: widget.onAbrirArtista,
+              ),
+            ],
+            if (home.novedades.isNotEmpty) ...[
+              _Titulo('Novedades', theme),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '   Lo último publicado en Spotify',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              TiraDeAlbumes(
+                albumes: home.novedades,
+                onAbrir: (a) => widget.player.playContext(a.uri),
               ),
             ],
             if (home.masEscuchadas.isNotEmpty) ...[
@@ -350,6 +385,59 @@ class TiraDeArtistas extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: estilo),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Tira de "Novedades". Igual que [TiraDeCanciones] pero con [Album]: al
+/// pulsar se reproduce el álbum entero como contexto, no una pista suelta —no
+/// hay una canción "la pulsada" porque la tarjeta es del álbum, no de un tema.
+class TiraDeAlbumes extends StatelessWidget {
+  const TiraDeAlbumes({super.key, required this.albumes, required this.onAbrir});
+
+  static const double _ladoTarjeta = 128;
+
+  final List<Album> albumes;
+  final void Function(Album) onAbrir;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+    return TiraHorizontal(
+      alto: _altoDeTarjeta(context, estilo, lado: _ladoTarjeta, lineas: 2),
+      centroDeFlechas: _margenTarjeta + _ladoTarjeta / 2,
+      itemCount: albumes.length,
+      itemBuilder: (context, i) {
+        final a = albumes[i];
+        return InkWell(
+          onTap: () => onAbrir(a),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.all(_margenTarjeta),
+            child: SizedBox(
+              width: _ladoTarjeta,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ArtImage(url: a.art, size: _ladoTarjeta, radius: 6),
+                  const SizedBox(height: _huecoTarjeta),
+                  Text(a.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: estilo.copyWith(fontWeight: FontWeight.w600)),
+                  Text(a.artists,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: estilo.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
                 ],
               ),
             ),

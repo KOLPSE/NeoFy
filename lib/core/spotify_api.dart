@@ -496,6 +496,22 @@ class SpotifyApi {
         .toList();
   }
 
+  /// Álbumes recién publicados en el catálogo global de Spotify.
+  ///
+  /// No es personalizado a los gustos del usuario —eso es justo lo que hacía
+  /// `/recommendations`, retirado (404)— pero es la única fuente de
+  /// "novedades" que Modo Desarrollo deja usar hoy. Comprobado con
+  /// `tool/probe_home.dart`: 200, a diferencia de `/browse/featured-playlists`
+  /// (404, el endpoint ya ni existe).
+  Future<List<Album>> newReleases({int limit = 20}) async {
+    final j = await _listaConTope('/browse/new-releases', limit);
+    final albums = j['albums'] as Map<String, dynamic>?;
+    return ((albums?['items'] as List<dynamic>?) ?? const [])
+        .map((a) => Album.fromJson(a as Map<String, dynamic>?))
+        .whereType<Album>()
+        .toList();
+  }
+
   /// Historial reciente, **sin repetidas**: si has puesto la misma canción
   /// cuatro veces seguidas, Spotify la devuelve cuatro veces y una fila de
   /// "vuelve a escuchar" con la misma carátula cuatro veces no sirve de nada.

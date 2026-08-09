@@ -176,6 +176,38 @@ class Artist {
   }
 }
 
+/// Un álbum, con lo justo para pintar una tarjeta de "novedades" y poder
+/// reproducirlo como contexto (`spotify:album:…`).
+class Album {
+  final String id;
+  final String uri;
+  final String name;
+  final String artists;
+  final String? art;
+
+  const Album({
+    required this.id,
+    required this.uri,
+    required this.name,
+    required this.artists,
+    required this.art,
+  });
+
+  static Album? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    final artistList = j['artists'] as List<dynamic>?;
+    return Album(
+      id: (j['id'] as String?) ?? '',
+      uri: (j['uri'] as String?) ?? '',
+      name: (j['name'] as String?) ?? 'Desconocido',
+      artists: artistList == null
+          ? ''
+          : artistList.map((a) => (a as Map)['name'] as String? ?? '').join(', '),
+      art: pickImage(j['images'] as List<dynamic>?, 300),
+    );
+  }
+}
+
 class Device {
   final String id;
   final String name;

@@ -22,6 +22,14 @@ const _artista = Artist(
   art: null,
 );
 
+const _album = Album(
+  id: '1',
+  uri: 'spotify:album:1',
+  name: 'Un título de álbum bastante largo para una tarjeta',
+  artists: 'Un artista, Otro artista, Un tercero',
+  art: null,
+);
+
 Future<void> _pintar(WidgetTester tester, Widget tira, double escala) async {
   await tester.pumpWidget(MaterialApp(
     home: MediaQuery(
@@ -51,6 +59,15 @@ void main() {
       await _pintar(
         tester,
         TiraDeArtistas(artistas: const [_artista, _artista], onAbrir: (_) {}),
+        escala,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('los álbumes caben en su tira al ${escala}x', (tester) async {
+      await _pintar(
+        tester,
+        TiraDeAlbumes(albumes: const [_album, _album], onAbrir: (_) {}),
         escala,
       );
       expect(tester.takeException(), isNull);
