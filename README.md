@@ -165,10 +165,12 @@ powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1   # + Inno Set
 ```bash
 # Linux — dependencias de compilación (Arch)
 sudo pacman -S --needed base-devel clang cmake ninja pkgconf \
-                        gtk3 libayatana-appindicator libpulse openssl rust
+                        gtk3 libayatana-appindicator libpulse openssl rust \
+                        webkit2gtk-4.1 mpv
 # En Debian/Ubuntu son los mismos con sufijo -dev:
 #   clang cmake ninja-build pkg-config libgtk-3-dev
 #   libayatana-appindicator3-dev libpulse-dev libssl-dev
+#   libwebkit2gtk-4.1-dev libmpv-dev
 
 ./tool/build_sidecars.sh        # sidecars, 1ª vez (tarda un rato)
 flutter build linux --release
@@ -176,9 +178,13 @@ flutter build linux --release
 ./tool/build_linux_packages.sh  # y los instaladores .deb y .rpm
 ```
 
-> `libayatana-appindicator` hace falta **al compilar**, no solo al ejecutar: el plugin de la
-> bandeja lo busca con `pkg-config` y sin él `flutter build linux` no llega ni a generar los
-> ficheros de build.
+> `libayatana-appindicator` y `webkit2gtk-4.1` hacen falta **al compilar**, no solo al
+> ejecutar: los plugins de la bandeja y de la WebView los buscan con `pkg-config` y sin ellos
+> `flutter build linux` no llega ni a generar los ficheros de build.
+>
+> `mpv` (libmpv) es distinto: se abre **en caliente al arrancar**, así que compila igual sin
+> ella y lo que falla es la app ya instalada. Ver ARQUITECTURA.md, "libmpv se abre con
+> `dlopen`".
 
 ```bash
 flutter analyze

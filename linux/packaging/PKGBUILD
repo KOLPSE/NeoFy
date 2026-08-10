@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.2.3
+pkgver=0.2.4
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')
@@ -43,6 +43,16 @@ depends=(
   # NeoTube: el plugin se enlaza al compilar, asi que sin ella el ejecutable
   # ni arranca.
   'webkit2gtk-4.1'
+  # libmpv, con la que suena NeoTube. En Arch la trae el paquete `mpv`; no hay
+  # un mpv-libs suelto en los repositorios oficiales.
+  #
+  # ⚠️ Esta se olvido en la 0.2.x y el sintoma fue el peor posible: media_kit
+  # no empaqueta libmpv en Linux, la carga con dlopen al arrancar, y la llamada
+  # va antes de runApp() — la app abria y se cerraba SIN VENTANA NI MENSAJE en
+  # cualquier Arch sin mpv instalado, que son casi todos. Un ldd sobre los
+  # binarios no lo pilla, porque nadie enlaza contra libmpv: se abre en
+  # caliente. De ahi el arranque de verdad que hace el job `arch` del workflow.
+  'mpv'
 )
 optdepends=(
   'gnome-shell-extension-appindicator: icono de bandeja en GNOME'
@@ -59,7 +69,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('2b72134b24606948335178c526d1fef7dca5113ba8ef2008ad715ab20590b391')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/$_tarball"

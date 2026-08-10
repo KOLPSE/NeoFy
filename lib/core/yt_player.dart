@@ -44,26 +44,84 @@ class YtPlayerException implements Exception {
 class YtPlayer extends ChangeNotifier {
   YtPlayer({int volumenInicial = 60})
       : volumen = volumenInicial.clamp(0, 100),
-        player = Player() {
+        _mpv = libmpvDisponible ? Player() : null {
+    final mpv = _mpv;
+    if (mpv == null) {
+      // Sin libmpv no hay reproductor, pero el objeto tiene que existir igual:
+      // el shell de NeoTube se construye siempre, esté el usuario en ese modo
+      // o no. Lo único que cambia es que no suena nada y se enseña el porqué.
+      error = motivoSinLibmpv;
+      return;
+    }
     // El volumen guardado se aplica ya, antes de que suene nada: aplicarlo al
     // abrir la primera pista se oiría como un salto de volumen a mitad de la
     // primera nota.
-    unawaited(player.setVolume(volumen.toDouble()));
+    unawaited(mpv.setVolume(volumen.toDouble()));
     // Cuando una pista termina sola, sigue la cola. `completed` también se
     // emite al abrir un medio nuevo en algunas versiones, de ahí el control
     // de que haya sonado algo de verdad y no estemos ya cambiando de pista.
-    _subCompletado = player.stream.completed.listen((terminada) {
+    _subCompletado = mpv.stream.completed.listen((terminada) {
       if (terminada && !_cambiando && cola.isNotEmpty) unawaited(siguiente(automatico: true));
     });
-    _subError = player.stream.error.listen((e) {
+    _subError = mpv.stream.error.listen((e) {
       error = 'Error de reproducción: $e';
       notifyListeners();
     });
   }
 
-  final Player player;
-  late final StreamSubscription<bool> _subCompletado;
-  late final StreamSubscription<String> _subError;
+  /// Si libmpv se pudo cargar al arrancar. Lo fija `main()`, que es quien
+  /// llama a `MediaKit.ensureInitialized()`.
+  ///
+  /// **Por qué esto existe.** `media_kit` no empaqueta libmpv en Linux: la
+  /// carga del sistema con `dlopen` al llamar a `ensureInitialized()`, y si no
+  /// está, lanza. Como esa llamada va en `main()` antes de `runApp()`, una
+  /// distribución sin libmpv instalado hacía que la app arrancara y se cerrara
+  /// **sin ventana ni mensaje**: era el fallo que se veía en Arch, donde
+  /// `mpv` no viene de serie.
+  ///
+  /// Los paquetes ya declaran la dependencia, así que un usuario de `.deb`,
+  /// `.rpm` o `pacman` no debería llegar aquí nunca. Queda por los del
+  /// tarball, que no tiene forma de exigir nada: mejor una NeoFy entera con
+  /// NeoTube apagado que ninguna app.
+  ///
+  /// En Windows no aplica: allí `libmpv-2.dll` viaja dentro del paquete.
+  static bool libmpvDisponible = true;
+
+  /// Qué decirle al usuario cuando [libmpvDisponible] es `false`.
+  ///
+  /// Es un mensaje nuestro y no el de la excepción de `media_kit`: aquel está
+  /// en inglés y solo sabe recomendar `apt install libmpv-dev`, que no le sirve
+  /// de nada a quien está en Arch o en Fedora. El original se queda en el log.
+  static String motivoSinLibmpv =
+      'No se encuentra libmpv, la librería que reproduce el audio de NeoTube. '
+      'Instala el paquete de tu distribución (Arch: mpv · Debian/Ubuntu: '
+      'libmpv2 · Fedora: mpv-libs) y vuelve a abrir NeoFy.';
+
+  /// El reproductor de verdad, o `null` si falta libmpv. Privado a propósito:
+  /// fuera se usan [sonando], [posicion] y compañía, que ya contemplan que no
+  /// haya reproductor.
+  final Player? _mpv;
+
+  StreamSubscription<bool>? _subCompletado;
+  StreamSubscription<String>? _subError;
+
+  /// ¿Puede sonar algo? `false` solo cuando falta libmpv (ver
+  /// [libmpvDisponible]). Con esto puesto a `false`, NeoTube se enseña
+  /// explicando qué falta en vez de aceptar pulsaciones que no harían nada.
+  bool get disponible => _mpv != null;
+
+  bool get sonando => _mpv?.state.playing ?? false;
+
+  /// Cambios de play/pausa. Hace falta aparte de [notifyListeners] porque
+  /// pausar no cambia nada del estado que lleva esta clase.
+  Stream<bool> get cambiosDeSonando => _mpv?.stream.playing ?? const Stream<bool>.empty();
+
+  Duration get posicion => _mpv?.state.position ?? Duration.zero;
+
+  Stream<Duration> get cambiosDePosicion =>
+      _mpv?.stream.position ?? const Stream<Duration>.empty();
+
+  Duration get duracion => _mpv?.state.duration ?? Duration.zero;
 
   /// Se llama justo antes de empezar a sonar algo. Es el enganche con el que
   /// `main.dart` para NeoFy: los dos modos comparten altavoces y sonar a la
@@ -260,7 +318,7 @@ class YtPlayer extends ChangeNotifier {
     int desde = 0,
     String? contexto,
   }) async {
-    if (pistas.isEmpty) return;
+    if (pistas.isEmpty || !disponible) return;
     cola = List.unmodifiable(pistas);
     this.contexto = contexto;
     indice = desde.clamp(0, pistas.length - 1);
@@ -289,7 +347,8 @@ class YtPlayer extends ChangeNotifier {
 
   Future<void> _abrirActual() async {
     final t = actual;
-    if (t == null) return;
+    final mpv = _mpv;
+    if (t == null || mpv == null) return;
     _cambiando = true;
     resolviendo = t.videoId;
     error = null;
@@ -297,7 +356,7 @@ class YtPlayer extends ChangeNotifier {
     try {
       await alEmpezarAReproducir?.call();
       final url = await _resolverUrl(t.videoId);
-      await player.open(Media(url));
+      await mpv.open(Media(url));
       _adelantarSiguiente();
     } catch (e) {
       error = '$e';
@@ -313,12 +372,14 @@ class YtPlayer extends ChangeNotifier {
   /// pista falla, se sigue bajando en vez de parar: un vídeo bloqueado por
   /// región en mitad de una playlist de 300 no debe terminar la escucha.
   Future<void> siguiente({bool automatico = false}) async {
+    final mpv = _mpv;
+    if (mpv == null) return;
     if (!puedeSaltar) {
       if (!automatico) return;
       // Fin de la cola: se para, pero se deja la pista puesta para que el
       // botón de play la pueda volver a arrancar.
-      await player.pause();
-      await player.seek(Duration.zero);
+      await mpv.pause();
+      await mpv.seek(Duration.zero);
       return;
     }
     indice++;
@@ -330,9 +391,11 @@ class YtPlayer extends ChangeNotifier {
   }
 
   Future<void> anterior() async {
+    final mpv = _mpv;
+    if (mpv == null) return;
     // Igual que en NeoFy: pasados 3 s, "anterior" reinicia la canción.
-    if (player.state.position.inSeconds > 3 || indice <= 0) {
-      await player.seek(Duration.zero);
+    if (mpv.state.position.inSeconds > 3 || indice <= 0) {
+      await mpv.seek(Duration.zero);
       return;
     }
     indice--;
@@ -348,15 +411,17 @@ class YtPlayer extends ChangeNotifier {
   }
 
   Future<void> alternar() async {
+    final mpv = _mpv;
+    if (mpv == null) return;
     // Si la cola llegó al final, un `play` pelado no arranca nada: se vuelve a
     // empezar por donde se quedó. Mismo criterio que `PlayerController`.
-    if (!player.state.playing &&
+    if (!mpv.state.playing &&
         actual != null &&
-        player.state.position >= player.state.duration &&
-        player.state.duration > Duration.zero) {
-      await player.seek(Duration.zero);
+        mpv.state.position >= mpv.state.duration &&
+        mpv.state.duration > Duration.zero) {
+      await mpv.seek(Duration.zero);
     }
-    await (player.state.playing ? player.pause() : player.play());
+    await (mpv.state.playing ? mpv.pause() : mpv.play());
   }
 
   /// Un salto de la barra hay que anunciarlo aparte al panel del sistema: los
@@ -384,19 +449,20 @@ class YtPlayer extends ChangeNotifier {
     if (nuevo == volumen) return;
     volumen = nuevo;
     notifyListeners();
-    await player.setVolume(nuevo.toDouble());
+    await _mpv?.setVolume(nuevo.toDouble());
   }
 
-  Future<void> pause() => player.pause();
-  Future<void> resume() => player.play();
+  Future<void> pause() async => _mpv?.pause();
+  Future<void> resume() async => _mpv?.play();
 
   Future<void> seek(Duration d) async {
-    await player.seek(d);
+    if (_mpv == null) return;
+    await _mpv.seek(d);
     onSalto?.call(d.inMilliseconds);
   }
 
   Future<void> stop() async {
-    await player.stop();
+    await _mpv?.stop();
     cola = const [];
     indice = -1;
     contexto = null;
@@ -406,9 +472,9 @@ class YtPlayer extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(_subCompletado.cancel());
-    unawaited(_subError.cancel());
-    unawaited(player.dispose());
+    unawaited(_subCompletado?.cancel());
+    unawaited(_subError?.cancel());
+    unawaited(_mpv?.dispose());
     super.dispose();
   }
 }

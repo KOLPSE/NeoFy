@@ -86,13 +86,19 @@ tamano_kb="$(du -sk "$deb" | cut -f1)"
 # alternativa, el paquete instala en Debian 12 pero es imposible de instalar en
 # la Ubuntu mas usada, y el error habla de dependencias inexistentes sin
 # explicar por que.
+#
+# ⚠️ libmpv es la que reproduce NeoTube y falto en toda la serie 0.2.x. No la
+# enlaza nadie: media_kit la abre con dlopen al arrancar, antes de que haya
+# ventana, asi que sin ella la app abria y se cerraba sin decir nada. Se llama
+# libmpv2 desde Debian 13 y Ubuntu 24.04, y libmpv1 en Debian 12 y Ubuntu
+# 22.04; de ahi la alternativa.
 cat > "$deb/DEBIAN/control" <<EOF
 Package: neofy
 Version: $version
 Section: sound
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9), libwebkit2gtk-4.1-0
+Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9), libwebkit2gtk-4.1-0, libmpv2 | libmpv1
 Installed-Size: $tamano_kb
 Maintainer: KOLPSE <117825722+KOLPSE@users.noreply.github.com>
 Homepage: https://github.com/KOLPSE/NeoFy
@@ -155,7 +161,10 @@ License:        MIT
 URL:            https://github.com/KOLPSE/NeoFy
 BuildArch:      x86_64
 AutoReqProv:    no
-Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9, webkit2gtk4.1
+# libmpv (NeoTube) va por soname y no por nombre de paquete a proposito: en
+# Fedora el paquete es mpv-libs y en openSUSE libmpv2, pero los dos declaran
+# el mismo Provides. Ver el aviso del control del .deb para por que hace falta.
+Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9, webkit2gtk4.1, libmpv.so.2()(64bit)
 
 %description
 NeoFy reproduce Spotify en unos 150 MB de memoria, frente a los 400-700 MB del

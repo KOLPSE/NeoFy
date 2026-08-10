@@ -76,7 +76,24 @@ Future<void> main(List<String> args) async {
   if (runWebViewTitleBarWidget(args)) return;
   // Registra los plugins nativos de media_kit (libmpv). Hace falta antes de
   // crear ningún `Player`, aunque el usuario no llegue a entrar en NeoTube.
-  MediaKit.ensureInitialized();
+  //
+  // ⚠️ El try/catch no es defensivo por si acaso: en Linux `media_kit` **no
+  // empaqueta libmpv**, la busca en el sistema con `dlopen`, y si no está esta
+  // llamada lanza. Al estar antes de `runApp()`, una distribución sin libmpv
+  // instalado hacía que la app arrancara y se cerrara sin ventana ni mensaje —
+  // el fallo que se veía en Arch, donde `mpv` no viene de serie. Los paquetes
+  // ya lo declaran como dependencia, pero el tarball no puede exigir nada, así
+  // que aquí NeoTube se apaga y NeoFy (que suena por librespot, en otro
+  // proceso) sigue funcionando entera.
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e) {
+    YtPlayer.libmpvDisponible = false;
+    // El mensaje que se enseña es el nuestro y no `$e`: el de media_kit está
+    // en inglés y solo sabe recomendar `apt install libmpv-dev`, que no ayuda
+    // a nadie en Arch ni en Fedora. El original se queda en el log.
+    debugPrint('[NeoTube] sin libmpv, el modo queda desactivado: $e');
+  }
 
   if (!await _acquireSingleInstance()) {
     exit(0);
@@ -270,7 +287,6 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   EstadoDelSistema _estadoDeNeoTube() {
     final t = _ytPlayer.actual;
     if (t == null) return EstadoDelSistema.vacio;
-    final estado = _ytPlayer.player.state;
     return EstadoDelSistema(
       track: Track(
         id: t.videoId,
@@ -280,14 +296,14 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         album: '',
         artSmall: t.miniatura,
         artMedium: t.miniatura,
-        durationMs: (estado.duration > Duration.zero
-                ? estado.duration
+        durationMs: (_ytPlayer.duracion > Duration.zero
+                ? _ytPlayer.duracion
                 : (t.duracion ?? Duration.zero))
             .inMilliseconds,
         isLocal: false,
       ),
-      sonando: estado.playing,
-      posicionMs: estado.position.inMilliseconds,
+      sonando: _ytPlayer.sonando,
+      posicionMs: _ytPlayer.posicion.inMilliseconds,
       puedeSaltar: _ytPlayer.puedeSaltar,
       puedeVolver: _ytPlayer.puedeVolver,
       volumen: _ytPlayer.volumen,
@@ -402,7 +418,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     // que de lo que hace NeoFy: cambio de pista (el notificador) y play/pausa
     // (el stream de media_kit, que el notificador no cubre).
     _ytPlayer.addListener(_avisarAlSistema);
-    _subYtSonando = _ytPlayer.player.stream.playing.listen((_) => _avisarAlSistema());
+    _subYtSonando = _ytPlayer.cambiosDeSonando.listen((_) => _avisarAlSistema());
     modoApp.addListener(_alCambiarDeModoDeApp);
     _ram.start();
     // Una comprobación al arrancar, sin molestar: si hay algo nuevo, aparece en
@@ -612,7 +628,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   Future<void> _reproducirSiEstaParado() async {
     if (_mandaNeoTube) {
-      if (_ytPlayer.player.state.playing) return;
+      if (_ytPlayer.sonando) return;
       await _ytPlayer.resume();
       return;
     }

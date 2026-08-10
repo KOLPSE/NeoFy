@@ -26,8 +26,15 @@ Dependencias que tienen que estar (las declara el PKGBUILD, pero para probar el
 tarball suelto conviene comprobarlas):
 
 ```bash
-sudo pacman -S --needed gtk3 libayatana-appindicator libpulse openssl
+sudo pacman -S --needed gtk3 libayatana-appindicator libpulse openssl \
+                        python webkit2gtk-4.1 mpv
 ```
+
+⚠️ **`mpv` (libmpv) no es opcional aunque no pienses usar NeoTube**, y hasta la
+0.2.3 faltaba en el PKGBUILD. Se abre con `dlopen` al arrancar, antes de que
+haya ventana: sin ella, la app **abría y se cerraba sin decir nada**. Ahora
+sobrevive y NeoTube enseña qué instalar, pero sigue haciendo falta para que
+suene. Si ves ese mensaje, es que el paquete o el tarball se lo dejó: dilo.
 
 Di también **qué escritorio usas** (KDE, GNOME, Hyprland…) y si es Wayland o
 X11: la mitad de los puntos de abajo dependen de eso.

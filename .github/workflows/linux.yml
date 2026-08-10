@@ -204,11 +204,22 @@ jobs:
         #
         # github-cli no es del paquete: hace falta para publicar, y el contenedor
         # de Arch no lo trae de serie como si hace el runner de Ubuntu.
+        #
+        # xorg-server-xvfb, xorg-xauth y dbus tampoco son del paquete: son lo
+        # que hace falta para ARRANCAR la app aqui dentro, sin pantalla, en el
+        # paso de humo (xvfb-run llama a `xauth`, que en Arch va aparte). Ver
+        # ese paso para por que existe.
+        #
+        # ⚠️ `mpv` (libmpv, el audio de NeoTube) se deja fuera A PROPOSITO
+        # aunque el PKGBUILD lo declare. Ponerlo aqui haria que estuviera
+        # instalado pasara lo que pasara, y el paso de humo dejaria de detectar
+        # que el PKGBUILD se lo dejo: lo instala `pacman -U` al resolver las
+        # dependencias del paquete, que es justo lo que se quiere probar.
         run: |
           pacman -Syu --noconfirm --needed \
             gtk3 libayatana-appindicator libpulse openssl xdg-utils \
             python webkit2gtk-4.1 \
-            base-devel sudo github-cli
+            base-devel sudo github-cli xorg-server-xvfb xorg-xauth dbus
 
       - uses: actions/checkout@v4
 
@@ -317,9 +328,53 @@ jobs:
           [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
             echo "::error::el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
           echo "Instalado correctamente."
+
+      # El unico paso que ejecuta la app. Todo lo demas comprueba ficheros y
+      # enlazado estatico, y hay una clase entera de fallo que eso no ve: las
+      # librerias que se abren con dlopen EN CALIENTE. Nadie enlaza contra
+      # ellas, asi que ldd no las nombra y el paquete parece completo.
+      #
+      # Que es justo lo que se escapo en la serie 0.2: media_kit carga libmpv
+      # con dlopen al inicializarse, la llamada va antes de runApp(), el
+      # PKGBUILD no declaraba `mpv` y en Arch la app abria y se cerraba sin
+      # ventana ni mensaje. Los cinco paquetes se publicaron verdes.
+      #
+      # Se comprueban las dos mitades del arreglo: que la app siga viva pasado
+      # el arranque, y que no haya renunciado a NeoTube por el camino. Lo
+      # segundo hace falta porque ahora la app SOBREVIVE a que falte libmpv
+      # (apaga NeoTube y sigue), asi que sin mirar el log el paquete podria
+      # volver a salir sin la dependencia y este paso pasaria igual.
+      - name: Que la app arranque de verdad
+        run: |
+          export HOME=/root
+          # Sin sesion guardada se queda en la pantalla de login sin tocar la
+          # red ni levantar librespot: es el arranque mas barato que hay.
+          dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
+          pid=$!
+          sleep 25
+
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::neofy se ha caido durante el arranque"
+            cat /tmp/neofy.log
+            exit 1
+          fi
+          kill "$pid" 2>/dev/null || true
+          echo "Sigue viva pasados 25 s."
+
+          if grep -q 'sin libmpv' /tmp/neofy.log; then
+            echo "::error::la app ha arrancado con NeoTube desactivado: falta libmpv"
+            echo "::error::revisa que 'mpv' siga en depends= de linux/packaging/PKGBUILD"
+            cat /tmp/neofy.log
+            exit 1
+          fi
+          echo "Y con NeoTube operativo."
+          cat /tmp/neofy.log
+
+      - name: Que desinstale limpio
+        run: |
           pacman -R --noconfirm neofy-bin
           test ! -e /opt/neofy || { echo "::error::quedan restos en /opt/neofy"; exit 1; }
-          echo "Y desinstala limpio."
+          echo "Desinstala limpio."
 
       - name: El paquete de Arch, para descargar
         uses: actions/upload-artifact@v4

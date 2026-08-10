@@ -138,6 +138,10 @@ class _NeoTubeShellState extends State<NeoTubeShell> {
   }
 
   Widget _content() {
+    // Y esto se antepone incluso al login: sin libmpv no va a sonar nada,
+    // así que mandar al usuario a iniciar sesión sería hacerle perder el
+    // tiempo. Solo puede pasar en Linux; ver `YtPlayer.libmpvDisponible`.
+    if (!widget.player.disponible) return const _SinLibmpv();
     // Nada de esto sirve sin sesión, así que el login se antepone a la
     // navegación en vez de repetirlo en cada pestaña.
     if (!widget.auth.isLoggedIn) {
@@ -178,6 +182,55 @@ class _NeoTubeShellState extends State<NeoTubeShell> {
         YtSearchScreen(api: widget.api, player: widget.player, acciones: _acciones),
       _NeoTubeView.cola => _ColaScreen(player: widget.player),
     };
+  }
+}
+
+/// Lo que se enseña en NeoTube cuando falta libmpv en el sistema.
+///
+/// Antes esto no existía porque el caso no llegaba a verse: la app moría en
+/// `main()` al inicializar `media_kit` y no aparecía ni la ventana. Ver el
+/// try/catch de `main()` y `YtPlayer.libmpvDisponible`.
+class _SinLibmpv extends StatelessWidget {
+  const _SinLibmpv();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.volume_off_outlined,
+                  size: 48, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              Text('NeoTube no puede reproducir audio',
+                  style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              Text(
+                YtPlayer.motivoSinLibmpv,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              // NeoFy sí funciona: su audio lo pone librespot, que es un
+              // proceso aparte y no depende de libmpv para nada.
+              Text(
+                'El modo NeoFy (Spotify) no está afectado: su audio va por otro '
+                'camino y sigue funcionando.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -444,8 +497,8 @@ class _BarraInferior extends StatelessWidget {
                       )
                     else
                       StreamBuilder<bool>(
-                        stream: player.player.stream.playing,
-                        initialData: player.player.state.playing,
+                        stream: player.cambiosDeSonando,
+                        initialData: player.sonando,
                         builder: (context, snap) {
                           final sonando = snap.data ?? false;
                           return IconButton.filled(
@@ -545,10 +598,10 @@ class _ProgresoState extends State<_Progreso> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return StreamBuilder<Duration>(
-      stream: widget.player.player.stream.position,
-      initialData: widget.player.player.state.position,
+      stream: widget.player.cambiosDePosicion,
+      initialData: widget.player.posicion,
       builder: (context, snapPos) {
-        final total = widget.player.player.state.duration.inMilliseconds.toDouble();
+        final total = widget.player.duracion.inMilliseconds.toDouble();
         final pos = (snapPos.data ?? Duration.zero).inMilliseconds.toDouble();
         if (total <= 0) return const SizedBox(height: 24);
         final valor = (_arrastrando ?? pos).clamp(0, total).toDouble();

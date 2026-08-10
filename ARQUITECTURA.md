@@ -950,6 +950,38 @@ Los nombres de las dependencias no se parecen entre familias y hay que darlos a 
 formato: `gtk3` en Arch y Fedora es `libgtk-3-0` en Debian, `libpulse` es `libpulse0` allí y
 `pulseaudio-libs` en Fedora.
 
+#### ⚠️ libmpv se abre con `dlopen`, así que `ldd` no la ve
+
+`media_kit`, con el que suena NeoTube, **no empaqueta libmpv en Linux** (a diferencia de
+Windows, donde `libmpv-2.dll` viaja dentro del paquete): la busca en el sistema y la abre en
+caliente al llamar a `MediaKit.ensureInitialized()`. Nadie enlaza contra ella, así que **no
+aparece en `ldd`** y el binario parece completo sin estarlo.
+
+Toda la serie 0.2 se publicó sin declararla, y el síntoma fue el peor posible: como esa
+inicialización va en `main()` antes de `runApp()`, en un Arch sin `mpv` instalado —o sea, en
+casi cualquiera— la app **abría y se cerraba sin ventana y sin un mensaje que mirar**. Los
+cinco paquetes habían salido verdes: la comprobación de `ldd` del job `arch` no podía verlo.
+
+Dos cosas lo cierran, y hacen falta las dos:
+
+- **La dependencia, con un nombre distinto por familia**: `mpv` en Arch (no hay un `mpv-libs`
+  suelto en los repositorios oficiales), `libmpv2 | libmpv1` en Debian y Ubuntu (cambió de
+  soname en Debian 13 y Ubuntu 24.04), y en el `.rpm` va **por soname**
+  (`libmpv.so.2()(64bit)`) porque el paquete se llama `mpv-libs` en Fedora y `libmpv2` en
+  openSUSE, pero los dos declaran el mismo `Provides`.
+- **Que faltar no mate la app.** La llamada va en un `try`/`catch` que apaga NeoTube
+  (`YtPlayer.libmpvDisponible`) y deja NeoFy entera, que suena por librespot en otro proceso y
+  no depende de libmpv para nada. Hace falta por el tarball, que no tiene forma de exigir nada
+  a nadie. En ese estado el shell de NeoTube enseña qué paquete instalar en vez de aceptar
+  pulsaciones que no harían nada.
+
+Y una tercera para que no se repita: el job `arch` **arranca la app de verdad**
+(`dbus-run-session xvfb-run`), comprueba que sigue viva a los 25 s y que no ha renunciado a
+NeoTube por el camino. Es el único paso que la ejecuta; todo lo demás mira ficheros y
+enlazado estático, que es exactamente lo que no pilla un `dlopen`. Por eso `mpv` **no** se
+instala a mano en el paso de dependencias del job: lo tiene que traer `pacman -U` resolviendo
+las del paquete, o la comprobación no comprobaría nada.
+
 `linux/packaging/PRUEBAS.md` tiene la lista de comprobación manual: el audio, la bandeja y
 MPRIS no los cubre ningún test y no se pueden validar desde Windows.
 
