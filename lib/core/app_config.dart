@@ -25,7 +25,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 /// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
 /// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
 /// y nada más.
-const String kVersion = '0.2.4';
+const String kVersion = '0.2.5';
 
 /// Repositorio de donde salen las actualizaciones.
 const String kRepoGitHub = 'KOLPSE/NeoFy';

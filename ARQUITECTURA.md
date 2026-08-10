@@ -489,14 +489,19 @@ distribución, así que el del usuario sirve igual y suele estar más fresco.
 - **No se compila, se baja** (`tool/fetch_ytdlp.ps1` / `.sh`), y se rebaja **en cada
   empaquetado**, no se cachea: YouTube le rompe los extractores cada pocas semanas y el de
   la release anterior puede estar ya muerto.
-- **En Linux se empaqueta el *zipapp* (3 MB), no el binario autónomo (40 MB)**, y por eso
-  el `.deb`, el `.rpm` y el `PKGBUILD` declaran `python3 >= 3.9`. Son 40 MB menos en cada
-  uno de los cuatro artefactos, y python3 está en cualquier escritorio actual. Si algún día
-  se cambia por `yt-dlp_linux`, hay que quitar esas dependencias.
+- **En Linux se empaqueta `yt-dlp_linux`, el binario autónomo (~40 MB), y no el *zipapp*
+  (3 MB)**, que necesitaría un `python3 >= 3.9` en el sistema. Hasta la 0.2.4 era al revés,
+  para ahorrar esos 40 MB en cada artefacto. El problema no era el tamaño: era que NeoTube
+  dejaba de reproducir en cuanto el intérprete no estaba o era viejo, o sea una dependencia
+  que el usuario tiene que entender y resolver antes de que la app le sirva. El autónomo
+  trae su propio Python dentro y **ningún paquete declara ya `python3`**. Si algún día se
+  vuelve al zipapp, hay que devolver esa dependencia a los tres.
 - El workflow no se limita a comprobar que el fichero está: ejecuta **`yt-dlp --version`**
-  tras instalar el `.deb` y el paquete de Arch. Un zipapp sin intérprete existe, es
+  tras instalar el `.deb` y el paquete de Arch. Un binario presente pero roto existe, es
   ejecutable y no arranca — y eso, sin esta comprobación, solo se descubre pulsando una
-  canción en una copia ya instalada.
+  canción en una copia ya instalada. El contenedor de Arch **no lleva `python` instalado a
+  propósito**: es lo que demuestra que el binario es de verdad autónomo, porque el runner de
+  Ubuntu trae python de serie y allí la comprobación pasaría igual con el zipapp.
 - Ajustes → NeoTube enseña la versión y la ruta del que se está usando, por lo mismo.
 
 ## RAM: cómo se mide

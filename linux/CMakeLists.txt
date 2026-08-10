@@ -140,9 +140,9 @@ endif()
 # pista. Sin el, NeoTube no reproduce nada. No se compila: lo baja
 # tool/fetch_ytdlp.sh del release del propio proyecto.
 #
-# El que se empaqueta es el zipapp (3 MB), no el binario autonomo de 40 MB: por
-# eso los paquetes llevan python3 en sus dependencias. Se ejecuta directamente
-# gracias a su shebang.
+# El que se empaqueta es `yt-dlp_linux`, el binario autonomo (~40 MB), y no el
+# zipapp de 3 MB: aquel necesitaria un python3 >= 3.9 en el sistema y este trae
+# su propio interprete dentro, asi que ningun paquete declara ya python3.
 set(YTDLP_BIN "${CMAKE_CURRENT_SOURCE_DIR}/../tool/ytdlp-build/bin/yt-dlp")
 if(EXISTS "${YTDLP_BIN}")
   install(PROGRAMS "${YTDLP_BIN}"

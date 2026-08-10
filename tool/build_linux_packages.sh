@@ -98,7 +98,7 @@ Version: $version
 Section: sound
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, python3 (>= 3.9), libwebkit2gtk-4.1-0, libmpv2 | libmpv1
+Depends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1, libpulse0, libssl3 | libssl3t64, xdg-utils, libwebkit2gtk-4.1-0, libmpv2 | libmpv1
 Installed-Size: $tamano_kb
 Maintainer: KOLPSE <117825722+KOLPSE@users.noreply.github.com>
 Homepage: https://github.com/KOLPSE/NeoFy
@@ -164,7 +164,7 @@ AutoReqProv:    no
 # libmpv (NeoTube) va por soname y no por nombre de paquete a proposito: en
 # Fedora el paquete es mpv-libs y en openSUSE libmpv2, pero los dos declaran
 # el mismo Provides. Ver el aviso del control del .deb para por que hace falta.
-Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, python3 >= 3.9, webkit2gtk4.1, libmpv.so.2()(64bit)
+Requires:       gtk3, libayatana-appindicator-gtk3, pulseaudio-libs, openssl-libs, webkit2gtk4.1, libmpv.so.2()(64bit)
 
 %description
 NeoFy reproduce Spotify en unos 150 MB de memoria, frente a los 400-700 MB del

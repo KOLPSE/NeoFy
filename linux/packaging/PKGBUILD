@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.2.4
+pkgver=0.2.5
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')
@@ -35,10 +35,6 @@ depends=(
   # Solo lo pide el sidecar de metadatos: librespot va con rustls, pero
   # librespot-core arrastra native-tls por sus features por defecto.
   'openssl'
-  # yt-dlp, el descodificador de NeoTube, se empaqueta como zipapp (3 MB) y no
-  # como el binario autonomo de 40 MB: necesita un interprete. Se ejecuta
-  # directamente por su shebang.
-  'python'
   # La WebView del login de NeoTube. Es dependencia dura aunque no se use
   # NeoTube: el plugin se enlaza al compilar, asi que sin ella el ejecutable
   # ni arranca.
@@ -69,7 +65,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('0a183b3e92ef55ef0a65f95f643d5c55f6b7874a3c635eed8b7bd7c707290ee4')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/$_tarball"

@@ -27,8 +27,11 @@ tarball suelto conviene comprobarlas):
 
 ```bash
 sudo pacman -S --needed gtk3 libayatana-appindicator libpulse openssl \
-                        python webkit2gtk-4.1 mpv
+                        webkit2gtk-4.1 mpv
 ```
+
+`python` ya **no** hace falta: desde la 0.2.5 yt-dlp va como binario autónomo,
+con su propio intérprete dentro.
 
 ⚠️ **`mpv` (libmpv) no es opcional aunque no pienses usar NeoTube**, y hasta la
 0.2.3 faltaba en el PKGBUILD. Se abre con `dlopen` al arrancar, antes de que

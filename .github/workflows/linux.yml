@@ -134,9 +134,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends "$PWD/$deb"
           test -x /opt/neofy/neofy
           test -L /usr/bin/neofy
-          # yt-dlp es un zipapp: que este ejecutable no basta, tiene que poder
-          # ARRANCAR. Si falta python3 o es viejo, esto es lo unico que lo pilla
-          # antes de que un usuario descubra que NeoTube no reproduce nada.
+          # Que este ejecutable no basta, tiene que poder ARRANCAR: si no, un
+          # usuario lo descubre pulsando una cancion y sin ninguna pista. El
+          # contenedor de Arch es el que de verdad prueba que no necesita
+          # python, porque alli no esta instalado; aqui Ubuntu lo trae de serie.
           /opt/neofy/yt-dlp --version
           sudo apt-get remove -y neofy
           echo "Los dos paquetes instalan y desinstalan."
@@ -215,10 +216,16 @@ jobs:
         # instalado pasara lo que pasara, y el paso de humo dejaria de detectar
         # que el PKGBUILD se lo dejo: lo instala `pacman -U` al resolver las
         # dependencias del paquete, que es justo lo que se quiere probar.
+        #
+        # ⚠️ Y `python` se deja fuera porque ya NO es dependencia de nada: desde
+        # la 0.2.5 yt-dlp es el binario autonomo, que trae su propio interprete.
+        # Un contenedor sin python es lo que demuestra que de verdad no le hace
+        # falta — el `yt-dlp --version` de mas abajo fallaria si volviera el
+        # zipapp sin devolver la dependencia.
         run: |
           pacman -Syu --noconfirm --needed \
             gtk3 libayatana-appindicator libpulse openssl xdg-utils \
-            python webkit2gtk-4.1 \
+            webkit2gtk-4.1 \
             base-devel sudo github-cli xorg-server-xvfb xorg-xauth dbus
 
       - uses: actions/checkout@v4
@@ -316,8 +323,10 @@ jobs:
           test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
           test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
           test -x /opt/neofy/yt-dlp         || { echo "::error::falta yt-dlp"; exit 1; }
-          # Igual que en el .deb: que el zipapp arranque de verdad con el
-          # python de Arch, no solo que el fichero este.
+          # Que arranque de verdad, no solo que el fichero este. Y aqui vale
+          # doble: este contenedor NO tiene python instalado (ver el paso de
+          # dependencias), asi que esto es lo que demuestra que yt-dlp es de
+          # verdad autonomo y que el paquete no necesita un interprete.
           /opt/neofy/yt-dlp --version       || { echo "::error::yt-dlp no arranca"; exit 1; }
           test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
           test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
