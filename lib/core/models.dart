@@ -82,6 +82,29 @@ class Track {
     required this.isLocal,
   });
 
+  Track copyWith({
+    String? id,
+    String? uri,
+    String? name,
+    String? artists,
+    String? album,
+    String? artSmall,
+    String? artMedium,
+    int? durationMs,
+    bool? isLocal,
+  }) =>
+      Track(
+        id: id ?? this.id,
+        uri: uri ?? this.uri,
+        name: name ?? this.name,
+        artists: artists ?? this.artists,
+        album: album ?? this.album,
+        artSmall: artSmall ?? this.artSmall,
+        artMedium: artMedium ?? this.artMedium,
+        durationMs: durationMs ?? this.durationMs,
+        isLocal: isLocal ?? this.isLocal,
+      );
+
   static Track? fromJson(Map<String, dynamic>? j) {
     if (j == null) return null;
     // Los episodios de podcast no traen `artists`; se descartan porque la

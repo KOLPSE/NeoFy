@@ -24,6 +24,8 @@ import 'core/metadata_sidecar.dart';
 import 'core/models.dart';
 import 'core/mpris.dart';
 import 'core/player_state.dart';
+import 'core/puente_yt.dart';
+import 'core/reproduccion_libre.dart';
 import 'core/resource_monitor.dart';
 import 'core/settings.dart';
 import 'core/smtc.dart';
@@ -502,9 +504,21 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     try {
       final me = await _api.me();
       if (!mounted) return;
-      _player.isPremium = (me['product'] as String?) == 'premium';
+      final isPrem = (me['product'] as String?) == 'premium';
+      _player.isPremium = isPrem;
       _player.currentUserId = me['id'] as String?;
       _player.premiumChecked = true;
+
+      if (!isPrem) {
+        final puente = PuenteYt(_ytApi);
+        _player.libre = ReproduccionLibre(
+          puente: puente,
+          ytPlayer: _ytPlayer,
+          api: _api,
+          controller: _player,
+        );
+        await _librespot.stop();
+      }
     } catch (_) {
       // Ya fallará más adelante con un mensaje concreto en la pantalla que lo
       // necesite; no es motivo para entorpecer el arranque.

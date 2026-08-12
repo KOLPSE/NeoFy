@@ -496,6 +496,51 @@ class SpotifyApi {
         .toList();
   }
 
+  /// Obtiene los datos completos de una lista de canciones por sus IDs.
+  /// Se realizan peticiones a `GET /v1/tracks?ids=` en lotes de 50 máximo.
+  Future<List<Track>> tracks(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final idsLimpios = ids.map((id) => id.startsWith('spotify:track:') ? id.substring(14) : id).toList();
+    final resultado = <Track>[];
+
+    for (var i = 0; i < idsLimpios.length; i += 50) {
+      final lote = idsLimpios.sublist(i, i + 50 > idsLimpios.length ? idsLimpios.length : i + 50);
+      final j = await _request('GET', '/tracks', query: {'ids': lote.join(',')}) as Map<String, dynamic>?;
+      if (j == null) continue;
+      final raw = (j['tracks'] as List<dynamic>?) ?? const [];
+      for (final item in raw) {
+        final t = Track.fromJson(item as Map<String, dynamic>?);
+        if (t != null) resultado.add(t);
+      }
+    }
+    return resultado;
+  }
+
+  /// Obtiene las pistas de un álbum por su ID (`GET /v1/albums/{id}`).
+  ///
+  /// Pide el álbum completo para rellenar el nombre del álbum y las imágenes
+  /// (`artSmall`/`artMedium`) en los objetos de pista simplificados devueltos.
+  Future<List<Track>> albumTracks(String id) async {
+    final albumId = id.startsWith('spotify:album:') ? id.substring(14) : id;
+    final j = await _request('GET', '/albums/$albumId') as Map<String, dynamic>?;
+    if (j == null) return const [];
+    final images = j['images'] as List<dynamic>?;
+    final albumName = (j['name'] as String?) ?? '';
+    final artSmall = pickImage(images, 64);
+    final artMedium = pickImage(images, 300);
+    final tracksObj = j['tracks'] as Map<String, dynamic>?;
+    final raw = (tracksObj?['items'] as List<dynamic>?) ?? (j['items'] as List<dynamic>?) ?? const [];
+    return raw.map((t) {
+      final track = Track.fromJson(t as Map<String, dynamic>?);
+      if (track == null) return null;
+      return track.copyWith(
+        album: track.album.isEmpty ? albumName : track.album,
+        artSmall: track.artSmall ?? artSmall,
+        artMedium: track.artMedium ?? artMedium,
+      );
+    }).whereType<Track>().toList();
+  }
+
   /// Álbumes recién publicados en el catálogo global de Spotify.
   ///
   /// No es personalizado a los gustos del usuario —eso es justo lo que hacía

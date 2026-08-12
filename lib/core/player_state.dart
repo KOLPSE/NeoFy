@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'app_config.dart';
 import 'models.dart';
+import 'reproduccion_libre.dart';
 import 'spotify_api.dart';
 
 /// Lo que hacía falta saber para dejar la música como estaba después de
@@ -44,9 +45,15 @@ class PlayerController extends ChangeNotifier {
   bool premiumChecked = false;
   bool isPremium = true;
 
+  /// Gestor de reproducción alternativa por YouTube para cuentas sin Premium.
+  ReproduccionLibre? libre;
+
   /// Id de la cuenta. Hace falta para construir el contexto de "Canciones que
   /// te gustan", que se forma con el id del usuario.
   String? currentUserId;
+
+  /// Notifica a los oyentes del cambio de estado.
+  void notificar() => notifyListeners();
 
   /// Última lista que se puso a sonar.
   ///
@@ -135,6 +142,10 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _poll() async {
+    if (libre != null) {
+      _pollTimer?.cancel();
+      return;
+    }
     if (_polling || _disposed) return;
     _polling = true;
     try {
@@ -227,6 +238,7 @@ class PlayerController extends ChangeNotifier {
   /// Spotify sigue listando el dispositivo del librespot que acabamos de matar,
   /// y quedarse con ese id significaría mandar la música a un proceso muerto.
   Future<bool> resolveDevice({bool transfer = true, String? distintoDe}) async {
+    if (libre != null) return false;
     try {
       final list = await api.devices();
       final ours = list
@@ -319,6 +331,7 @@ class PlayerController extends ChangeNotifier {
   /// arrancado la reanuda sola. Abrir la app y que empiece a sonar sin haberle
   /// dado a nada no lo espera nadie.
   Future<void> ensurePausedAtStartup() async {
+    if (libre != null) return;
     try {
       final pb = await api.playbackState();
       if (pb == null || !pb.isPlaying) return;
@@ -348,6 +361,7 @@ class PlayerController extends ChangeNotifier {
     Future<void> Function() action, {
     Future<bool> Function()? siProhibido,
   }) async {
+    if (libre != null) return false;
     try {
       await action();
     } on ApiException catch (e) {
@@ -383,6 +397,7 @@ class PlayerController extends ChangeNotifier {
   // ---------------------------------------------------------------- acciones
 
   Future<void> togglePlay() async {
+    if (libre != null) return libre!.alternar();
     // Si la reproducción se terminó del todo, no hay nada que reanudar: un
     // `play` pelado no arranca nada y el botón se queda mudo. Se vuelve a
     // poner la última lista desde el principio.
@@ -405,6 +420,7 @@ class PlayerController extends ChangeNotifier {
   /// Pausa sin alternar. La tecla "stop" de los cascos y del teclado
   /// multimedia para, no alterna: darle dos veces no debe reanudar.
   Future<void> pause() async {
+    if (libre != null) return libre!.pause();
     if (!state.isPlaying) return;
     state = state.copyWith(isPlaying: false);
     notifyListeners();
@@ -421,6 +437,7 @@ class PlayerController extends ChangeNotifier {
   /// Se detecta por las dos vías, porque cuál de las dos ocurre depende del
   /// contexto: `canSkipNext` antes de pedirlo, y el 403 después.
   Future<void> next() async {
+    if (libre != null) return libre!.siguiente();
     final sinSiguiente = !state.canSkipNext || state.track == null;
     if (sinSiguiente && await _volverAlPrincipio()) return;
 
@@ -431,6 +448,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> previous() async {
+    if (libre != null) return libre!.anterior();
     // Igual que Spotify: si ya han pasado más de 3 s, "anterior" vuelve al
     // principio de la canción en vez de saltar a la de antes. Y en la primera
     // canción de la lista tampoco hay adónde ir: reiniciarla es lo que hace el
@@ -495,6 +513,7 @@ class PlayerController extends ChangeNotifier {
   void Function(int ms)? onSalto;
 
   Future<void> seek(int ms) async {
+    if (libre != null) return libre!.saltar(ms);
     _pendingSeekMs = ms;
     _pendingSeekAt = DateTime.now();
     progressMs.value = ms;
@@ -514,6 +533,7 @@ class PlayerController extends ChangeNotifier {
   int get volumeShown => state.volumePercent ?? config.initialVolume;
 
   Future<void> setVolume(int percent) async {
+    if (libre != null) return libre!.fijarVolumen(percent);
     final v = percent.clamp(0, 100);
     _pendingVolume = v;
     _pendingVolumeAt = DateTime.now();
@@ -529,6 +549,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> toggleShuffle() async {
+    if (libre != null) return;
     final next = !state.shuffle;
     state = state.copyWith(shuffle: next);
     notifyListeners();
@@ -536,6 +557,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> cycleRepeat() async {
+    if (libre != null) return;
     const order = ['off', 'context', 'track'];
     final next = order[(order.indexOf(state.repeat) + 1) % order.length];
     state = state.copyWith(repeat: next);
@@ -544,6 +566,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playContext(String contextUri, {int? offset}) {
+    if (libre != null) return libre!.playContext(contextUri, offset: offset);
     // Se apunta aquí y no solo en el sondeo porque el contexto de "Canciones
     // que te gustan" no lo devuelve `GET /me/player`: si no lo guardáramos al
     // pedirlo, no habría manera de saber que era esa lista.
@@ -570,6 +593,7 @@ class PlayerController extends ChangeNotifier {
   /// en "Vuelve a escuchar" es de lo más normal que la misma canción salga dos
   /// veces, y buscarla por uri empezaría siempre por la primera aparición.
   Future<void> playLista(List<String> uris, {int desde = 0}) {
+    if (libre != null) return libre!.playLista(uris, desde: desde);
     // Estas listas no son un contexto de Spotify —no tienen uri propia— y
     // `GET /me/player` no las devuelve, así que hay que guardarlas aquí o al
     // llegar al final no habría manera de saber qué se estaba escuchando. Es
@@ -584,17 +608,22 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playTrack(String uri) {
+    if (libre != null) return libre!.playTrack(uri);
     // Una canción suelta no es una lista: al acabar no hay adónde volver.
     _lastContextUri = null;
     _lastUris = null;
     return _withDevice(() => api.play(deviceId: ourDeviceId, uris: [uri]));
   }
 
-  Future<void> addToQueue(String uri) => _withDevice(() => api.addToQueue(uri));
+  Future<void> addToQueue(String uri) {
+    if (libre != null) return libre!.addToQueue(uri);
+    return _withDevice(() => api.addToQueue(uri));
+  }
 
   @override
   void dispose() {
     _disposed = true;
+    libre?.dispose();
     _pollTimer?.cancel();
     _tickTimer?.cancel();
     progressMs.dispose();

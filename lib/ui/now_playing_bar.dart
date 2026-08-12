@@ -231,14 +231,19 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     final cuota = widget.player.api.avisoDeCuota;
     if (cuota != null) return cuota;
     if (widget.player.premiumChecked && !widget.player.isPremium) {
-      return 'Tu cuenta no es Premium: Spotify no permite controlar la '
-          'reproducción desde aplicaciones de terceros.';
+      final libre = widget.player.libre;
+      if (libre != null && !libre.tieneSesionYt) {
+        return 'Para escuchar música sin Premium es necesario iniciar sesión en NeoTube.';
+      }
+      return 'Cuenta sin Premium: el audio lo pone YouTube.';
     }
-    if (widget.librespot.status == LibrespotStatus.failed) {
-      return widget.librespot.lastError ?? 'El reproductor no arrancó.';
-    }
-    if (widget.player.ourDeviceId == null) {
-      return 'Buscando el reproductor local…';
+    if (widget.player.libre == null) {
+      if (widget.librespot.status == LibrespotStatus.failed) {
+        return widget.librespot.lastError ?? 'El reproductor no arrancó.';
+      }
+      if (widget.player.ourDeviceId == null) {
+        return 'Buscando el reproductor local…';
+      }
     }
     final err = widget.player.lastError;
     if (err != null) return err;

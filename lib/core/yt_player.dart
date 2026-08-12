@@ -368,6 +368,13 @@ class YtPlayer extends ChangeNotifier {
     }
   }
 
+  /// Se avisa cuando la cola se acaba **sola** (no por un salto del usuario).
+  ///
+  /// NeoTube lo deja a `null`: allí la cola de este reproductor es toda la cola
+  /// que hay. La vía libre de NeoFy sí lo usa, porque allí la cola de verdad es
+  /// la de canciones de Spotify y esta solo tiene la que suena ahora.
+  Future<void> Function()? alAcabarLaCola;
+
   /// Salta a la siguiente. Cuando lo pide la cola sola ([automatico]) y la
   /// pista falla, se sigue bajando en vez de parar: un vídeo bloqueado por
   /// región en mitad de una playlist de 300 no debe terminar la escucha.
@@ -376,6 +383,10 @@ class YtPlayer extends ChangeNotifier {
     if (mpv == null) return;
     if (!puedeSaltar) {
       if (!automatico) return;
+      if (alAcabarLaCola != null) {
+        await alAcabarLaCola!();
+        return;
+      }
       // Fin de la cola: se para, pero se deja la pista puesta para que el
       // botón de play la pueda volver a arrancar.
       await mpv.pause();
