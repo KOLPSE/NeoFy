@@ -9,7 +9,7 @@ cada punto un ✅ o qué pasó exactamente, sobra.
 
 No hace falta instalar Flutter ni Rust. En la pestaña **Actions** del
 repositorio, workflow **Linux** → *Run workflow*; al terminar deja un artefacto
-`neofy-linux` con el `.deb`, el `.rpm` y el tarball.
+`neofy-linux` con el tarball.
 
 Para las pruebas de los puntos 1 a 9 conviene usar **el tarball**, que se ejecuta
 sin instalar nada y se puede borrar de un tirón:
@@ -20,7 +20,12 @@ cd NeoFy-*-linux-x86_64
 ./neofy
 ```
 
-El `.deb` y el `.rpm` son para el punto 10.
+El punto 10 es el paquete de Arch, que se monta con el PKGBUILD.
+
+> **Desde la 0.2.6 no hay `.deb` ni `.rpm`.** La única plataforma con paquete en
+> Linux es Arch. Estas pruebas, por tanto, **hay que hacerlas en Arch** (o en una
+> derivada); en otra distribución solo valdría el tarball, y el punto 10 no se
+> podría comprobar.
 
 Dependencias que tienen que estar (las declara el PKGBUILD, pero para probar el
 tarball suelto conviene comprobarlas):
@@ -156,15 +161,16 @@ En Arch, con el PKGBUILD de este directorio en una carpeta vacía:
 makepkg -si
 ```
 
-Si además puedes probar en Debian/Ubuntu o Fedora, los instaladores están en la
-misma release (o como artefacto del workflow):
+O, si prefieres no compilar el paquete, instalando el `.pkg.tar.zst` que publica
+la release:
 
 ```bash
-sudo apt install ./neofy_*_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./neofy-*.x86_64.rpm     # Fedora
+sudo pacman -U ./neofy-bin-*-x86_64.pkg.tar.zst
 ```
 
 - [ ] ¿Instala sin quejarse? ¿Se resolvieron todas las dependencias solas?
+      **`mpv` es la que más importa**: si no la arrastra sola, NeoTube se queda
+      sin sonido y el paquete se publicó incompleto.
 - [ ] `which neofy` → `/usr/bin/neofy`, y lanzarlo desde ahí abre la app.
 - [ ] ¿Sale NeoFy en el menú de aplicaciones, **con su icono** y no con uno
       genérico? (Si no aparece, cierra sesión y vuelve a entrar antes de darlo

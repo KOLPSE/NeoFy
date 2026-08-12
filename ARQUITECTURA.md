@@ -495,9 +495,9 @@ distribución, así que el del usuario sirve igual y suele estar más fresco.
   dejaba de reproducir en cuanto el intérprete no estaba o era viejo, o sea una dependencia
   que el usuario tiene que entender y resolver antes de que la app le sirva. El autónomo
   trae su propio Python dentro y **ningún paquete declara ya `python3`**. Si algún día se
-  vuelve al zipapp, hay que devolver esa dependencia a los tres.
+  vuelve al zipapp, hay que devolver esa dependencia.
 - El workflow no se limita a comprobar que el fichero está: ejecuta **`yt-dlp --version`**
-  tras instalar el `.deb` y el paquete de Arch. Un binario presente pero roto existe, es
+  sobre el tarball y tras instalar el paquete de Arch. Un binario presente pero roto existe, es
   ejecutable y no arranca — y eso, sin esta comprobación, solo se descubre pulsando una
   canción en una copia ya instalada. El contenedor de Arch **no lleva `python` instalado a
   propósito**: es lo que demuestra que el binario es de verdad autónomo, porque el runner de
@@ -907,16 +907,31 @@ todavía no existe y la subida fallaría.
 
 ### Qué lleva cada release
 
-Un instalador por plataforma, y los tres instalan **exactamente el mismo árbol de ficheros**
-(`/opt/neofy` entero, enlace en `/usr/bin`, `.desktop` e iconos hicolor):
+**Tres artefactos por versión, desde la 0.2.6:**
 
 | Fichero | Quién lo hace | Para quién |
 |---|---|---|
 | `NeoFy-x.y.z-windows-x64.exe` | `release.ps1` → Inno Setup | Windows |
-| `neofy_x.y.z_amd64.deb` | `build_linux_packages.sh` → `dpkg-deb` | Debian, Ubuntu |
-| `neofy-x.y.z-1.x86_64.rpm` | `build_linux_packages.sh` → `rpmbuild` | Fedora, openSUSE |
 | `neofy-bin-x.y.z-1-x86_64.pkg.tar.zst` | el job `arch` → `makepkg` | Arch, Manjaro |
 | `NeoFy-x.y.z-linux-x86_64.tar.gz` | `build_linux_bundle.sh` | **No es una descarga**: es lo que se baja el PKGBUILD |
+
+#### Por qué se retiraron el `.deb` y el `.rpm`
+
+Hasta la 0.2.5 eran cinco. Se redujeron a tres **a propósito**, y el motivo está en este
+mismo documento: ninguna de las cuatro familias de Linux se podía probar de verdad, y el
+coste de fingir que sí se cobró entero en la serie 0.2, que **se publicó completa —los cinco
+paquetes en verde— con la app abriéndose y cerrándose sin ventana en cualquier Arch sin
+`mpv`**. Cuatro plataformas a medias dan menos alcance real que una sostenida.
+
+Dos consecuencias que conviene tener presentes:
+
+- **El job `compilar` sigue existiendo** aunque ya no monte instaladores: es quien produce el
+  tarball, y el job `arch` depende de él con `needs: compilar`. Borrarlo se llevaría por
+  delante justamente la plataforma que se quiso conservar.
+- **Las releases anteriores conservan sus `.deb` y `.rpm`.** No se borró nada publicado: quien
+  los tenga instalados los sigue teniendo. Lo que desaparece son las versiones nuevas por esa
+  vía, y el actualizador se lo anunciará igual (`updater.dart` en Linux solo avisa, nunca
+  descarga) sin que haya nada que instalar. Es el filo áspero conocido de esta decisión.
 
 ### Arch tiene además su propio repositorio pacman
 
@@ -944,16 +959,57 @@ a su lado, de ahí que todo vaya a `/opt/neofy` con un enlace en `/usr/bin`. El 
 seguro porque Dart resuelve `Platform.resolvedExecutable` al destino real, así que
 `findBinary()` sigue encontrando los sidecars.
 
-Dos detalles del `.rpm` que costaría descubrir a base de intentos: **`AutoReqProv` va
-desactivado**, porque si no `rpmbuild` lee los ELF del bundle y genera `Requires` de las
-librerías que el propio paquete trae dentro (`libflutter_linux_gtk.so` y las de los plugins),
-que no existen como paquete en ninguna distribución y dejarían el rpm imposible de instalar; y
-**se anula `__os_install_post`** para que no pase un `strip` a unos binarios que ya vienen
-compilados.
+Dos detalles que costó descubrir cuando se empaquetaba también en `.rpm`, y que quedan aquí
+por si algún día se retoma: **`AutoReqProv` hay que desactivarlo**, porque si no `rpmbuild`
+lee los ELF del bundle y genera `Requires` de las librerías que el propio paquete trae dentro
+(`libflutter_linux_gtk.so` y las de los plugins), que no existen como paquete en ninguna
+distribución y dejan el rpm imposible de instalar; y **hay que anular `__os_install_post`**
+para que no pase un `strip` a unos binarios que ya vienen compilados. El mismo `options=('!strip')`
+del PKGBUILD responde a esto último.
 
-Los nombres de las dependencias no se parecen entre familias y hay que darlos a mano en cada
-formato: `gtk3` en Arch y Fedora es `libgtk-3-0` en Debian, `libpulse` es `libpulse0` allí y
-`pulseaudio-libs` en Fedora.
+Y que los nombres de las dependencias no se parecen entre familias: `gtk3` en Arch y Fedora es
+`libgtk-3-0` en Debian, `libpulse` es `libpulse0` allí y `pulseaudio-libs` en Fedora. Es parte
+de por qué mantener cuatro formatos salía caro.
+
+#### ⚠️ La WebView del login sale en blanco si WebKitGTK no puede componer por GPU
+
+El login de NeoTube abre una WebView de verdad (`YtAuth.login()`). WebKitGTK intenta
+**composición acelerada** al crearla y, donde no hay un contexto OpenGL utilizable, falla con
+`Failed to setup compositor shaders, unable to make OpenGL context current` y **la ventana sale
+completamente en blanco**.
+
+Lo que hace este fallo difícil de diagnosticar es que **no parece un fallo de renderizado**:
+WebKit arranca perfectamente —`WebKitWebProcess` y `WebKitNetworkProcess` siguen vivos— y a la
+app no le llega ningún error. Durante un tiempo se dio por hecho que en Arch «WebKitGTK no
+llegaba a cargar», y era falso: cargaba y no pintaba.
+
+El arreglo está en `linux/runner/main.cc`:
+
+```cpp
+setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", 0);
+```
+
+Tres cosas de esa línea que no son evidentes:
+
+- **Va en el runner de C++ y no en Dart** porque WebKit lee la variable al inicializarse, antes
+  de que exista ningún código nuestro de Flutter.
+- **El tercer argumento es `0`** (`overwrite` a falso): si el usuario ya la trae puesta en su
+  entorno, se respeta su valor.
+- **Renunciar a la composición acelerada no cuesta nada aquí**, porque la WebView existe *solo*
+  para la pantalla de login y no se vuelve a abrir en toda la sesión. Por eso es incondicional
+  en vez de intentar detectar la distribución, que sería frágil y no ganaría nada.
+
+Verificado en Ubuntu 24.04 con GNOME: sin la variable la ventana sale en blanco; con ella el
+login entra y se capturan las 18 cookies, comprobadas contra la API real con
+`tool/probe_yt.dart` (devuelve la biblioteca del usuario, no la sesión anónima).
+
+> **Esto no arregla el otro fallo de la WebView**, que sigue abierto: al cerrarse la ventana,
+> `desktop_webview_window` 0.3.0 le pide al motor que elimine **la vista implícita** —la ventana
+> principal— y se lleva la app por delante (`FlutterEngineRemoveView` → `kInvalidArguments`, y
+> después punteros liberados). Es una incompatibilidad con el embedder multi-vista de Flutter y
+> **0.3.0 es la última versión publicada**: no hay actualización que esperar. Las cookies se
+> guardan justo antes de morir, así que reiniciando la app quedas logueado. Es el argumento
+> principal para sustituir la WebView por el flujo de código de dispositivo.
 
 #### ⚠️ libmpv se abre con `dlopen`, así que `ldd` no la ve
 

@@ -57,18 +57,19 @@ dentro (interfaz, audio y metadatos), no pide permisos de administrador y ocupa 
 
 ### Linux
 
-Cada release trae un instalador nativo por familia de distribución. Los tres instalan lo
-mismo: el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el comando
+La distribución con soporte en Linux es **Arch** (y derivadas como Manjaro o EndeavourOS).
+Instala el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el comando
 `neofy` en el `PATH`.
 
-| Distribución | Cómo |
-|---|---|
-| **Arch**, Manjaro, EndeavourOS | Repositorio propio, ver abajo |
-| **Debian**, Ubuntu, Mint, Pop!_OS | `sudo apt install ./neofy_x.y.z_amd64.deb` |
-| **Fedora**, RHEL | `sudo dnf install ./neofy-x.y.z-1.x86_64.rpm` |
-| **openSUSE** | `sudo zypper install ./neofy-x.y.z-1.x86_64.rpm` |
-
-Los `.deb` y `.rpm` se descargan de [Releases](../../releases).
+> **Desde la 0.2.6 ya no se publican `.deb` ni `.rpm`.** Se mantenían cinco artefactos por
+> versión que nadie podía probar de verdad, y eso acabó costando más que el alcance que
+> daban: la serie 0.2 llegó a publicarse entera con la app cayéndose al arrancar en Arch sin
+> que ninguna comprobación lo detectara. Se prefiere una plataforma sostenida a cuatro a
+> medias. Las releases anteriores conservan sus paquetes, y quien los tenga instalados los
+> seguirá teniendo — simplemente no habrá versiones nuevas por esa vía.
+>
+> En Debian, Ubuntu, Fedora u openSUSE queda [compilar desde fuentes](#compilar-en-linux),
+> que está documentado y funciona.
 
 #### Arch: repositorio propio (recomendado)
 
@@ -175,8 +176,10 @@ sudo pacman -S --needed base-devel clang cmake ninja pkgconf \
 ./tool/build_sidecars.sh        # sidecars, 1ª vez (tarda un rato)
 flutter build linux --release
 ./tool/build_linux_bundle.sh    # deja dist/NeoFy-x.y.z-linux-x86_64.tar.gz
-./tool/build_linux_packages.sh  # y los instaladores .deb y .rpm
 ```
+
+El tarball trae el árbol completo (`neofy`, los dos sidecars, `yt-dlp`, `data/` y `lib/`) y
+se puede ejecutar tal cual desde donde se descomprima.
 
 > `libayatana-appindicator` y `webkit2gtk-4.1` hacen falta **al compilar**, no solo al
 > ejecutar: los plugins de la bandeja y de la WebView los buscan con `pkg-config` y sin ellos

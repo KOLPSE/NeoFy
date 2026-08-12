@@ -71,11 +71,10 @@ cp -r "$bundle" "dist/$nombre"
 # arrastrar el usuario con el que se compilo.
 tar -czf "dist/$nombre.tar.gz" -C dist --owner=0 --group=0 "$nombre"
 
-# La carpeta se deja a proposito: tool/build_linux_packages.sh la reutiliza para
-# montar el .deb y el .rpm, y asi los tres artefactos salen exactamente del mismo
-# arbol de ficheros en vez de armarlo cada uno por su cuenta.
+# La carpeta se deja sin borrar para poder inspeccionar a mano lo que acabo
+# dentro del tarball sin tener que desempaquetarlo.
 
 echo
 echo "Listo: dist/$nombre.tar.gz ($(du -h "dist/$nombre.tar.gz" | cut -f1))"
 echo "sha256: $(sha256sum "dist/$nombre.tar.gz" | cut -d' ' -f1)"
-echo "Arbol en dist/$nombre/ (lo usa build_linux_packages.sh)"
+echo "Arbol sin comprimir en dist/$nombre/"

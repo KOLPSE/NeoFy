@@ -1,9 +1,16 @@
-# Compila NeoFy para Linux y publica sus instaladores.
+# Compila NeoFy para Linux y publica el paquete de Arch.
 #
-# Cada release acaba con un instalador por plataforma: el .exe de Inno Setup lo
-# sube tool/release.ps1 desde Windows, y el .deb y el .rpm salen de aqui. El
-# tarball se sube tambien, pero no es una descarga para usuarios: es lo que se
-# baja el PKGBUILD de Arch, que necesita una url estable.
+# Desde la 0.2.6 las unicas plataformas con soporte son Windows y Arch. El .deb
+# y el .rpm se retiraron a proposito: mantener cinco artefactos que nadie podia
+# probar salia mas caro que el alcance que daban. Las releases anteriores
+# conservan los suyos, asi que quien los tenga instalados no se queda sin nada
+# de golpe; simplemente dejan de publicarse nuevos.
+#
+# Quedan tres artefactos por version: el .exe de Inno Setup, que sube
+# tool/release.ps1 desde Windows, y de aqui salen el .pkg.tar.zst de Arch y el
+# tarball. El tarball NO es una descarga para usuarios: es lo que se baja el
+# PKGBUILD, que necesita una url estable. Por eso el job `compilar` sigue
+# existiendo aunque ya no monte instaladores.
 #
 # Va en un workflow aparte del de `ci.yml` a proposito: aquello son treinta
 # segundos de analyze y tests en cada push, y esto son veinte minutos de
@@ -60,9 +67,10 @@ jobs:
       - name: Dependencias del sistema
         # libpulse-dev lo pide el backend de audio de librespot; libssl-dev, el
         # sidecar de metadatos (librespot-core arrastra native-tls por sus
-        # features por defecto). ninja y libgtk-3-dev son de Flutter, y `rpm`
-        # trae el rpmbuild con el que se monta el paquete de Fedora (dpkg-deb ya
-        # viene de serie en Ubuntu).
+        # features por defecto). ninja y libgtk-3-dev son de Flutter.
+        #
+        # Ya no hace falta `rpm`: traia el rpmbuild del paquete de Fedora, que
+        # se retiro en la 0.2.6.
         #
         # ⚠️ libayatana-appindicator3-dev hace falta **al compilar**, no solo al
         # ejecutar: el plugin de tray_manager lo busca con pkg-config desde su
@@ -78,7 +86,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang cmake ninja-build pkg-config libgtk-3-dev \
-            libayatana-appindicator3-dev libpulse-dev libssl-dev rpm \
+            libayatana-appindicator3-dev libpulse-dev libssl-dev \
             libwebkit2gtk-4.1-dev
 
       - uses: subosito/flutter-action@v2
@@ -104,59 +112,47 @@ jobs:
       - name: Bundle
         run: ./tool/build_linux_bundle.sh
 
-      - name: Instaladores .deb y .rpm
-        run: ./tool/build_linux_packages.sh
-
-      # Comprobacion barata que pilla el fallo mas probable de todos: que un
-      # paquete salga sin alguno de los dos sidecars. Sin librespot la app
-      # instala y arranca, pero no suena, y eso solo se descubre usandola.
-      - name: Que los paquetes esten completos
+      # Comprobacion barata que pilla el fallo mas probable de todos: que el
+      # tarball salga sin alguno de los sidecars. Sin librespot la app arranca
+      # pero no suena, y eso solo se descubre usandola.
+      #
+      # Antes esto se hacia sobre el .deb y el .rpm; retirados esos, se hace
+      # sobre el tarball, que es lo que se lleva el PKGBUILD y por tanto lo que
+      # acaba dentro del paquete de Arch.
+      - name: Que el tarball este completo
         run: |
-          deb="$(ls dist/neofy_*_amd64.deb)"
-          rpm="$(ls dist/neofy-*-1.x86_64.rpm)"
-
-          # ⚠️ La ruta es el campo 6, no el ultimo. dpkg-deb imprime los enlaces
-          # como "./usr/bin/neofy -> /opt/neofy/neofy", asi que $NF devuelve el
-          # DESTINO del enlace y no su ruta: la comprobacion daba por ausente
-          # justo el enlace que si estaba.
-          dpkg-deb -c "$deb" | awk '{print $6}' > /tmp/deb.txt
-          rpm -qlp "$rpm" > /tmp/rpm.txt
-
-          for f in /opt/neofy/neofy /opt/neofy/librespot /opt/neofy/metadata-sidecar \
-                   /opt/neofy/yt-dlp \
-                   /usr/bin/neofy /usr/share/applications/xyz.neogex.neofy.desktop; do
-            grep -q "^\.\?$f\$" /tmp/deb.txt || { echo "El .deb no trae $f"; exit 1; }
-            grep -q "^$f\$"     /tmp/rpm.txt || { echo "El .rpm no trae $f"; exit 1; }
+          tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
+          # ⚠️ Nada de AssetManifest.json: Flutter lo dejo de generar hace
+          # versiones y ahora es AssetManifest.bin. Las anclas de aqui son las
+          # que el ejecutable necesita SI O SI a su lado para arrancar
+          # (data/ y lib/), mas los tres binarios sueltos.
+          for f in neofy librespot metadata-sidecar yt-dlp \
+                   xyz.neogex.neofy.desktop LICENSE \
+                   data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
+            grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
           done
 
-          # Que el .deb se pueda instalar de verdad, no solo que contenga los
-          # ficheros: un control mal formado solo se nota al instalarlo.
-          sudo apt-get install -y --no-install-recommends "$PWD/$deb"
-          test -x /opt/neofy/neofy
-          test -L /usr/bin/neofy
-          # Que este ejecutable no basta, tiene que poder ARRANCAR: si no, un
-          # usuario lo descubre pulsando una cancion y sin ninguna pista. El
-          # contenedor de Arch es el que de verdad prueba que no necesita
-          # python, porque alli no esta instalado; aqui Ubuntu lo trae de serie.
-          /opt/neofy/yt-dlp --version
-          sudo apt-get remove -y neofy
-          echo "Los dos paquetes instalan y desinstalan."
+          # Que esten no basta: tienen que poder ARRANCAR. Si no, un usuario lo
+          # descubre pulsando una cancion y sin ninguna pista.
+          #
+          # ⚠️ El contenedor de Arch es el que de verdad prueba que yt-dlp no
+          # necesita python, porque alli no esta instalado; aqui Ubuntu lo trae
+          # de serie y esta comprobacion solo dice que el binario no esta roto.
+          tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz -C /tmp
+          /tmp/NeoFy-*-linux-x86_64/yt-dlp --version
+          echo "El tarball esta completo."
 
-      # Para el probador: se descargan de la pestana de Actions sin necesitar
+      # Para el probador: se descarga de la pestana de Actions sin necesitar
       # cuenta de nada ni compilar nada.
       - name: Artefactos
         uses: actions/upload-artifact@v4
         with:
           name: neofy-linux
-          path: |
-            dist/neofy_*_amd64.deb
-            dist/neofy-*-1.x86_64.rpm
-            dist/NeoFy-*-linux-x86_64.tar.gz
+          path: dist/NeoFy-*-linux-x86_64.tar.gz
           retention-days: 30
 
-      # Los dos instaladores, mas el tarball: ese no es una descarga para
-      # usuarios sino lo que se baja el PKGBUILD de Arch, que necesita una url
-      # estable en la release.
+      # El tarball no es una descarga para usuarios: es lo que se baja el
+      # PKGBUILD de Arch, que necesita una url estable en la release.
       # Se sube al publicar una release, y tambien a mano indicando una etiqueta
       # ya publicada. Lo segundo existe porque este paso ya fallo una vez con
       # todo compilado: sin una via de reintento habria que republicar la
@@ -169,8 +165,6 @@ jobs:
           tag="${{ github.event.release.tag_name || inputs.tag }}"
           echo "Subiendo a $tag"
           gh release upload "$tag" \
-            dist/neofy_*_amd64.deb \
-            dist/neofy-*-1.x86_64.rpm \
             dist/NeoFy-*-linux-x86_64.tar.gz \
             --clobber
           echo "sha256 para el sha256sums del PKGBUILD:"
