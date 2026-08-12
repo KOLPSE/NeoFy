@@ -534,14 +534,18 @@ class PlayerController extends ChangeNotifier {
   /// Calcula 3 offsets estratificados no solapados para muestrear la biblioteca
   /// en tres bandas independientes (reciente, media y antigua), garantizando
   /// acceso completo hasta la última canción sin privilegiar la cabecera.
+  ///
+  /// Devuelve siempre una lista de exactamente tres offsets (p. ej. `[0, 0, 0]`
+  /// en casos degenerados) para garantizar que los llamadores puedan acceder
+  /// de forma segura a los índices 0, 1 y 2.
   static List<int> calcularOffsetsEstratificados(
     int total, {
     Random? random,
     int tamanoVentana = 25,
   }) {
-    if (total <= 0) return const [0];
+    if (total <= 0) return const [0, 0, 0];
     final maxOffset = (total - tamanoVentana).clamp(0, total);
-    if (maxOffset == 0) return const [0];
+    if (maxOffset == 0) return const [0, 0, 0];
 
     final rand = random ?? Random();
 

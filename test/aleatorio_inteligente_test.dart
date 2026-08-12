@@ -252,8 +252,8 @@ void main() {
           expect(offset <= maxPermitido, isTrue, reason: 'Offset $offset supera el máximo $maxPermitido para total=$total');
         }
 
+        expect(offsets.length, 3);
         if (total > 50) {
-          expect(offsets.length, 3);
           expect(offsets[0] <= offsets[1], isTrue);
           expect(offsets[1] <= offsets[2], isTrue);
         }
