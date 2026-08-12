@@ -78,6 +78,28 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# ⚠️ Sin esto, NeoFy no compila en Arch (ni en ninguna distro con
+# libayatana-appindicator >= 0.6): tray_manager llama a `app_indicator_new`, que
+# esas cabeceras marcan como obsoleta, y el `-Werror` de APPLY_STANDARD_SETTINGS
+# —que se aplica también a los plugins, como avisa su propio comentario— la
+# convierte en error duro y tumba el build entero.
+#
+# El CI no lo ve porque el job `compilar` va sobre Ubuntu, cuyas cabeceras son
+# más antiguas y todavía no la marcan. O sea que esto solo revienta al compilar
+# en local sobre Arch, que es justo donde se compila ahora.
+#
+# Se acota al target del plugin en vez de tocar APPLY_STANDARD_SETTINGS: el
+# código propio del runner tiene que seguir fallando si usa algo obsoleto. Y va
+# `-Wno-error=` (no `-Wno-`) para que el aviso se siga viendo; es deuda del
+# plugin, no nuestra, pero conviene enterarse el día que desaparezca la función.
+#
+# El orden importa: esta opción se añade DESPUÉS del `-Werror` del target, y en
+# clang/gcc la última que toca un diagnóstico es la que manda. Al revés no haría
+# nada.
+if(TARGET tray_manager_plugin)
+  target_compile_options(tray_manager_plugin PRIVATE -Wno-error=deprecated-declarations)
+endif()
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
