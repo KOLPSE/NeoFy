@@ -78,7 +78,7 @@ jobs:
         # generar los ficheros de build.
         #
         # ⚠️ libwebkit2gtk-4.1-dev es lo mismo pero para la WebView del login de
-        # NeoTube (desktop_webview_window). Su CMakeLists prueba primero
+        # YouTube (desktop_webview_window). Su CMakeLists prueba primero
         # webkit2gtk-4.1 y, si no lo encuentra, EXIGE webkit2gtk-4.0, que ya no
         # existe en Ubuntu 24.04: sin el paquete -4.1, `flutter build linux`
         # muere con "The following required packages were not found".
@@ -205,7 +205,7 @@ jobs:
         # paso de humo (xvfb-run llama a `xauth`, que en Arch va aparte). Ver
         # ese paso para por que existe.
         #
-        # ⚠️ `mpv` (libmpv, el audio de NeoTube) se deja fuera A PROPOSITO
+        # ⚠️ `mpv` (libmpv, el audio de la via libre) se deja fuera A PROPOSITO
         # aunque el PKGBUILD lo declare. Ponerlo aqui haria que estuviera
         # instalado pasara lo que pasara, y el paso de humo dejaria de detectar
         # que el PKGBUILD se lo dejo: lo instala `pacman -U` al resolver las
@@ -343,9 +343,9 @@ jobs:
       # ventana ni mensaje. Los cinco paquetes se publicaron verdes.
       #
       # Se comprueban las dos mitades del arreglo: que la app siga viva pasado
-      # el arranque, y que no haya renunciado a NeoTube por el camino. Lo
+      # el arranque, y que no haya renunciado a la via libre por el camino. Lo
       # segundo hace falta porque ahora la app SOBREVIVE a que falte libmpv
-      # (apaga NeoTube y sigue), asi que sin mirar el log el paquete podria
+      # (apaga la via libre y sigue), asi que sin mirar el log el paquete podria
       # volver a salir sin la dependencia y este paso pasaria igual.
       - name: Que la app arranque de verdad
         run: |
@@ -365,12 +365,12 @@ jobs:
           echo "Sigue viva pasados 25 s."
 
           if grep -q 'sin libmpv' /tmp/neofy.log; then
-            echo "::error::la app ha arrancado con NeoTube desactivado: falta libmpv"
+            echo "::error::la app ha arrancado sin la via libre: falta libmpv"
             echo "::error::revisa que 'mpv' siga en depends= de linux/packaging/PKGBUILD"
             cat /tmp/neofy.log
             exit 1
           fi
-          echo "Y con NeoTube operativo."
+          echo "Y con la via libre operativa."
           cat /tmp/neofy.log
 
       - name: Que desinstale limpio

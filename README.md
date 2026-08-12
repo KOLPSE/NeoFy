@@ -13,8 +13,13 @@
 ---
 
 > **Aviso.** NeoFy no está afiliado ni patrocinado por Spotify AB. Es un proyecto
-> independiente que usa la Web API pública de Spotify. **Necesita una cuenta Spotify
-> Premium**: es la propia API la que lo exige para controlar la reproducción.
+> independiente que usa la Web API pública de Spotify.
+>
+> **Con Spotify Premium** reproduce por el protocolo de Spotify Connect, que es como está
+> pensado. **Sin Premium** también suena: la Web API exige Premium para controlar la
+> reproducción, así que el audio lo pone YouTube Music y todo lo demás —tu biblioteca, tus
+> listas, tus carátulas— sigue siendo el de tu cuenta de Spotify. Se conecta desde la propia
+> pantalla de inicio.
 
 ## Qué es
 
@@ -27,6 +32,10 @@ para evitar. De ahí que se parta en dos mitades:
   llamado `NeoFy`.
 - **Todo lo demás** —biblioteca, búsqueda, playlists y el control de la reproducción— va por
   la Web API oficial con OAuth PKCE, apuntando a ese dispositivo.
+
+Y una tercera pieza para las cuentas **sin Premium**, donde la Web API se niega a controlar
+la reproducción: la mitad del audio la cubre YouTube Music, resolviendo cada canción de
+Spotify a su equivalente. La otra mitad no cambia.
 
 Un efecto secundario aprovechado: como el control va por la Web API, **un Stream Deck que
 use la API de Spotify controla NeoFy sin plugin ninguno**.
@@ -148,7 +157,7 @@ Vienen del Modo Desarrollo de la API de Spotify, no del código:
 
 | Limitación | Detalle |
 |---|---|
-| Cuenta **Premium** obligatoria | La API la exige para todo el control de reproducción. |
+| Cuenta **Premium** para el audio nativo | La API la exige para controlar la reproducción. Sin ella NeoFy suena igual, pero el audio lo pone YouTube Music y hace falta iniciar sesión con Google. |
 | Playlists ajenas | La Web API devuelve 403 al leer sus canciones. NeoFy las lee por librespot con un sidecar; se pueden reproducir enteras igualmente. |
 | Búsqueda capada a 10 resultados | Se pagina con "ver más". |
 | Sin Daily Mix ni Radar de novedades | Spotify no expone por API las listas que genera para cada usuario. |

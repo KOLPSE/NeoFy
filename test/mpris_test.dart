@@ -89,7 +89,7 @@ void main() {
     });
 
     test('un videoId de YouTube no deja una ruta invalida', () {
-      // NeoTube anuncia sus pistas por aqui, y los videoId de YouTube traen `-`
+      // La via libre anuncia sus pistas por aqui, y los videoId de YouTube traen `-`
       // y `_` a menudo. Una ruta de objeto solo admite [A-Za-z0-9_]: con el
       // guion dentro, D-Bus rechaza el diccionario entero y el widget del
       // escritorio se queda sin titulo ni caratula.

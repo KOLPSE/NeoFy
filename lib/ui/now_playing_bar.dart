@@ -268,7 +268,8 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     if (widget.player.premiumChecked && !widget.player.isPremium) {
       final libre = widget.player.libre;
       if (libre != null && !libre.tieneSesionYt) {
-        return 'Para escuchar música sin Premium es necesario iniciar sesión en NeoTube.';
+        return 'Sin Premium el audio lo pone YouTube Music: conéctalo en '
+            'Ajustes para que suene la música.';
       }
       return 'Cuenta sin Premium: el audio lo pone YouTube.';
     }

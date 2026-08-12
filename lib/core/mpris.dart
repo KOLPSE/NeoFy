@@ -178,7 +178,7 @@ Map<String, Object> metadatosMpris(Track? track) {
     // `/xyz/neogex/neofy/track/`, que es inválida: D-Bus rechazaría el
     // diccionario entero y se perdería hasta el título por no tener id.
     //
-    // Los de NeoTube (`videoId` de YouTube) traen además `-` con frecuencia,
+    // Los de YouTube (`videoId`, en la vía libre) traen además `-` con frecuencia,
     // que **tampoco** vale en una ruta de objeto: de ahí el saneado, o media
     // biblioteca de YouTube desaparecería del widget del escritorio.
     'mpris:trackid': _rutaDeTrack(track.id),

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import 'app_config.dart';
-import 'app_mode.dart';
 
 /// ¿Está encendido el modo rendimiento?
 ///
@@ -13,12 +12,6 @@ import 'app_mode.dart';
 /// objeto de ajustes por el árbol de widgets obligaría a tocar todas las
 /// pantallas para acarrear un booleano. Lo escribe únicamente [Settings].
 final ValueNotifier<bool> modoRendimiento = ValueNotifier(false);
-
-/// El modo activo de la app: NeoFy o NeoTube. Mismo motivo que
-/// [modoRendimiento] para ser un notificador suelto: `MaterialApp` y el
-/// interruptor del sidebar lo necesitan por fuera del árbol de `Settings`.
-/// Lo escribe únicamente [Settings].
-final ValueNotifier<AppMode> modoApp = ValueNotifier(AppMode.neofy);
 
 /// Preferencias que el usuario puede tocar en caliente.
 ///
@@ -40,7 +33,6 @@ final ValueNotifier<AppMode> modoApp = ValueNotifier(AppMode.neofy);
 class Settings extends ChangeNotifier {
   Settings(this.config) {
     modoRendimiento.value = config.performanceMode;
-    modoApp.value = AppMode.fromNombre(config.modo);
     _aplicar();
   }
 
@@ -59,16 +51,6 @@ class Settings extends ChangeNotifier {
     config.performanceMode = activo;
     _aplicar();
     onCambioDeModo?.call(activo);
-    notifyListeners();
-    await config.save();
-  }
-
-  AppMode get modo => modoApp.value;
-
-  Future<void> setModo(AppMode m) async {
-    if (modoApp.value == m) return;
-    modoApp.value = m;
-    config.modo = m.nombre;
     notifyListeners();
     await config.save();
   }

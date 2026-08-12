@@ -16,7 +16,7 @@
 
 pkgname=neofy-bin
 _pkgname=neofy
-pkgver=0.2.9
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
 arch=('x86_64')
@@ -35,11 +35,11 @@ depends=(
   # Solo lo pide el sidecar de metadatos: librespot va con rustls, pero
   # librespot-core arrastra native-tls por sus features por defecto.
   'openssl'
-  # La WebView del login de NeoTube. Es dependencia dura aunque no se use
-  # NeoTube: el plugin se enlaza al compilar, asi que sin ella el ejecutable
-  # ni arranca.
+  # La WebView del login de YouTube (la via libre, para cuentas sin Premium).
+  # Es dependencia dura aunque la cuenta sea Premium y no se use nunca: el
+  # plugin se enlaza al compilar, asi que sin ella el ejecutable ni arranca.
   'webkit2gtk-4.1'
-  # libmpv, con la que suena NeoTube. En Arch la trae el paquete `mpv`; no hay
+  # libmpv, con la que suena la via libre. En Arch la trae el paquete `mpv`; no hay
   # un mpv-libs suelto en los repositorios oficiales.
   #
   # ⚠️ Esta se olvido en la 0.2.x y el sintoma fue el peor posible: media_kit
@@ -65,7 +65,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('ddd7c1c6ecedddfab1893b70acf01c735166a7df3694031803cc32e36549a87e')
+sha256sums=('SKIP')
 
 package() {
   cd "$srcdir/$_tarball"
@@ -77,7 +77,7 @@ package() {
   install -Dm755 neofy "$pkgdir/opt/$_pkgname/neofy"
   install -Dm755 librespot "$pkgdir/opt/$_pkgname/librespot"
   install -Dm755 metadata-sidecar "$pkgdir/opt/$_pkgname/metadata-sidecar"
-  # Sin el, NeoTube no reproduce nada.
+  # Sin el, las cuentas sin Premium no suenan.
   install -Dm755 yt-dlp "$pkgdir/opt/$_pkgname/yt-dlp"
 
   # El enlace es seguro: Dart resuelve Platform.resolvedExecutable al destino

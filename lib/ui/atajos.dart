@@ -1,23 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../core/settings.dart';
-
 /// Los atajos de teclado de la ventana, **para toda la app y una sola vez**.
 ///
-/// ⚠️ Antes vivían dentro de `AppShell`, y ahí estaba el fallo que se notaba
-/// al usar NeoTube: los dos shells siguen montados a la vez (ver `ModeHost`,
-/// que los cruza con un fundido y mantiene vivo el estado de los dos), así que
-/// el `Focus` de NeoFy seguía escuchando el teclado con NeoTube en pantalla.
-/// El espacio pausaba o reanudaba Spotify desde NeoTube — que es exactamente
-/// lo reportado: "le doy al espacio y se reproduce una canción de NeoFy".
-///
-/// `IgnorePointer` no lo tapaba porque solo bloquea el ratón: un evento de
-/// teclado no pasa por el árbol de punteros, va por el de foco. Y no bastaba
-/// con que cada shell filtrara por su cuenta, porque un evento que un `Focus`
-/// ignora sube a sus **ancestros**, nunca a un hermano: NeoTube no lo habría
-/// recibido igualmente. La única forma de que la tecla llegue siempre a quien
-/// manda es escucharla por encima de los dos y repartirla desde ahí.
+/// Vive por encima del shell y no dentro, que es donde estuvo al principio.
+/// Se subió aquí cuando había un segundo modo montado en paralelo y el `Focus`
+/// del shell de Spotify seguía tragándose el espacio con el otro en pantalla;
+/// ese segundo modo ya no está, pero el sitio sigue siendo el bueno: un evento
+/// que un `Focus` ignora sube a sus **ancestros** y nunca a un hermano, así que
+/// escucharlo arriba es lo único que garantiza que la tecla llegue siempre.
 class AtajosDeReproduccion extends StatefulWidget {
   const AtajosDeReproduccion({
     super.key,
@@ -50,37 +41,12 @@ class AtajosDeReproduccion extends StatefulWidget {
 }
 
 class _AtajosDeReproduccionState extends State<AtajosDeReproduccion> {
-  /// Un nodo propio en vez de `autofocus` a secas: hay que poder recuperar el
-  /// foco a mano al cambiar de modo (ver [_alCambiarDeModo]).
   final FocusNode _nodo = FocusNode(debugLabel: 'atajos');
 
   @override
-  void initState() {
-    super.initState();
-    modoApp.addListener(_alCambiarDeModo);
-  }
-
-  @override
   void dispose() {
-    modoApp.removeListener(_alCambiarDeModo);
     _nodo.dispose();
     super.dispose();
-  }
-
-  /// ⚠️ Al cambiar de modo, el `ExcludeFocus` de `ModeHost` desengancha el foco
-  /// de todo el shell que se va. Si quien lo tenía era un descendiente suyo, el
-  /// foco sube al *scope* raíz — que está **por encima** de este nodo, así que
-  /// las teclas dejarían de llegar aquí y el espacio se quedaría mudo hasta que
-  /// el usuario pulsara algo. Se recupera en cuanto pasa.
-  void _alCambiarDeModo() {
-    if (!mounted) return;
-    // Al final del frame: durante el cambio, `ModeHost` todavía está montando
-    // el shell entrante y pedir foco a mitad no se sostiene.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_nodo.hasFocus && !AtajosDeReproduccion.escribiendo) {
-        _nodo.requestFocus();
-      }
-    });
   }
 
   KeyEventResult _alPulsarTecla(FocusNode node, KeyEvent event) {

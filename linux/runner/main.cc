@@ -3,7 +3,7 @@
 #include "my_application.h"
 
 int main(int argc, char** argv) {
-  // La WebView del login de NeoTube (WebKitGTK) intenta composición acelerada
+  // La WebView del login de YouTube (WebKitGTK) intenta composición acelerada
   // al crearse. Donde no hay contexto OpenGL utilizable, eso falla con
   // "Failed to setup compositor shaders, unable to make OpenGL context
   // current" y la ventana sale **completamente en blanco**: WebKit arranca

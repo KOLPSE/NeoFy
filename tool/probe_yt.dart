@@ -1,4 +1,4 @@
-// Sonda de la API interna de YouTube Music (NeoTube).
+// Sonda de la API interna de YouTube Music (la via libre de NeoFy).
 //
 //   dart run tool/probe_yt.dart              # resumen de portada y biblioteca
 //   dart run tool/probe_yt.dart FEmusic_liked_playlists   # un browseId suelto
@@ -37,8 +37,8 @@ Future<void> main(List<String> args) async {
 
   final f = File(p.join(appDataDir().path, 'yt_cookies.json'));
   if (!f.existsSync()) {
-    print('No hay sesión de NeoTube en ${appDataDir().path}.');
-    print('Entra en NeoTube y vuelve a ejecutar esto.');
+    print('No hay sesión de YouTube en ${appDataDir().path}.');
+    print('Conéctala desde Ajustes y vuelve a ejecutar esto.');
     exit(1);
   }
 

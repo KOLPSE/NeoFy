@@ -25,7 +25,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 /// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
 /// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
 /// y nada más.
-const String kVersion = '0.2.9';
+const String kVersion = '0.3.0';
 
 /// Repositorio de donde salen las actualizaciones.
 const String kRepoGitHub = 'KOLPSE/NeoFy';
@@ -167,19 +167,16 @@ class AppConfig {
   /// `core/settings.dart`.
   bool performanceMode;
 
-  /// Volumen de NeoTube, 0..100.
+  /// Volumen de la reproducción por YouTube (la vía libre), 0..100.
   ///
   /// Aparte de [initialVolume] porque son dos reproductores distintos: aquel
   /// se le pasa a librespot al arrancar y lo acaba mandando Spotify Connect;
-  /// este lo aplica `media_kit` en este mismo proceso. Compartir el campo
-  /// haría que bajar el volumen en un modo bajara el del otro.
+  /// este lo aplica `media_kit` en este mismo proceso.
+  ///
+  /// La clave sigue llamándose `volumenNeoTube` en el `config.json` aunque el
+  /// modo NeoTube ya no exista: renombrarla le borraría el volumen guardado a
+  /// todo el que venga de una versión anterior, y no se gana nada.
   int volumenNeoTube;
-
-  /// Modo activo: `'neofy'` o `'neotube'`. Se guarda como cadena y no como el
-  /// `enum AppMode` porque este fichero no depende de `core/app_mode.dart` —
-  /// `AppMode.fromNombre`/`.nombre` hacen la conversión en el lado de
-  /// `Settings`.
-  String modo;
 
   AppConfig({
     this.clientId = kDefaultClientId,
@@ -187,7 +184,6 @@ class AppConfig {
     this.bitrate = 320,
     this.performanceMode = false,
     this.volumenNeoTube = 60,
-    this.modo = 'neofy',
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -203,7 +199,6 @@ class AppConfig {
         bitrate: (map['bitrate'] as int?) ?? 320,
         performanceMode: (map['performanceMode'] as bool?) ?? false,
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
-        modo: (map['modo'] as String?) ?? 'neofy',
       );
     } catch (_) {
       // Un config corrupto no debe impedir arrancar: se vuelve a los valores
@@ -219,7 +214,6 @@ class AppConfig {
       'bitrate': bitrate,
       'performanceMode': performanceMode,
       'volumenNeoTube': volumenNeoTube,
-      'modo': modo,
     }));
   }
 }
