@@ -971,37 +971,48 @@ Y que los nombres de las dependencias no se parecen entre familias: `gtk3` en Ar
 `libgtk-3-0` en Debian, `libpulse` es `libpulse0` allí y `pulseaudio-libs` en Fedora. Es parte
 de por qué mantener cuatro formatos salía caro.
 
-#### ⚠️ La WebView del login sale en blanco si WebKitGTK no puede componer por GPU
+#### ⚠️ Fallos de WebKitGTK en la WebView del login (ventana en blanco y aborto por GBM/DMA-BUF)
 
-El login de NeoTube abre una WebView de verdad (`YtAuth.login()`). WebKitGTK intenta
-**composición acelerada** al crearla y, donde no hay un contexto OpenGL utilizable, falla con
-`Failed to setup compositor shaders, unable to make OpenGL context current` y **la ventana sale
-completamente en blanco**.
+El login de NeoTube abre una WebView de verdad (`YtAuth.login()`). Existen **dos fallos independientes** en WebKitGTK al inicializar el soporte gráfico que pueden impedir el login si no se desactivan explícitamente:
 
-Lo que hace este fallo difícil de diagnosticar es que **no parece un fallo de renderizado**:
-WebKit arranca perfectamente —`WebKitWebProcess` y `WebKitNetworkProcess` siguen vivos— y a la
-app no le llega ningún error. Durante un tiempo se dio por hecho que en Arch «WebKitGTK no
-llegaba a cargar», y era falso: cargaba y no pintaba.
+1. **Ventana en blanco por composición acelerada (0.2.6)**: WebKitGTK intenta composición acelerada al crear la ventana y, donde no hay un contexto OpenGL utilizable, falla con `Failed to setup compositor shaders, unable to make OpenGL context current`. La ventana sale completamente en blanco, pero WebKit arranca perfectamente (`WebKitWebProcess` y `WebKitNetworkProcess` siguen vivos) y a la app no le llega ningún error.
 
-El arreglo está en `linux/runner/main.cc`:
+2. **Aborto del proceso por renderizador DMA-BUF/GBM (0.2.9)**: En portátiles híbridos (Intel+NVIDIA) bajo Wayland con `egl-gbm`, el renderizador DMA-BUF de WebKit intenta inicializar GBM abriendo el nodo de render equivocado (la GPU dedicada NVIDIA dormida por runtime PM o sin `nvidia_drm.modeset=1`). La llamada `eglInitialize` devuelve `EGL_NOT_INITIALIZED`, WebKit no reintenta con el otro nodo (la GPU integrada Intel) y aborta su proceso inmediatamente con:
+   `Could not create GBM EGL display: EGL_NOT_INITIALIZED. Aborting...`
+
+   **Por qué `WEBKIT_DISABLE_COMPOSITING_MODE=1` no sirve para este segundo fallo**: la variable de la 0.2.6 apaga la composición acelerada del compositor, pero el renderizador DMA-BUF inicializa GBM de forma previa e independiente. Por eso en portátiles híbridos con Wayland el login abortaba aunque ya estuviese puesta la variable de la 0.2.6.
+
+Los dos arreglos están en `linux/runner/main.cc`:
 
 ```cpp
 setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", 0);
+setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1", 0);
 ```
 
-Tres cosas de esa línea que no son evidentes:
+Detalles de estas líneas que no son evidentes:
 
-- **Va en el runner de C++ y no en Dart** porque WebKit lee la variable al inicializarse, antes
-  de que exista ningún código nuestro de Flutter.
-- **El tercer argumento es `0`** (`overwrite` a falso): si el usuario ya la trae puesta en su
-  entorno, se respeta su valor.
-- **Renunciar a la composición acelerada no cuesta nada aquí**, porque la WebView existe *solo*
-  para la pantalla de login y no se vuelve a abrir en toda la sesión. Por eso es incondicional
-  en vez de intentar detectar la distribución, que sería frágil y no ganaría nada.
+- **Van en el runner de C++ y no en Dart** porque WebKit lee las variables al inicializarse, antes de que exista ningún código nuestro de Flutter.
+- **El tercer argumento es `0`** (`overwrite` a falso): si el usuario ya las trae puestas en su entorno, se respeta su valor.
+- **Renunciar a la composición acelerada y al renderizador DMA-BUF no cuesta nada aquí**, porque la WebView existe *solo* para la pantalla de login y no se vuelve a abrir en toda la sesión. Por eso se aplican incondicionalmente en vez de intentar detectar la distribución o el hardware, que sería frágil y no ganaría nada.
 
-Verificado en Ubuntu 24.04 con GNOME: sin la variable la ventana sale en blanco; con ella el
-login entra y se capturan las 18 cookies, comprobadas contra la API real con
-`tool/probe_yt.dart` (devuelve la biblioteca del usuario, no la sesión anónima).
+Verificación de los fallos:
+
+- **Primer fallo (0.2.6)**: Verificado en Ubuntu 24.04 con GNOME. Sin la variable la ventana salía en blanco; con ella el login entra y se capturan las 18 cookies, comprobadas contra la API real con `tool/probe_yt.dart` (devuelve la biblioteca del usuario, no la sesión anónima).
+- **Segundo fallo (0.2.9)**: Verificado que la cadena de error `Could not create GBM EGL display: %s. Aborting...` pertenece a WebKitGTK (comprobado con `strings` sobre `/usr/lib/libwebkit2gtk-4.1.so.0` 2.52.5-2 en Arch), que la variable `WEBKIT_DISABLE_DMABUF_RENDERER` existe en la librería y que el runner de C++ compila correctamente en Arch. **Queda pendiente la confirmación de punta a punta en la máquina afectada** (CachyOS + KDE Wayland en portátil híbrido Intel+NVIDIA), ya que bajo WSL no se dispone del hardware gráfico ni se alcanza la WebView.
+
+Para usuarios en la 0.2.8 que no puedan esperar a la 0.2.9, el apaño provisional consiste en lanzar la app definiendo la variable:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 neofy
+```
+
+O para dejarlo fijo en el lanzador del sistema:
+
+```bash
+cp /usr/share/applications/xyz.neogex.neofy.desktop ~/.local/share/applications/
+sed -i 's|^Exec=.*|Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 /usr/bin/neofy|' \
+  ~/.local/share/applications/xyz.neogex.neofy.desktop
+```
 
 > **Esto no arregla el otro fallo de la WebView**, que sigue abierto: al cerrarse la ventana,
 > `desktop_webview_window` 0.3.0 le pide al motor que elimine **la vista implícita** —la ventana

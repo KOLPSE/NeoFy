@@ -25,6 +25,23 @@ int main(int argc, char** argv) {
   // login y no se vuelve a abrir en toda la sesión.
   setenv("WEBKIT_DISABLE_COMPOSITING_MODE", "1", 0);
 
+  // Segundo fallo distinto en WebKitGTK (0.2.9): en portátiles híbridos
+  // (Intel+NVIDIA) bajo Wayland, el renderizador DMA-BUF de WebKit intenta
+  // inicializar GBM sobre el nodo de render equivocado (NVIDIA dormida por
+  // runtime PM o sin modeset) y aborta el proceso con:
+  // "Could not create GBM EGL display: EGL_NOT_INITIALIZED. Aborting..."
+  //
+  // La variable anterior (WEBKIT_DISABLE_COMPOSITING_MODE) desactiva la
+  // composición acelerada pero no evita que el renderizador DMA-BUF intente
+  // inicializar GBM de forma independiente, por lo que no resuelve este caso.
+  //
+  // Desactivar el renderizador DMA-BUF con WEBKIT_DISABLE_DMABUF_RENDERER=1
+  // evita que WebKit intente crear el display GBM y aborte. Al igual que la
+  // variable anterior, el tercer argumento es 0 (overwrite a falso) para
+  // respetar la configuración previa del entorno si existe, y el impacto es
+  // nulo porque la WebView solo se utiliza durante el inicio de sesión.
+  setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1", 0);
+
   g_autoptr(MyApplication) app = my_application_new();
   return g_application_run(G_APPLICATION(app), argc, argv);
 }
