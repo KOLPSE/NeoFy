@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/home_store.dart';
 import '../core/librespot.dart';
+import '../core/liked_store.dart';
+import '../core/models.dart';
 import '../core/player_state.dart';
 import 'art_image.dart';
 
@@ -12,10 +15,18 @@ String formatMs(int ms) {
 }
 
 class NowPlayingBar extends StatefulWidget {
-  const NowPlayingBar({super.key, required this.player, required this.librespot});
+  const NowPlayingBar({
+    super.key,
+    required this.player,
+    required this.librespot,
+    this.likes,
+    this.home,
+  });
 
   final PlayerController player;
   final LibrespotManager librespot;
+  final LikedStore? likes;
+  final HomeStore? home;
 
   @override
   State<NowPlayingBar> createState() => _NowPlayingBarState();
@@ -100,6 +111,29 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     final state = player.state;
     final theme = Theme.of(context);
 
+    final modoAleatorio = player.modoAleatorio;
+    String shuffleTooltip;
+    IconData shuffleIcon;
+    Color? shuffleColor;
+
+    switch (modoAleatorio) {
+      case ModoAleatorio.apagado:
+        shuffleTooltip = 'Aleatorio: Apagado';
+        shuffleIcon = Icons.shuffle;
+        shuffleColor = null;
+        break;
+      case ModoAleatorio.estandar:
+        shuffleTooltip = 'Aleatorio';
+        shuffleIcon = Icons.shuffle;
+        shuffleColor = theme.colorScheme.primary;
+        break;
+      case ModoAleatorio.inteligente:
+        shuffleTooltip = 'Aleatorio inteligente';
+        shuffleIcon = Icons.auto_awesome;
+        shuffleColor = theme.colorScheme.primary;
+        break;
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -107,10 +141,11 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
-              tooltip: 'Aleatorio',
-              icon: const Icon(Icons.shuffle, size: 20),
-              color: state.shuffle ? theme.colorScheme.primary : null,
-              onPressed: player.toggleShuffle,
+              tooltip: shuffleTooltip,
+              icon: Icon(shuffleIcon, size: 20),
+              color: shuffleColor,
+              onPressed: () =>
+                  player.ciclarModoAleatorio(likes: widget.likes, home: widget.home),
             ),
             IconButton(
               tooltip: 'Anterior',

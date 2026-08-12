@@ -229,6 +229,18 @@ class Device {
       );
 }
 
+/// Modos de reproducción aleatoria en la interfaz.
+enum ModoAleatorio {
+  /// Aleatorio desactivado.
+  apagado,
+
+  /// Aleatorio estándar de Spotify (baraja el contexto actual).
+  estandar,
+
+  /// Aleatorio inteligente (mezcla canciones conocidas con recomendaciones de artistas favoritos).
+  inteligente,
+}
+
 /// Instantánea de `GET /v1/me/player`.
 class Playback {
   final Track? track;

@@ -501,7 +501,12 @@ class _AppShellState extends State<AppShell> {
             ),
           ),
           const Divider(height: 1),
-          NowPlayingBar(player: widget.player, librespot: widget.librespot),
+          NowPlayingBar(
+            player: widget.player,
+            librespot: widget.librespot,
+            likes: widget.likes,
+            home: widget.home,
+          ),
         ],
       ),
     );

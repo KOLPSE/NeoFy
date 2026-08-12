@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
 import 'app_config.dart';
+import 'home_store.dart';
+import 'liked_store.dart';
 import 'models.dart';
 import 'spotify_api.dart';
 
@@ -528,11 +531,285 @@ class PlayerController extends ChangeNotifier {
     await _withDevice(() => api.setVolume(v));
   }
 
-  Future<void> toggleShuffle() async {
-    final next = !state.shuffle;
-    state = state.copyWith(shuffle: next);
-    notifyListeners();
-    await _withDevice(() => api.setShuffle(next));
+  /// Calcula 3 offsets estratificados no solapados para muestrear la biblioteca
+  /// en tres bandas independientes (reciente, media y antigua), garantizando
+  /// acceso completo hasta la última canción sin privilegiar la cabecera.
+  static List<int> calcularOffsetsEstratificados(
+    int total, {
+    Random? random,
+    int tamanoVentana = 25,
+  }) {
+    if (total <= 0) return const [0];
+    final maxOffset = (total - tamanoVentana).clamp(0, total);
+    if (maxOffset == 0) return const [0];
+
+    final rand = random ?? Random();
+
+    final b0Min = 0;
+    final b0Max = (maxOffset / 3).floor();
+
+    final b1Min = (b0Max + 1).clamp(0, maxOffset);
+    final b1Max = ((2 * maxOffset) / 3).floor().clamp(b1Min, maxOffset);
+
+    final b2Min = (b1Max + 1).clamp(0, maxOffset);
+    final b2Max = maxOffset;
+
+    int randRango(int min, int max) {
+      if (min >= max) return min;
+      return min + rand.nextInt(max - min + 1);
+    }
+
+    return [
+      randRango(b0Min, b0Max),
+      randRango(b1Min, b1Max),
+      randRango(b2Min, b2Max),
+    ];
+  }
+
+  /// Máximo número de canciones de 'top tracks' (más escuchadas) que aportan a la bolsa de conocidas.
+  static const int kMaxPistasTopEnAleatorio = 10;
+
+  /// Proporción de canciones conocidas frente a recomendadas en el modo 'Aleatorio inteligente' (~60% conocidas / 40% nuevas).
+  static const double kProporcionConocidasModoInteligente = 0.60;
+
+  bool _aleatorioInteligente = false;
+
+  /// ¿Está activo el modo aleatorio inteligente?
+  bool get esAleatorioInteligente => _aleatorioInteligente;
+
+  /// Modo aleatorio activo (apagado / estándar / inteligente).
+  ModoAleatorio get modoAleatorio {
+    if (_aleatorioInteligente) return ModoAleatorio.inteligente;
+    if (state.shuffle) return ModoAleatorio.estandar;
+    return ModoAleatorio.apagado;
+  }
+
+  /// Alterna entre los tres modos de aleatorio: apagado -> estándar -> inteligente -> apagado.
+  Future<void> ciclarModoAleatorio({LikedStore? likes, HomeStore? home}) async {
+    switch (modoAleatorio) {
+      case ModoAleatorio.apagado:
+        // Apagado -> Estándar
+        _aleatorioInteligente = false;
+        state = state.copyWith(shuffle: true);
+        notifyListeners();
+        await _withDevice(() => api.setShuffle(true));
+        break;
+
+      case ModoAleatorio.estandar:
+        // Estándar -> Inteligente
+        state = state.copyWith(shuffle: false);
+        _aleatorioInteligente = true;
+        notifyListeners();
+        await _withDevice(() => api.setShuffle(false));
+        await activarAleatorioInteligente(likes: likes, home: home);
+        break;
+
+      case ModoAleatorio.inteligente:
+        // Inteligente -> Apagado
+        _aleatorioInteligente = false;
+        state = state.copyWith(shuffle: false);
+        notifyListeners();
+        await _withDevice(() => api.setShuffle(false));
+        break;
+    }
+  }
+
+  /// Construye y reproduce una cola mezclada de canciones conocidas (~60%)
+  /// y canciones nuevas recomendadas de sus artistas top (~40%).
+  Future<void> activarAleatorioInteligente({LikedStore? likes, HomeStore? home}) async {
+    try {
+      final urisConocidas = <String>{};
+      final pistasConocidas = <String>[];
+      final pistasNuevas = <String>[];
+      final urisRecientesExcluidas = <String>{};
+
+      // 0. Recolectar canciones recientes para EXCLUSIÓN (no volver a sonar lo recién escuchado)
+      if (home != null && home.cargado) {
+        for (final t in home.recientes) {
+          if (t.uri.isNotEmpty) urisRecientesExcluidas.add(t.uri);
+        }
+      } else {
+        try {
+          final rec = await api.recentlyPlayed(limit: 20);
+          for (final t in rec) {
+            if (t.uri.isNotEmpty) urisRecientesExcluidas.add(t.uri);
+          }
+        } catch (_) {}
+      }
+
+      // 1. Canciones conocidas: lista actual, biblioteca completa (o muestreo por offset) y top acotado
+      if (_lastUris != null && _lastUris!.isNotEmpty) {
+        for (final u in _lastUris!) {
+          if (u.isNotEmpty && !urisRecientesExcluidas.contains(u) && urisConocidas.add(u)) {
+            pistasConocidas.add(u);
+          }
+        }
+      }
+      if (state.track?.uri != null && state.track!.uri.isNotEmpty) {
+        urisConocidas.add(state.track!.uri);
+      }
+
+      // Biblioteca: si está totalmente cargada en LikedStore, usar esa. Si no, realizar
+      // muestreo por offsets aleatorios a lo largo de toda la biblioteca en Spotify.
+      if (likes != null && likes.bibliotecaCompleta && likes.biblioteca.isNotEmpty) {
+        for (final t in likes.biblioteca) {
+          if (t.uri.isNotEmpty && !urisRecientesExcluidas.contains(t.uri) && urisConocidas.add(t.uri)) {
+            pistasConocidas.add(t.uri);
+          }
+        }
+      } else {
+        try {
+          final primerPagina = await api.savedTracks(limit: 1, offset: 0);
+          final total = primerPagina.total ?? primerPagina.rawCount;
+          if (total > 0) {
+            final paginasGuardadas = <ApiPage<Track>>[];
+            if (total <= 50) {
+              paginasGuardadas.add(await api.savedTracks(limit: 50, offset: 0));
+            } else {
+              final offsets = calcularOffsetsEstratificados(total, tamanoVentana: 25);
+              const paginaVacia = ApiPage<Track>(items: [], hasMore: false, rawCount: 0);
+              paginasGuardadas.addAll(await Future.wait([
+                api.savedTracks(limit: 25, offset: offsets[0]).catchError((_) => paginaVacia),
+                api.savedTracks(limit: 25, offset: offsets[1]).catchError((_) => paginaVacia),
+                api.savedTracks(limit: 25, offset: offsets[2]).catchError((_) => paginaVacia),
+              ]));
+            }
+            for (final pag in paginasGuardadas) {
+              for (final t in pag.items) {
+                if (t.uri.isNotEmpty && !urisRecientesExcluidas.contains(t.uri) && urisConocidas.add(t.uri)) {
+                  pistasConocidas.add(t.uri);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Top canciones del usuario (acotadas por kMaxPistasTopEnAleatorio)
+      List<Track> topPistas = const [];
+      if (home != null && home.cargado) {
+        topPistas = home.masEscuchadas.take(kMaxPistasTopEnAleatorio).toList();
+      } else {
+        try {
+          topPistas = await api.topTracks(limit: kMaxPistasTopEnAleatorio);
+        } catch (_) {}
+      }
+      for (final t in topPistas) {
+        if (t.uri.isNotEmpty && !urisRecientesExcluidas.contains(t.uri) && urisConocidas.add(t.uri)) {
+          pistasConocidas.add(t.uri);
+        }
+      }
+
+      // 2. Canciones nuevas: top tracks de sus artistas top (descartando las que ya conoce o escuchó recientemente)
+      List<Artist> artistasTop = const [];
+      if (home != null && home.artistas.isNotEmpty) {
+        artistasTop = home.artistas;
+      } else {
+        try {
+          artistasTop = await api.topArtists(limit: 20);
+        } catch (_) {}
+      }
+
+      if (artistasTop.isNotEmpty) {
+        final artistasBase = artistasTop.take(8).toList();
+        final listasPistasArtista = await Future.wait([
+          for (final a in artistasBase)
+            api.artistTopTracks(a.id).catchError((_) => const <Track>[]),
+        ]);
+        final vistasNuevas = <String>{};
+        for (final lista in listasPistasArtista) {
+          for (final t in lista) {
+            if (t.uri.isEmpty || urisConocidas.contains(t.uri) || urisRecientesExcluidas.contains(t.uri)) continue;
+            if (vistasNuevas.add(t.uri)) {
+              pistasNuevas.add(t.uri);
+            }
+          }
+        }
+      }
+
+      // 3. Mezcla respetando kProporcionConocidasModoInteligente (~60/40)
+      const totalObjetivo = 40;
+      var cantidadConocidasObjetivo =
+          (totalObjetivo * kProporcionConocidasModoInteligente).round();
+      var cantidadNuevasObjetivo = totalObjetivo - cantidadConocidasObjetivo;
+
+      final conocidasBarajadas = List<String>.from(pistasConocidas)..shuffle();
+      final nuevasBarajadas = List<String>.from(pistasNuevas)..shuffle();
+
+      if (nuevasBarajadas.length < cantidadNuevasObjetivo) {
+        cantidadNuevasObjetivo = nuevasBarajadas.length;
+        cantidadConocidasObjetivo = (totalObjetivo - cantidadNuevasObjetivo)
+            .clamp(0, conocidasBarajadas.length);
+      } else if (conocidasBarajadas.length < cantidadConocidasObjetivo) {
+        cantidadConocidasObjetivo = conocidasBarajadas.length;
+        cantidadNuevasObjetivo =
+            (totalObjetivo - cantidadConocidasObjetivo).clamp(0, nuevasBarajadas.length);
+      }
+
+      final conocidasSeleccionadas =
+          conocidasBarajadas.take(cantidadConocidasObjetivo).toList();
+      final nuevasSeleccionadas =
+          nuevasBarajadas.take(cantidadNuevasObjetivo).toList();
+
+      final uriPistaActual = state.track?.uri;
+      final colaFinal = <String>[];
+
+      // Si hay una canción sonando actualmente, la dejamos al principio para no perder
+      // el contexto, pero recordando su posición actual en ms (posicionMs) para que
+      // Spotify no la reinicie desde el segundo cero.
+      final int? posicionActualMs =
+          (uriPistaActual != null && progressMs.value > 0) ? progressMs.value : null;
+
+      if (uriPistaActual != null && uriPistaActual.isNotEmpty) {
+        colaFinal.add(uriPistaActual);
+        conocidasSeleccionadas.remove(uriPistaActual);
+        nuevasSeleccionadas.remove(uriPistaActual);
+      }
+
+      // El patrón de intercalado (pasoConocidas y pasoNuevas) se calcula dinámicamente
+      // según kProporcionConocidasModoInteligente (p. ej. 0.60 -> 6 conocidas / 4 nuevas -> 3:2).
+      int mcd(int a, int b) => b == 0 ? a : mcd(b, a % b);
+      final numConocidas = (kProporcionConocidasModoInteligente * 10).round().clamp(1, 9);
+      final numNuevas = 10 - numConocidas;
+      final divisorComun = mcd(numConocidas, numNuevas);
+      final pasoConocidas = numConocidas ~/ divisorComun;
+      final pasoNuevas = numNuevas ~/ divisorComun;
+
+      var i = 0, j = 0;
+      while (i < conocidasSeleccionadas.length || j < nuevasSeleccionadas.length) {
+        for (var k = 0; k < pasoConocidas && i < conocidasSeleccionadas.length; k++) {
+          if (!colaFinal.contains(conocidasSeleccionadas[i])) {
+            colaFinal.add(conocidasSeleccionadas[i]);
+          }
+          i++;
+        }
+        for (var k = 0; k < pasoNuevas && j < nuevasSeleccionadas.length; k++) {
+          if (!colaFinal.contains(nuevasSeleccionadas[j])) {
+            colaFinal.add(nuevasSeleccionadas[j]);
+          }
+          j++;
+        }
+      }
+
+      if (colaFinal.isEmpty) {
+        _aleatorioInteligente = false;
+        notifyListeners();
+        return;
+      }
+
+      await playLista(
+        colaFinal,
+        desde: 0,
+        esInteligente: true,
+        posicionMs: posicionActualMs,
+      );
+    } catch (_) {
+      // Si la red o la API fallan (o la cuenta no tiene artistas top), la cola no
+      // se puede armar. Se desactiva el aleatorio inteligente y se notifica a la
+      // interfaz para que el estado refleje la realidad en lugar de mentir.
+      _aleatorioInteligente = false;
+      notifyListeners();
+    }
   }
 
   Future<void> cycleRepeat() async {
@@ -547,6 +824,7 @@ class PlayerController extends ChangeNotifier {
     // Se apunta aquí y no solo en el sondeo porque el contexto de "Canciones
     // que te gustan" no lo devuelve `GET /me/player`: si no lo guardáramos al
     // pedirlo, no habría manera de saber que era esa lista.
+    _aleatorioInteligente = false;
     _lastContextUri = contextUri;
     _lastUris = null;
     return _withDevice(() => api.play(
@@ -569,22 +847,32 @@ class PlayerController extends ChangeNotifier {
   /// Se pide la posición y no la uri porque una lista puede traer repetidos:
   /// en "Vuelve a escuchar" es de lo más normal que la misma canción salga dos
   /// veces, y buscarla por uri empezaría siempre por la primera aparición.
-  Future<void> playLista(List<String> uris, {int desde = 0}) {
+  Future<void> playLista(
+    List<String> uris, {
+    int desde = 0,
+    bool esInteligente = false,
+    int? posicionMs,
+  }) {
     // Estas listas no son un contexto de Spotify —no tienen uri propia— y
     // `GET /me/player` no las devuelve, así que hay que guardarlas aquí o al
     // llegar al final no habría manera de saber qué se estaba escuchando. Es
     // exactamente la misma razón por la que existe `_lastContextUri`.
+    if (!esInteligente) {
+      _aleatorioInteligente = false;
+    }
     _lastContextUri = null;
     _lastUris = List.unmodifiable(uris);
     return _withDevice(() => api.play(
           deviceId: ourDeviceId,
           uris: uris,
           offsetPosition: desde,
+          positionMs: posicionMs,
         ));
   }
 
   Future<void> playTrack(String uri) {
     // Una canción suelta no es una lista: al acabar no hay adónde volver.
+    _aleatorioInteligente = false;
     _lastContextUri = null;
     _lastUris = null;
     return _withDevice(() => api.play(deviceId: ourDeviceId, uris: [uri]));
