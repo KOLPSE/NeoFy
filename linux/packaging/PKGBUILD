@@ -65,7 +65,7 @@ source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
 #
 # El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
 # `makepkg -g` o descargando el tarball y pasandole sha256sum.
-sha256sums=('SKIP')
+sha256sums=('b51476920b530d1865d0680f3e9ecb5be21097650c936cc3286c76ac53e5e181')
 
 package() {
   cd "$srcdir/$_tarball"
