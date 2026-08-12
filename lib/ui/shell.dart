@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/app_mode.dart';
 import '../core/auth.dart';
+import '../core/carpetas_store.dart';
 import '../core/home_store.dart';
 import '../core/librespot.dart';
 import '../core/liked_store.dart';
@@ -27,6 +28,40 @@ import 'search_screen.dart';
 
 enum _View { home, search, queue, liked, playlist, artist }
 
+/// ¿Hace falta pedir la siguiente página de playlists sin esperar a que haya
+/// scroll?
+///
+/// La paginación la dispara `_onScroll`, que solo entra cuando la lista
+/// desborda el panel. Con una carpeta plegada la lista puede quedarse en una
+/// fila: `maxScrollExtent` es cero, no llega ningún evento y `_loadMore` no
+/// volvería a llamarse nunca. Si quedan páginas y el contenido no llena el
+/// viewport, la siguiente se pide igualmente justo después de pintar.
+///
+/// Está separada del widget para poder probarla sin red: es la decisión pura,
+/// sin compañeros de `ScrollController` ni de la API.
+bool hayQuePedirMas({
+  required bool quedanPaginas,
+  required bool cargando,
+  required bool hayError,
+  required bool desborda,
+  required bool seccionAbierta,
+}) {
+  // Nunca: sin páginas no hay nada que pedir; mientras una petición vuela, el
+  // aviso siguiente ya está programado (el setState del final re-dispara esta
+  // comprobación); y un error no se reintenta en bucle — ya se enseña en el
+  // panel, y el scroll o una visita nueva lo volverán a intentar.
+  if (!quedanPaginas || cargando || hayError) return false;
+  // ⚠️ Con la sección plegada tampoco. No es un detalle: plegada no hay lista,
+  // así que no hay scroll y `desborda` es false para siempre — sin esta línea,
+  // plegar "TUS PLAYLISTS" se descargaría la biblioteca entera de una tacada,
+  // que es justo lo que la paginación existe para no hacer. Al desplegarla, el
+  // build siguiente vuelve a preguntar y se retoma donde estaba.
+  if (!seccionAbierta) return false;
+  // Con scroll, la página siguiente la dispara el desplazamiento: pedirla aquí
+  // además rompería el scroll infinito (cargaría de golpe todo lo que queda).
+  return !desborda;
+}
+
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -37,6 +72,7 @@ class AppShell extends StatefulWidget {
     required this.sidecar,
     required this.likes,
     required this.home,
+    required this.carpetas,
     required this.ram,
     required this.settings,
     required this.updater,
@@ -53,6 +89,7 @@ class AppShell extends StatefulWidget {
   final PlayerController player;
   final LikedStore likes;
   final HomeStore home;
+  final CarpetasStore carpetas;
   final ResourceMonitor ram;
   final Settings settings;
   final Updater updater;
@@ -96,6 +133,11 @@ class _AppShellState extends State<AppShell> {
   bool _playlistsExpanded = true;
   String? _error;
 
+  /// Carpetas del panel ya plegadas por el usuario. Está en el estado en vez de
+  /// dentro del sidebar porque la sección entera se puede plegar y desplegar, y
+  /// el detalle de cada carpeta tiene que sobrevivir igual a la navegación.
+  final Set<String> _carpetasPlegadas = {};
+
   /// Offset en elementos **crudos**, no en los que sobreviven al filtro.
   int _offset = 0;
 
@@ -116,6 +158,32 @@ class _AppShellState extends State<AppShell> {
     if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 200) {
       unawaited(_loadMore());
     }
+  }
+
+  /// Tras pintar, ve si hay que seguir trayendo playlists sin scroll de por
+  /// medio (p. ej. con todo lo descargado dentro de una carpeta plegada, la
+  /// lista no desborda y `_onScroll` ya no tiene forma de dispararse).
+  ///
+  /// Se ejecuta después del frame para que el `ScrollController` ya tenga
+  /// clientes y dimensiones medibles; desde build, si no, `hasClients` aún es
+  /// false y no se sabría si hay o no scroll. Un solo aviso por frame: `_loadMore`
+  /// se protege con `_loading`/`_hasMore`, y cada página que llega re-dispara la
+  /// comprobación con su setState, así que no hay que encadenar nada a mano.
+  void _revisarSiCargarMas() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final conScroll = _scroll.hasClients && _scroll.position.maxScrollExtent > 0;
+      if (!hayQuePedirMas(
+        quedanPaginas: _hasMore,
+        cargando: _loading,
+        hayError: _error != null,
+        desborda: conScroll,
+        seccionAbierta: _playlistsExpanded,
+      )) {
+        return;
+      }
+      unawaited(_loadMore());
+    });
   }
 
   /// Las playlists se traen de 50 en 50 conforme se hace scroll, no todas de
@@ -200,23 +268,37 @@ class _AppShellState extends State<AppShell> {
           _view = _View.home;
         }
       });
+      // La id muerta no debe seguir apuntada en ninguna carpeta: si algún día la
+      // vuelves a seguir, no tiene por qué reaparecer ordenada dentro.
+      await widget.carpetas.quitarPlaylist(pl.id);
     } catch (e) {
       _avisar('No se pudo quitar: $e');
     }
   }
 
-  Future<String?> _pedirNombre(BuildContext context) {
-    final controlador = TextEditingController();
+  /// Pide un nombre para una playlist o una carpeta.
+  ///
+  /// Las dos comparten el diálogo: es "un nombre y un botón", y duplicarlo solo
+  /// serviría para que los dos acabaran por desincronizarse.
+  Future<String?> _pedirNombre(
+    BuildContext context, {
+    String titulo = 'Nueva playlist',
+    String etiqueta = 'Nombre',
+    String boton = 'Crear',
+    String pista = 'Mi playlist',
+    String inicial = '',
+  }) {
+    final controlador = TextEditingController(text: inicial);
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Nueva playlist'),
+        title: Text(titulo),
         content: TextField(
           controller: controlador,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Nombre',
-            hintText: 'Mi playlist',
+          decoration: InputDecoration(
+            labelText: etiqueta,
+            hintText: pista,
           ),
           onSubmitted: (v) => Navigator.of(context).pop(v),
         ),
@@ -227,7 +309,7 @@ class _AppShellState extends State<AppShell> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(controlador.text),
-            child: const Text('Crear'),
+            child: Text(boton),
           ),
         ],
       ),
@@ -236,6 +318,102 @@ class _AppShellState extends State<AppShell> {
       // devuelva el callback, y aquí no debe devolver ninguno.
       controlador.dispose();
     });
+  }
+
+  /// Crea una carpeta de playlists. Es un cambio local: la Web API de Spotify
+  /// no tiene nada parecido (ver `carpetas_store.dart`).
+  Future<void> _crearCarpeta() async {
+    final nombre = await _pedirNombre(
+      context,
+      titulo: 'Nueva carpeta',
+      etiqueta: 'Nombre de la carpeta',
+      pista: 'Mi carpeta',
+    );
+    if (nombre == null || nombre.trim().isEmpty) return;
+    await widget.carpetas.crearCarpeta(nombre.trim());
+  }
+
+  Future<void> _renombrarCarpeta(Carpeta carpeta) async {
+    final nombre = await _pedirNombre(
+      context,
+      titulo: 'Renombrar carpeta',
+      etiqueta: 'Nombre de la carpeta',
+      boton: 'Guardar',
+      pista: 'Mi carpeta',
+      inicial: carpeta.nombre,
+    );
+    if (nombre == null || nombre.trim().isEmpty) return;
+    await widget.carpetas.renombrarCarpeta(carpeta.id, nombre.trim());
+  }
+
+  /// Borrar la carpeta no borra las playlists: solo desaparece la estructura y
+  /// sus listas vuelven a la sección sueltas. Se pregunta antes porque pierdes
+  /// la organización, que no se puede deshacer.
+  Future<void> _borrarCarpeta(Carpeta carpeta) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar la carpeta'),
+        content: Text('«${carpeta.nombre}» desaparece, pero sus playlists no '
+            'se borran: vuelven a la lista.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    _carpetasPlegadas.remove(carpeta.id);
+    await widget.carpetas.borrarCarpeta(carpeta.id);
+  }
+
+  /// Pregunta en qué carpeta dejar una playlist; la última opción la saca de
+  /// todas y la deja suelta.
+  Future<void> _moverPlaylist(Playlist pl) async {
+    const fuera = '__fuera__';
+    final elegida = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final carpetas = widget.carpetas.carpetas;
+        final actual = widget.carpetas.carpetaDe(pl.id);
+        return SimpleDialog(
+          title: const Text('Mover a carpeta'),
+          children: [
+            for (final c in carpetas)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(c.id),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(c.nombre,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    if (c.id == actual?.id)
+                      const Icon(Icons.check, size: 18),
+                  ],
+                ),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(fuera),
+              child: Row(
+                children: [
+                  const Expanded(child: Text('Fuera de cualquier carpeta')),
+                  if (actual == null) const Icon(Icons.check, size: 18),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (elegida == null) return;
+    await widget.carpetas.moverPlaylist(pl.id, elegida == fuera ? null : elegida);
   }
 
   void _avisar(String mensaje) {
@@ -253,7 +431,14 @@ class _AppShellState extends State<AppShell> {
   /// recibiendo el espacio con NeoTube en pantalla y pausaba/reanudaba
   /// Spotify. Ver el comentario de `ui/atajos.dart`.
   @override
-  Widget build(BuildContext context) => _scaffold(context);
+  Widget build(BuildContext context) {
+    // Tras este frame se comprueba si hace falta seguir trayendo playlists sin
+    // scroll que lo dispare (ver `_revisarSiCargarMas`). Cada setState recién
+    // pintado es la oportunidad: una página que llega, una carpeta que se
+    // pliega y encoge la lista, una sección que vuelve a abrirse...
+    _revisarSiCargarMas();
+    return _scaffold(context);
+  }
 
   Widget _scaffold(BuildContext context) {
     return Scaffold(
@@ -262,13 +447,16 @@ class _AppShellState extends State<AppShell> {
           Expanded(
             child: Row(
               children: [
-                // El panel se repinta con el estado del reproductor porque
-                // necesita saber qué playlist suena para dejarla a la vista
-                // cuando la sección está plegada.
+                // El panel se repinta con el estado del reproductor (necesita
+                // saber qué playlist suena para dejarla a la vista cuando la
+                // sección está plegada) y con el del store de carpetas, que es
+                // quien avisa cuando cambian la estructura o el orden.
                 AnimatedBuilder(
-                  animation: widget.player,
+                  animation: Listenable.merge([widget.player, widget.carpetas]),
                   builder: (context, _) => _Sidebar(
                     playlists: _playlists,
+                    carpetas: widget.carpetas.carpetas,
+                    carpetasPlegadas: _carpetasPlegadas,
                     scroll: _scroll,
                     loading: _loading,
                     error: _error,
@@ -278,6 +466,11 @@ class _AppShellState extends State<AppShell> {
                     playingContextUri: widget.player.state.contextUri,
                     onToggleExpanded: () =>
                         setState(() => _playlistsExpanded = !_playlistsExpanded),
+                    onToggleCarpeta: (id) => setState(() {
+                      if (!_carpetasPlegadas.add(id)) {
+                        _carpetasPlegadas.remove(id);
+                      }
+                    }),
                     onSelectView: (v) => setState(() {
                       _view = v;
                       _selected = null;
@@ -288,7 +481,11 @@ class _AppShellState extends State<AppShell> {
                     }),
                     onLogout: widget.onLogout,
                     onCreatePlaylist: _crearPlaylist,
+                    onCreateCarpeta: _crearCarpeta,
                     onDeletePlaylist: _borrarPlaylist,
+                    onRenombrarCarpeta: _renombrarCarpeta,
+                    onBorrarCarpeta: _borrarCarpeta,
+                    onMoverPlaylist: _moverPlaylist,
                     ram: widget.ram,
                     settings: widget.settings,
                     updater: widget.updater,
@@ -377,6 +574,8 @@ class _AppShellState extends State<AppShell> {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.playlists,
+    required this.carpetas,
+    required this.carpetasPlegadas,
     required this.scroll,
     required this.loading,
     required this.error,
@@ -385,11 +584,16 @@ class _Sidebar extends StatelessWidget {
     required this.expanded,
     required this.playingContextUri,
     required this.onToggleExpanded,
+    required this.onToggleCarpeta,
     required this.onSelectView,
     required this.onSelectPlaylist,
     required this.onLogout,
     required this.onCreatePlaylist,
+    required this.onCreateCarpeta,
     required this.onDeletePlaylist,
+    required this.onRenombrarCarpeta,
+    required this.onBorrarCarpeta,
+    required this.onMoverPlaylist,
     required this.ram,
     required this.settings,
     required this.updater,
@@ -400,6 +604,8 @@ class _Sidebar extends StatelessWidget {
   });
 
   final List<Playlist> playlists;
+  final List<Carpeta> carpetas;
+  final Set<String> carpetasPlegadas;
   final ScrollController scroll;
   final bool loading;
   final String? error;
@@ -408,11 +614,16 @@ class _Sidebar extends StatelessWidget {
   final bool expanded;
   final String? playingContextUri;
   final VoidCallback onToggleExpanded;
+  final void Function(String carpetaId) onToggleCarpeta;
   final void Function(_View) onSelectView;
   final void Function(Playlist) onSelectPlaylist;
   final Future<void> Function() onLogout;
   final Future<void> Function() onCreatePlaylist;
+  final Future<void> Function() onCreateCarpeta;
   final Future<void> Function(Playlist) onDeletePlaylist;
+  final Future<void> Function(Carpeta) onRenombrarCarpeta;
+  final Future<void> Function(Carpeta) onBorrarCarpeta;
+  final Future<void> Function(Playlist) onMoverPlaylist;
   final ResourceMonitor ram;
   final Settings settings;
   final Updater updater;
@@ -479,7 +690,8 @@ class _Sidebar extends StatelessWidget {
             label: 'TUS PLAYLISTS',
             expanded: expanded,
             onTap: onToggleExpanded,
-            onCreate: onCreatePlaylist,
+            onCreatePlaylist: onCreatePlaylist,
+            onCreateCarpeta: onCreateCarpeta,
           ),
           if (expanded)
             Expanded(
@@ -490,33 +702,7 @@ class _Sidebar extends StatelessWidget {
                           style: theme.textTheme.bodySmall
                               ?.copyWith(color: theme.colorScheme.error)),
                     )
-                  : ListView.builder(
-                      controller: scroll,
-                      // +1 para el indicador de "cargando más" al final.
-                      itemCount: playlists.length + (loading ? 1 : 0),
-                      itemBuilder: (context, i) {
-                        if (i >= playlists.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Center(
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            ),
-                          );
-                        }
-                        final pl = playlists[i];
-                        return _PlaylistTile(
-                          playlist: pl,
-                          selected: view == _View.playlist && selected?.id == pl.id,
-                          playing: pl.uri == playingContextUri,
-                          onTap: () => onSelectPlaylist(pl),
-                          onDelete: () => onDeletePlaylist(pl),
-                        );
-                      },
-                    ),
+                  : _listaDePlaylists(context),
             )
           else ...[
             // Plegada, pero la que suena se queda siempre a la vista: es el
@@ -526,8 +712,10 @@ class _Sidebar extends StatelessWidget {
                 playlist: playing,
                 selected: view == _View.playlist && selected?.id == playing.id,
                 playing: true,
+                hayCarpetas: carpetas.isNotEmpty,
                 onTap: () => onSelectPlaylist(playing),
                 onDelete: () => onDeletePlaylist(playing),
+                onMover: () => onMoverPlaylist(playing),
               ),
             const Spacer(),
           ],
@@ -571,6 +759,109 @@ class _Sidebar extends StatelessWidget {
       ),
     );
   }
+
+  /// La lista se aplana a entradas para poder meter las carpetas en el mismo
+  /// `ListView.builder` que las playlists sueltas: una vista única, con scroll
+  /// compartido y la paginación intacta.
+  ///
+  /// ⚠️ El orden importa. Una carpeta puede referirse a una playlist que
+  /// todavía no se ha descargado (está en una página posterior); cuando llegue,
+  /// tiene que salir **dentro de su carpeta**, no duplicada en la lista. Por
+  /// eso las playlists que están en alguna carpeta se filtran de la segunda
+  /// pasada con `enCarpeta`, independientemente de si la carpeta está plegada.
+  ListView _listaDePlaylists(BuildContext context) {
+    final porId = {for (final pl in playlists) pl.id: pl};
+    final enCarpeta = <String>{
+      for (final c in carpetas) ...c.playlistIds,
+    };
+    final entradas = <_EntradaSidebar>[];
+    for (final c in carpetas) {
+      // Cuántas de las playlists de la carpeta están ya descargadas: es lo que
+      // se verá al desplegarla. Con la paginación por páginas puede haber huecos
+      // (una carpeta apunta a ids de páginas que aún no han llegado), y el
+      // subtítulo tiene que cuadrar con lo que se enseña, no mentir.
+      var cargadas = 0;
+      for (final plId in c.playlistIds) {
+        if (porId.containsKey(plId)) cargadas++;
+      }
+      entradas.add(_EntradaCarpeta(c, cargadas: cargadas));
+      if (!carpetasPlegadas.contains(c.id)) {
+        for (final plId in c.playlistIds) {
+          final pl = porId[plId];
+          if (pl != null) entradas.add(_EntradaPlaylist(pl, indentada: true));
+        }
+      }
+    }
+    for (final pl in playlists) {
+      if (!enCarpeta.contains(pl.id)) {
+        entradas.add(_EntradaPlaylist(pl));
+      }
+    }
+    return ListView.builder(
+      controller: scroll,
+      // +1 para el indicador de "cargando más" al final.
+      itemCount: entradas.length + (loading ? 1 : 0),
+      itemBuilder: (context, i) {
+        if (i >= entradas.length) {
+          return const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        return switch (entradas[i]) {
+          _EntradaCarpeta(:final carpeta, cargadas: final cargadas) => _CarpetaTile(
+              carpeta: carpeta,
+              cargadas: cargadas,
+              plegada: carpetasPlegadas.contains(carpeta.id),
+              onTap: () => onToggleCarpeta(carpeta.id),
+              onRenombrar: () => onRenombrarCarpeta(carpeta),
+              onBorrar: () => onBorrarCarpeta(carpeta),
+            ),
+          _EntradaPlaylist(:final playlist, indentada: final indentada) =>
+            _PlaylistTile(
+              playlist: playlist,
+              selected: view == _View.playlist && selected?.id == playlist.id,
+              playing: playlist.uri == playingContextUri,
+              hayCarpetas: carpetas.isNotEmpty,
+              // Solo el margen extra: lo que delimita la pertenencia a la
+              // carpeta es la indentación, no el relleno del icono.
+              indentada: indentada,
+              onTap: () => onSelectPlaylist(playlist),
+              onDelete: () => onDeletePlaylist(playlist),
+              onMover: () => onMoverPlaylist(playlist),
+            ),
+        };
+      },
+    );
+  }
+}
+
+/// Una fila del panel de playlists: o bien una carpeta con sus playlists
+/// plegadas debajo, o bien una playlist (suelta, o indentada dentro de una
+/// carpeta no plegada).
+sealed class _EntradaSidebar {}
+
+class _EntradaCarpeta extends _EntradaSidebar {
+  _EntradaCarpeta(this.carpeta, {required this.cargadas});
+  final Carpeta carpeta;
+
+  /// Cuántas playlists de la carpeta están ya descargadas. Menos que el total
+  /// cuando algunas han quedado en páginas que aún no han llegado.
+  final int cargadas;
+}
+
+class _EntradaPlaylist extends _EntradaSidebar {
+  _EntradaPlaylist(this.playlist, {this.indentada = false});
+  final Playlist playlist;
+
+  /// Va dentro de una carpeta (y no plegada), por lo que se indentará.
+  final bool indentada;
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -578,13 +869,15 @@ class _SectionHeader extends StatelessWidget {
     required this.label,
     required this.expanded,
     required this.onTap,
-    required this.onCreate,
+    required this.onCreatePlaylist,
+    required this.onCreateCarpeta,
   });
 
   final String label;
   final bool expanded;
   final VoidCallback onTap;
-  final Future<void> Function() onCreate;
+  final Future<void> Function() onCreatePlaylist;
+  final Future<void> Function() onCreateCarpeta;
 
   @override
   Widget build(BuildContext context) {
@@ -601,15 +894,36 @@ class _SectionHeader extends StatelessWidget {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             ),
             // El "+" va fuera del InkWell de la cabecera: pulsarlo no debe
-            // plegar la sección de paso.
-            IconButton(
-              tooltip: 'Nueva playlist',
-              icon: const Icon(Icons.add, size: 18),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            // plegar la sección de paso. Ahora ofrece las dos creaciones.
+            // ⚠️ Aquí NO va `color:`. Esto era un IconButton, donde `color` es
+            // el color del icono; en un PopupMenuButton es **el fondo del menú
+            // desplegable**. Al convertirlo se arrastró la propiedad tal cual y
+            // el menú acababa pintado de `onSurfaceVariant` —un color pensado
+            // para texto— con las letras en `onSurface` encima: oscuro sobre
+            // oscuro, ilegible. Sin `color`, el menú usa la superficie del tema
+            // y el texto su contraste, que es lo correcto en claro y en oscuro.
+            // El tinte que se quería va en el icono, que es lo que se veía.
+            PopupMenuButton<String>(
+              tooltip: 'Nueva playlist o carpeta',
+              icon: Icon(Icons.add, size: 18, color: theme.colorScheme.onSurfaceVariant),
               padding: EdgeInsets.zero,
-              color: theme.colorScheme.onSurfaceVariant,
-              onPressed: () => unawaited(onCreate()),
+              onSelected: (v) {
+                if (v == 'playlist') {
+                  unawaited(onCreatePlaylist());
+                } else {
+                  unawaited(onCreateCarpeta());
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'playlist',
+                  child: Text('Nueva playlist'),
+                ),
+                PopupMenuItem(
+                  value: 'carpeta',
+                  child: Text('Nueva carpeta'),
+                ),
+              ],
             ),
             Icon(
               expanded ? Icons.expand_less : Icons.expand_more,
@@ -630,18 +944,24 @@ class _PlaylistTile extends StatelessWidget {
     required this.playing,
     required this.onTap,
     required this.onDelete,
+    required this.onMover,
+    this.hayCarpetas = false,
+    this.indentada = false,
   });
 
   final Playlist playlist;
   final bool selected;
   final bool playing;
+  final bool hayCarpetas;
+  final bool indentada;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onMover;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
+    final tile = ListTile(
       dense: true,
       selected: selected,
       leading: ArtImage(url: playlist.art, size: 32),
@@ -664,11 +984,113 @@ class _PlaylistTile extends StatelessWidget {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, size: 16),
             tooltip: 'Opciones',
-            onSelected: (_) => onDelete(),
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            // ⚠️ `onSelected` mira el valor de verdad: con dos entradas, un
+            // `(_) => onDelete()` borraría la playlist al elegir "mover".
+            onSelected: (v) {
+              if (v == 'mover') {
+                onMover();
+              } else {
+                onDelete();
+              }
+            },
+            itemBuilder: (context) => [
+              // "Mover a carpeta" solo tiene sentido si hay algo que elegir;
+              // sin carpetas, no hay ningún sitio al que moverla.
+              if (hayCarpetas)
+                const PopupMenuItem(
+                  value: 'mover',
+                  child: Text('Mover a carpeta...'),
+                ),
+              const PopupMenuItem(
                 value: 'delete',
                 child: Text('Quitar de tu biblioteca'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      onTap: onTap,
+    );
+    if (!indentada) return tile;
+    return Padding(padding: const EdgeInsets.only(left: 20), child: tile);
+  }
+}
+
+class _CarpetaTile extends StatelessWidget {
+  const _CarpetaTile({
+    required this.carpeta,
+    required this.cargadas,
+    required this.plegada,
+    required this.onTap,
+    required this.onRenombrar,
+    required this.onBorrar,
+  });
+
+  final Carpeta carpeta;
+
+  /// Cuántas de las playlists que apunta la carpeta están ya cargadas. El
+  /// subtítulo "x de y" existe porque Spotify pagina las playlists de 50 en 50:
+  /// una carpeta puede referirse a ids de páginas que todavía no se han pedido,
+  /// y enseñar el número de `carpeta.playlistIds` entero sería mentir sobre lo
+  /// que se combina al desplegarla. Cuando todo llegue, se queda en "x
+  /// playlists" y el "de y" desaparece solo.
+  final int cargadas;
+  final bool plegada;
+  final VoidCallback onTap;
+  final VoidCallback onRenombrar;
+  final VoidCallback onBorrar;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = carpeta.playlistIds.length;
+    return ListTile(
+      dense: true,
+      selected: false,
+      leading: Icon(
+        plegada ? Icons.folder : Icons.folder_open,
+        size: 20,
+        color: theme.colorScheme.primary,
+      ),
+      title: Text(
+        carpeta.nombre,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        cargadas == total
+            ? '$total playlists'
+            : '$cargadas de $total playlists',
+        style: theme.textTheme.bodySmall,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            plegada ? Icons.expand_more : Icons.expand_less,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz, size: 16),
+            tooltip: 'Opciones',
+            onSelected: (v) {
+              if (v == 'renombrar') {
+                onRenombrar();
+              } else {
+                onBorrar();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'renombrar',
+                child: Text('Renombrar'),
+              ),
+              PopupMenuItem(
+                value: 'borrar',
+                child: Text('Eliminar carpeta'),
               ),
             ],
           ),

@@ -16,6 +16,7 @@ import 'core/app_mode.dart';
 import 'core/art_cache.dart';
 import 'core/audio_device.dart';
 import 'core/auth.dart';
+import 'core/carpetas_store.dart';
 import 'core/home_store.dart';
 import 'core/librespot.dart';
 import 'core/liked_store.dart';
@@ -188,6 +189,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final LikedStore _likes =
       LikedStore(api: _api, auth: _auth, onReauth: _reauth);
   late final HomeStore _home = HomeStore(api: _api, auth: _auth);
+  // Las carpetas de "Tus playlists" son locales (la Web API no las expone), así
+  // que este store no toca la red: solo carga y guarda `carpetas.json`.
+  late final CarpetasStore _carpetas = CarpetasStore()..cargar();
 
   /// Mide los tres procesos. Los pids se piden al vuelo porque los sidecars se
   /// reinician solos y cambian de pid.
@@ -447,6 +451,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _player.dispose();
     _likes.dispose();
     _home.dispose();
+    _carpetas.dispose();
     _ram.dispose();
     _settings.dispose();
     _updater.dispose();
@@ -912,6 +917,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         player: _player,
         likes: _likes,
         home: _home,
+        carpetas: _carpetas,
         ram: _ram,
         settings: _settings,
         updater: _updater,
