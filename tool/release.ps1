@@ -189,9 +189,9 @@ Write-Host "  descarga pública: HTTP $($r.StatusCode)"
 Write-Host "`nPublicada NeoFy $version" -ForegroundColor Green
 Write-Host 'Quien tenga una versión anterior la verá en Ajustes.'
 Write-Host ''
-Write-Host 'Los instaladores de Linux (.deb y .rpm) los añade GitHub Actions a esta misma' -ForegroundColor Yellow
-Write-Host 'release y tardan unos veinte minutos: el workflow "Linux" se dispara solo al' -ForegroundColor Yellow
-Write-Host 'publicarla. La release queda incompleta hasta que termine.' -ForegroundColor Yellow
+Write-Host 'El tarball y el paquete de Arch los añade GitHub Actions a esta misma release' -ForegroundColor Yellow
+Write-Host 'y tardan unos veinte minutos: el workflow "Linux" se dispara solo al publicarla.' -ForegroundColor Yellow
+Write-Host 'La release queda incompleta hasta que termine (faltan 2 de los 3 artefactos).' -ForegroundColor Yellow
 Write-Host ''
 Write-Host 'Cuando acabe: coge el sha256 del tarball que imprime el workflow y ponlo en'
 Write-Host 'linux/packaging/PKGBUILD junto con el pkgver. Los usuarios de Arch no tienen que'
