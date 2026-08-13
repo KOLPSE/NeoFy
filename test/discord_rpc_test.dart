@@ -9,6 +9,9 @@ Track _track({
   String id = '4cOdK2wGLETKBW3PvgPWqT',
   String name = 'Never Gonna Give You Up',
   String artists = 'Rick Astley',
+  String album = 'Whenever You Need Somebody',
+  String? artSmall = 'https://i.scdn.co/image/pequena',
+  String? artMedium = 'https://i.scdn.co/image/mediana',
   int durationMs = 213573,
 }) =>
     Track(
@@ -16,9 +19,9 @@ Track _track({
       uri: 'spotify:track:$id',
       name: name,
       artists: artists,
-      album: 'Whenever You Need Somebody',
-      artSmall: 'https://i.scdn.co/image/pequena',
-      artMedium: 'https://i.scdn.co/image/mediana',
+      album: album,
+      artSmall: artSmall,
+      artMedium: artMedium,
       durationMs: durationMs,
       isLocal: false,
     );
@@ -88,6 +91,26 @@ void main() {
       expect(start, lessThan(DateTime.now().millisecondsSinceEpoch));
     });
 
+    test('timestamps.end es start + duración, para que salga la barra de progreso', () {
+      final ahora = DateTime.now();
+      const progresoMs = 45000;
+      const duracionMs = 213573;
+
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(durationMs: duracionMs),
+        siguiente: null,
+        sonando: true,
+        progresoMs: progresoMs,
+        ahora: ahora,
+      );
+
+      final timestamps = actividad['timestamps'] as Map<String, dynamic>?;
+      expect(timestamps, isNotNull);
+      final start = timestamps!['start'] as int;
+      final end = timestamps['end'] as int;
+      expect(end, start + duracionMs);
+    });
+
     test('cuando está en pausa, no incluye timestamps para no avanzar el tiempo', () {
       final actividad = DiscordRpc.construirActividad(
         track: _track(),
@@ -99,7 +122,32 @@ void main() {
       expect(actividad['timestamps'], isNull);
     });
 
-    test('assets incluye logo de NeoFy', () {
+    test('large_image es la carátula real de la pista, como en Spotify', () {
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(album: 'Whenever You Need Somebody'),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      final assets = actividad['assets'] as Map<String, dynamic>;
+      expect(assets['large_image'], 'https://i.scdn.co/image/mediana');
+      expect(assets['large_text'], 'Whenever You Need Somebody');
+    });
+
+    test('sin carátula (tema local), large_image se cae al logo subido', () {
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(artSmall: null, artMedium: null),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      final assets = actividad['assets'] as Map<String, dynamic>;
+      expect(assets['large_image'], 'logo');
+    });
+
+    test('small_image es siempre el logo de NeoFy, la esquina no depende de la carátula', () {
       final actividad = DiscordRpc.construirActividad(
         track: _track(),
         siguiente: null,
@@ -108,8 +156,8 @@ void main() {
       );
 
       final assets = actividad['assets'] as Map<String, dynamic>;
-      expect(assets['large_image'], 'logo');
-      expect(assets['large_text'], 'NeoFy');
+      expect(assets['small_image'], 'logo');
+      expect(assets['small_text'], 'NeoFy');
     });
 
     test('tipo de actividad 2 (Escuchando), no 0 (Jugando)', () {
@@ -171,4 +219,65 @@ void main() {
       expect(payloadDecoded, jsonStr);
     });
   });
+
+  group('DiscordRpc: no reenviar por deriva de posición', () {
+    test('la misma pista no reenvía aunque cambie el progreso; una pista nueva sí', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(transporte: transporte);
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      rpc.actualizarActividad(
+          track: pista, sonando: true, progresoMs: 1000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      final tras1a = transporte.envios;
+      expect(tras1a, greaterThan(0));
+
+      // Misma pista, solo se desvía el progreso: antes esto reenviaba y se
+      // comía la ventana de 15 s de Discord justo cuando hacía falta de
+      // verdad. Ahora no debe mandar nada.
+      rpc.actualizarActividad(
+          track: pista, sonando: true, progresoMs: 9000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, tras1a);
+
+      // Cambio de pista de verdad: sí tiene que mandar, sin esperar a nada.
+      final otraPista = _track(id: 'otra-cancion', name: 'Otra canción');
+      rpc.actualizarActividad(
+          track: otraPista, sonando: true, progresoMs: 0, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, greaterThan(tras1a));
+
+      await rpc.stop();
+    });
+  });
+}
+
+class _FakeTransport implements DiscordTransport {
+  bool _conectado = false;
+  int envios = 0;
+
+  @override
+  bool get conectado => _conectado;
+
+  @override
+  Future<bool> conectar(String clientId) async {
+    _conectado = true;
+    return true;
+  }
+
+  @override
+  Future<bool> enviar(int opcode, String jsonStr) async {
+    envios++;
+    return true;
+  }
+
+  @override
+  Future<void> desconectar() async {
+    _conectado = false;
+  }
 }

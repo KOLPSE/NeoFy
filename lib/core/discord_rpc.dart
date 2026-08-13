@@ -38,7 +38,6 @@ class DiscordRpc {
   Track? _ultimoTrack;
   bool _ultimoSonando = false;
   int _ultimoProgresoMs = 0;
-  int? _ultimoStartTime;
   String? _ultimaFirma;
 
   String get clientId => _clientId;
@@ -100,7 +99,6 @@ class DiscordRpc {
     _siguienteTrack = null;
     _ultimoTrack = null;
     _ultimaFirma = null;
-    _ultimoStartTime = null;
 
     if (_transporte.conectado) {
       try {
@@ -116,7 +114,6 @@ class DiscordRpc {
     _siguienteTrack = null;
     _ultimoTrack = null;
     _ultimaFirma = null;
-    _ultimoStartTime = null;
 
     if (_transporte.conectado) {
       try {
@@ -186,18 +183,21 @@ class DiscordRpc {
     if (!_activo || !_transporte.conectado || track == null) return;
 
     final ahora = DateTime.now();
-    final startTime = ahora.millisecondsSinceEpoch - progresoMs;
     final firma = '${track.uri}|$sonando|${siguiente?.uri}';
 
-    final saltoPosicion = _ultimoStartTime != null &&
-        (startTime - _ultimoStartTime!).abs() > 3000;
-
-    if (!forzar && firma == _ultimaFirma && !saltoPosicion) {
+    // ⚠️ No reenviar solo porque la posición se desvió unos milisegundos:
+    // Discord dibuja la barra de progreso él solo a partir de
+    // `timestamps.start`/`end`, sin que haga falta tocar nada más. Reenviar en
+    // cada deriva gastaba la ventana de 15 s que Discord impone entre
+    // actualizaciones (las de más se descartan en silencio, sin avisar), y si
+    // el cambio de canción de verdad caía dentro de esa ventana, se quedaba
+    // sin publicarse hasta la siguiente — el síntoma era justo "tarda mucho
+    // en actualizar".
+    if (!forzar && firma == _ultimaFirma) {
       return;
     }
 
     _ultimaFirma = firma;
-    _ultimoStartTime = startTime;
 
     final actividad = construirActividad(
       track: track,
@@ -240,6 +240,14 @@ class DiscordRpc {
         : track.artists;
     final startEpoch =
         (ahora ?? DateTime.now()).millisecondsSinceEpoch - progresoMs;
+    final endEpoch = startEpoch + track.durationMs;
+
+    // La carátula de verdad, como hace Spotify: Discord acepta una URL
+    // externa directamente en large_image (no hace falta subirla al
+    // Developer Portal), así que no hay que alojar nada propio. Si la pista
+    // no tiene carátula (un tema local, por ejemplo), se cae al logo subido
+    // de NeoFy.
+    final caratula = track.artMedium ?? track.artSmall;
 
     return {
       // Sin esto Discord asume el tipo 0 (Jugando) y NeoFy sale como si fuera
@@ -247,10 +255,18 @@ class DiscordRpc {
       'type': 2,
       'details': track.name,
       'state': stateStr,
-      if (sonando) 'timestamps': {'start': startEpoch},
-      'assets': const {
-        'large_image': 'logo',
-        'large_text': 'NeoFy',
+      // Los dos timestamps a la vez son lo que dibuja la barra de progreso;
+      // con solo "start" Discord se limita a enseñar el tiempo transcurrido
+      // en texto, sin barra.
+      if (sonando) 'timestamps': {'start': startEpoch, 'end': endEpoch},
+      'assets': {
+        'large_image': caratula ?? 'logo',
+        'large_text': track.album.isNotEmpty ? track.album : 'NeoFy',
+        // El mini logo de la esquina, igual que hace Spotify con el suyo:
+        // este sí tiene que ser la clave subida al Developer Portal, porque
+        // small_image (a diferencia de large_image) no admite URLs externas.
+        'small_image': 'logo',
+        'small_text': 'NeoFy',
       },
       'buttons': const [
         {
