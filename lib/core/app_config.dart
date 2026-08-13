@@ -38,7 +38,7 @@ const String kDiscordClientId = '1537557680024199198';
 /// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
 /// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
 /// y nada más.
-const String kVersion = '0.3.0';
+const String kVersion = '0.3.1';
 
 /// Repositorio de donde salen las actualizaciones.
 const String kRepoGitHub = 'KOLPSE/NeoFy';
