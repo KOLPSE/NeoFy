@@ -178,12 +178,20 @@ class AppConfig {
   /// todo el que venga de una versión anterior, y no se gana nada.
   int volumenNeoTube;
 
+  /// Rich Presence de Discord opcional.
+  bool discordRpcEnabled;
+
+  /// Client ID de la aplicación de Discord para Rich Presence.
+  String discordClientId;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
     this.bitrate = 320,
     this.performanceMode = false,
     this.volumenNeoTube = 60,
+    this.discordRpcEnabled = false,
+    this.discordClientId = '',
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -199,6 +207,8 @@ class AppConfig {
         bitrate: (map['bitrate'] as int?) ?? 320,
         performanceMode: (map['performanceMode'] as bool?) ?? false,
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
+        discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
+        discordClientId: (map['discordClientId'] as String?) ?? '',
       );
     } catch (_) {
       // Un config corrupto no debe impedir arrancar: se vuelve a los valores
@@ -214,6 +224,9 @@ class AppConfig {
       'bitrate': bitrate,
       'performanceMode': performanceMode,
       'volumenNeoTube': volumenNeoTube,
+      'discordRpcEnabled': discordRpcEnabled,
+      'discordClientId': discordClientId,
     }));
   }
 }
+

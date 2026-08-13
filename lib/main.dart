@@ -16,6 +16,7 @@ import 'core/art_cache.dart';
 import 'core/audio_device.dart';
 import 'core/auth.dart';
 import 'core/carpetas_store.dart';
+import 'core/discord_rpc.dart';
 import 'core/home_store.dart';
 import 'core/librespot.dart';
 import 'core/liked_store.dart';
@@ -180,7 +181,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   );
 
   late final Settings _settings = Settings(widget.config)
-    ..onCambioDeModo = _alCambiarDeModo;
+    ..onCambioDeModo = _alCambiarDeModo
+    ..onCambioDiscord = _alCambiarDiscord;
+  late final DiscordRpc _discordRpc = DiscordRpc();
   final Updater _updater = Updater();
   late final LibrespotManager _librespot = LibrespotManager(widget.config);
   final MetadataSidecar _sidecar = MetadataSidecar();
@@ -329,6 +332,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _mediaKeys.start();
     unawaited(_mpris.start());
     _smtc.start();
+    if (_settings.discordRpcEnabled && _settings.discordClientId.isNotEmpty) {
+      _discordRpc.start(_settings.discordClientId);
+    }
     // Se engancha al notificador general y no a `currentUri`: pausar no cambia
     // de canción, y con solo `currentUri` el widget del escritorio se quedaría
     // diciendo "reproduciendo" con la música parada. Que esto salte cada 3 s no
@@ -396,6 +402,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _carpetas.dispose();
     _ram.dispose();
     _settings.dispose();
+    _discordRpc.dispose();
     _updater.dispose();
     _librespot.dispose();
     _sidecar.dispose();
@@ -403,12 +410,21 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     super.dispose();
   }
 
-  /// Los dos a la vez: solo uno está activo en cada plataforma, y el otro no
-  /// hace nada. Tenerlo en un único sitio evita que se queden contando cosas
-  /// distintas, que es justo lo que no se podría probar desde aquí.
+  /// Avisa al sistema (MPRIS en Linux, SMTC en Windows y Discord RPC si está
+  /// configurado) del estado actual de la reproducción.
   void _avisarAlSistema() {
     _mpris.notificarCambio();
     _smtc.notificarCambio();
+    if (_player.libre == null) {
+      _discordRpc.actualizarActividad(
+        track: _player.state.track,
+        sonando: _player.state.isPlaying,
+        progresoMs: _player.progressMs.value,
+        obtenerCola: _api.queue,
+      );
+    } else {
+      unawaited(_discordRpc.limpiar());
+    }
   }
 
   Future<void> _boot() async {
@@ -539,6 +555,16 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
     } else if (_sessionStarted) {
       unawaited(_startSidecar());
+    }
+  }
+
+  /// Arranca o para el Rich Presence de Discord según los ajustes.
+  void _alCambiarDiscord(bool activo, String clientId) {
+    if (activo && clientId.isNotEmpty) {
+      _discordRpc.start(clientId);
+      _avisarAlSistema();
+    } else {
+      unawaited(_discordRpc.stop());
     }
   }
 
