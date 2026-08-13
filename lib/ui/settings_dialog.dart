@@ -63,84 +63,86 @@ class _DialogoAjustes extends StatelessWidget {
       title: const Text('Ajustes'),
       content: SizedBox(
         width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Se repinta con cada muestra del monitor (cada 3 s); es lo único
-            // vivo del diálogo.
-            AnimatedBuilder(
-              animation: monitor,
-              builder: (context, _) {
-                final uso = monitor.uso;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: _Medida(
-                        icono: Icons.memory,
-                        etiqueta: 'Memoria',
-                        valor: UsoDeRecursos.mb(uso.total),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Se repinta con cada muestra del monitor (cada 3 s); es lo único
+              // vivo del diálogo.
+              AnimatedBuilder(
+                animation: monitor,
+                builder: (context, _) {
+                  final uso = monitor.uso;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _Medida(
+                          icono: Icons.memory,
+                          etiqueta: 'Memoria',
+                          valor: UsoDeRecursos.mb(uso.total),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: _Medida(
-                        icono: Icons.speed,
-                        etiqueta: 'CPU',
-                        valor: '${uso.cpu.toStringAsFixed(1)} %',
+                      Expanded(
+                        child: _Medida(
+                          icono: Icons.speed,
+                          etiqueta: 'CPU',
+                          valor: '${uso.cpu.toStringAsFixed(1)} %',
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            ),
-            const Divider(height: 28),
-            AnimatedBuilder(
-              animation: settings,
-              builder: (context, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: settings.performanceMode,
-                    onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
-                    title: const Text('Modo rendimiento'),
-                    subtitle: Text(
-                      'Sustituye las carátulas por mosaicos de color y apaga el '
-                      'lector de metadatos. El audio no se toca.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                  const Divider(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: settings.discordRpcEnabled,
-                    onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
-                    title: const Text('Mostrar en Discord (Rich Presence)'),
-                    subtitle: Text(
-                      'Enseña en tu perfil de Discord la canción que suena, la '
-                      'siguiente de la cola y un botón a GitHub.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                  if (settings.discordRpcEnabled) ...[
-                    const SizedBox(height: 8),
-                    _CampoDiscordClientId(settings: settings),
-                  ],
-                ],
+                    ],
+                  );
+                },
               ),
-            ),
-            for (final bloque in bloquesExtra) ...[
+              const Divider(height: 28),
+              AnimatedBuilder(
+                animation: settings,
+                builder: (context, _) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: settings.performanceMode,
+                      onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
+                      title: const Text('Modo rendimiento'),
+                      subtitle: Text(
+                        'Sustituye las carátulas por mosaicos de color y apaga el '
+                        'lector de metadatos. El audio no se toca.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    const Divider(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: settings.discordRpcEnabled,
+                      onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
+                      title: const Text('Mostrar en Discord (Rich Presence)'),
+                      subtitle: Text(
+                        'Enseña en tu perfil de Discord la canción que suena, la '
+                        'siguiente de la cola y un botón a GitHub.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    if (settings.discordRpcEnabled) ...[
+                      const SizedBox(height: 8),
+                      _CampoDiscordClientId(settings: settings),
+                    ],
+                  ],
+                ),
+              ),
+              for (final bloque in bloquesExtra) ...[
+                const Divider(height: 12),
+                bloque,
+              ],
               const Divider(height: 12),
-              bloque,
+              _Actualizaciones(
+                updater: updater,
+                onSalirParaActualizar: onSalirParaActualizar,
+              ),
             ],
-            const Divider(height: 12),
-            _Actualizaciones(
-              updater: updater,
-              onSalirParaActualizar: onSalirParaActualizar,
-            ),
-          ],
+          ),
         ),
       ),
       actions: [
