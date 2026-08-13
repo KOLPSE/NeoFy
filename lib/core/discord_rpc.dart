@@ -22,13 +22,19 @@ import 'models.dart';
 /// aviso visible: degrada en silencio y reintenta la conexión periódicamente
 /// mientras el ajuste esté activo.
 class DiscordRpc {
-  DiscordRpc({DiscordTransport? transporte})
-      : _transporte = transporte ?? _crearTransporte();
+  DiscordRpc({
+    DiscordTransport? transporte,
+    Duration timeoutPausa = const Duration(minutes: 5),
+  })  : _transporte = transporte ?? _crearTransporte(),
+        _duracionTimeoutPausa = timeoutPausa;
 
   final DiscordTransport _transporte;
+  final Duration _duracionTimeoutPausa;
   String _clientId = '';
   bool _activo = false;
   Timer? _reintentoTimer;
+  Timer? _timeoutPausa;
+  bool _pausaExpirada = false;
   int _nonce = 0;
 
   String? _ultimoTrackUri;
@@ -75,7 +81,7 @@ class DiscordRpc {
     try {
       final ok = await _transporte.conectar(_clientId);
       if (ok && _activo) {
-        if (_ultimoTrack != null) {
+        if (_ultimoTrack != null && !_pausaExpirada) {
           await _enviarActividad(
             track: _ultimoTrack,
             siguiente: _siguienteTrack,
@@ -95,6 +101,9 @@ class DiscordRpc {
     _activo = false;
     _reintentoTimer?.cancel();
     _reintentoTimer = null;
+    _timeoutPausa?.cancel();
+    _timeoutPausa = null;
+    _pausaExpirada = false;
     _ultimoTrackUri = null;
     _siguienteTrack = null;
     _ultimoTrack = null;
@@ -110,6 +119,8 @@ class DiscordRpc {
 
   /// Limpia la presencia en Discord sin apagar el servicio.
   Future<void> limpiar() async {
+    _timeoutPausa?.cancel();
+    _timeoutPausa = null;
     _ultimoTrackUri = null;
     _siguienteTrack = null;
     _ultimoTrack = null;
@@ -137,11 +148,37 @@ class DiscordRpc {
     _ultimoProgresoMs = progresoMs;
 
     if (track == null) {
+      _timeoutPausa?.cancel();
+      _timeoutPausa = null;
+      _pausaExpirada = false;
       unawaited(limpiar());
       return;
     }
 
+    // El temporizador de pausa no tiene sentido con el RPC apagado: sin este
+    // corte, cualquier usuario -- tenga o no encendido el interruptor --
+    // armaría un Timer de 5 minutos en cada pausa, para nada.
     if (!_activo || _clientId.isEmpty) return;
+
+    if (track.uri != _ultimoTrackUri) {
+      _pausaExpirada = false;
+      _timeoutPausa?.cancel();
+      _timeoutPausa = null;
+    }
+
+    if (sonando) {
+      _pausaExpirada = false;
+      _timeoutPausa?.cancel();
+      _timeoutPausa = null;
+    } else if (!_pausaExpirada && _timeoutPausa == null) {
+      _timeoutPausa = Timer(_duracionTimeoutPausa, () {
+        _timeoutPausa = null;
+        _pausaExpirada = true;
+        unawaited(limpiar());
+      });
+    }
+
+    if (_pausaExpirada) return;
 
     if (track.uri != _ultimoTrackUri) {
       _ultimoTrackUri = track.uri;
@@ -152,12 +189,14 @@ class DiscordRpc {
           _cargandoCola = false;
           if (_ultimoTrackUri == track.uri) {
             _siguienteTrack = cola.isNotEmpty ? cola.first : null;
-            unawaited(_enviarActividad(
-              track: track,
-              siguiente: _siguienteTrack,
-              sonando: _ultimoSonando,
-              progresoMs: _ultimoProgresoMs,
-            ));
+            if (!_pausaExpirada) {
+              unawaited(_enviarActividad(
+                track: track,
+                siguiente: _siguienteTrack,
+                sonando: _ultimoSonando,
+                progresoMs: _ultimoProgresoMs,
+              ));
+            }
           }
         }).catchError((_) {
           _cargandoCola = false;
@@ -244,10 +283,10 @@ class DiscordRpc {
 
     // La carátula de verdad, como hace Spotify: Discord acepta una URL
     // externa directamente en large_image (no hace falta subirla al
-    // Developer Portal), así que no hay que alojar nada propio. Si la pista
-    // no tiene carátula (un tema local, por ejemplo), se cae al logo subido
-    // de NeoFy.
-    final caratula = track.artMedium ?? track.artSmall;
+    // Developer Portal), así que no hay que alojar nada propio. Al pausar o
+    // si la pista no tiene carátula (un tema local, por ejemplo), se cae al
+    // logo subido de NeoFy.
+    final caratula = sonando ? (track.artMedium ?? track.artSmall) : null;
 
     return {
       // Sin esto Discord asume el tipo 0 (Jugando) y NeoFy sale como si fuera

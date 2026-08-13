@@ -122,7 +122,7 @@ void main() {
       expect(actividad['timestamps'], isNull);
     });
 
-    test('large_image es la carátula real de la pista, como en Spotify', () {
+    test('large_image es la carátula real de la pista cuando está sonando', () {
       final actividad = DiscordRpc.construirActividad(
         track: _track(album: 'Whenever You Need Somebody'),
         siguiente: null,
@@ -133,6 +133,18 @@ void main() {
       final assets = actividad['assets'] as Map<String, dynamic>;
       expect(assets['large_image'], 'https://i.scdn.co/image/mediana');
       expect(assets['large_text'], 'Whenever You Need Somebody');
+    });
+
+    test('al pausar, large_image es el logo de NeoFy aunque la pista tenga carátula', () {
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(artMedium: 'https://i.scdn.co/image/mediana'),
+        siguiente: null,
+        sonando: false,
+        progresoMs: 45000,
+      );
+
+      final assets = actividad['assets'] as Map<String, dynamic>;
+      expect(assets['large_image'], 'logo');
     });
 
     test('sin carátula (tema local), large_image se cae al logo subido', () {
@@ -255,11 +267,197 @@ void main() {
       await rpc.stop();
     });
   });
+
+  group('DiscordRpc: timeout y comportamiento en pausa', () {
+    test('al pausar, se limpia la presencia tras el timeout de pausa', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(
+        transporte: transporte,
+        timeoutPausa: const Duration(milliseconds: 30),
+      );
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      // Empieza reproduciendo
+      rpc.actualizarActividad(
+          track: pista, sonando: true, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // Se pausa la reproducción
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 2);
+
+      // Comprobar que en pausa mandó large_image: logo
+      final payloadPausa = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
+      final activityPausa = (payloadPausa['args'] as Map<String, dynamic>)['activity'] as Map<String, dynamic>;
+      expect((activityPausa['assets'] as Map<String, dynamic>)['large_image'], 'logo');
+
+      // Aún no ha pasado el timeout (30 ms)
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(transporte.envios, 2);
+
+      // Se cumple el timeout: se apaga enviando activity: null
+      await Future<void>.delayed(const Duration(milliseconds: 35));
+      expect(transporte.envios, 3);
+      final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
+      expect((payloadLimpio['args'] as Map<String, dynamic>)['activity'], isNull);
+
+      await rpc.stop();
+    });
+
+    test('si vuelve a sonar antes del timeout de pausa, el temporizador se cancela', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(
+        transporte: transporte,
+        timeoutPausa: const Duration(milliseconds: 40),
+      );
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      rpc.actualizarActividad(
+          track: pista, sonando: true, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // Se pausa
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 2);
+
+      // Antes del timeout (40 ms), se reanuda a los 15 ms
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      rpc.actualizarActividad(
+          track: pista, sonando: true, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 3);
+
+      // Esperamos otros 50 ms (más de los 40 ms de la pausa inicial): NO debe apagarse
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(transporte.envios, 3);
+      final payloadActual = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
+      expect((payloadActual['args'] as Map<String, dynamic>)['activity'], isNotNull);
+
+      await rpc.stop();
+    });
+
+    test('actualizaciones intermedias durante la pausa no reinician el temporizador', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(
+        transporte: transporte,
+        timeoutPausa: const Duration(milliseconds: 50),
+      );
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // A los 20 ms y 35 ms llegan actualizaciones de sondeo mientras sigue en pausa
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // A los 55 ms totales desde la primera pausa (20 ms más tarde), debe haberse apagado
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+      expect(transporte.envios, 2);
+      final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
+      expect((payloadLimpio['args'] as Map<String, dynamic>)['activity'], isNull);
+
+      await rpc.stop();
+    });
+
+    test('cuando track pasa a null, se cancela el timer de pausa y se limpia', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(
+        transporte: transporte,
+        timeoutPausa: const Duration(milliseconds: 40),
+      );
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // Track pasa a null de inmediato
+      rpc.actualizarActividad(
+          track: null, sonando: false, progresoMs: 0, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 2);
+      final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
+      expect((payloadLimpio['args'] as Map<String, dynamic>)['activity'], isNull);
+
+      // Esperar más allá del timeout para asegurar que ningún timer residual intente hacer nada
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(transporte.envios, 2);
+
+      await rpc.stop();
+    });
+
+    test('stop() cancela el timer de pausa y no envía nada tras expirar', () async {
+      final transporte = _FakeTransport();
+      final rpc = DiscordRpc(
+        transporte: transporte,
+        timeoutPausa: const Duration(milliseconds: 40),
+      );
+      Future<List<Track>> colaVacia() async => const [];
+
+      rpc.start('123456');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final pista = _track();
+      rpc.actualizarActividad(
+          track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
+      await Future<void>.delayed(Duration.zero);
+      expect(transporte.envios, 1);
+
+      // Se detiene el RPC
+      await rpc.stop();
+      final enviosTrasStop = transporte.envios;
+
+      // Esperar a que pase el timeout: no debe haber más envíos
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(transporte.envios, enviosTrasStop);
+    });
+  });
 }
 
 class _FakeTransport implements DiscordTransport {
   bool _conectado = false;
   int envios = 0;
+  final List<String> payloads = [];
 
   @override
   bool get conectado => _conectado;
@@ -273,6 +471,7 @@ class _FakeTransport implements DiscordTransport {
   @override
   Future<bool> enviar(int opcode, String jsonStr) async {
     envios++;
+    payloads.add(jsonStr);
     return true;
   }
 
