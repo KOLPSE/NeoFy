@@ -33,13 +33,13 @@ done
 
 # yt-dlp se rebaja cada vez que se empaqueta, no se cachea: YouTube le rompe
 # los extractores cada pocas semanas, asi que el de la release anterior puede
-# estar ya muerto. Y sin el, NeoTube no reproduce nada.
+# estar ya muerto. Y sin el, las cuentas sin Premium no suenan.
 #
 # Se invoca con `bash` y no como `./tool/fetch_ytdlp.sh` a proposito: el script
 # se subio una vez sin el bit de ejecucion (git en Windows no lo pone solo) y el
 # workflow murio con "Permission denied" y un exit 126, ya con la release
 # etiquetada. Con `bash` delante, el permiso deja de importar.
-echo "Actualizando yt-dlp (el descodificador de NeoTube)..."
+echo "Actualizando yt-dlp (el descodificador de la via libre)..."
 bash ./tool/fetch_ytdlp.sh
 [ -x 'tool/ytdlp-build/bin/yt-dlp' ] || { echo "Falta tool/ytdlp-build/bin/yt-dlp" >&2; exit 1; }
 
@@ -51,7 +51,7 @@ bundle='build/linux/x64/release/bundle'
 
 # CMake ya los copia por su install(PROGRAMS), pero se comprueba: un tarball sin
 # librespot instala una app que no suena, y el fallo solo se ve al arrancarla.
-# Lo mismo vale para yt-dlp y NeoTube.
+# Lo mismo vale para yt-dlp y la via libre.
 for bin in librespot metadata-sidecar yt-dlp; do
     [ -x "$bundle/$bin" ] || { echo "El bundle no trae $bin" >&2; exit 1; }
 done

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../core/app_mode.dart';
 import '../core/auth.dart';
 import '../core/carpetas_store.dart';
 import '../core/home_store.dart';
@@ -15,11 +14,12 @@ import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/updater.dart';
 import '../core/spotify_api.dart';
+import '../core/yt_auth.dart';
 import 'art_image.dart';
+import 'conectar_youtube.dart';
 import 'artist_screen.dart';
 import 'home_screen.dart';
 import 'liked_screen.dart';
-import 'mode_toggle_text.dart';
 import 'now_playing_bar.dart';
 import 'settings_dialog.dart';
 import 'playlist_screen.dart';
@@ -80,8 +80,7 @@ class AppShell extends StatefulWidget {
     required this.onReiniciarAudio,
     required this.onLogout,
     required this.onReauth,
-    required this.onToggleMode,
-    this.onLiberarRam,
+    required this.ytAuth,
   });
 
   final SpotifyApi api;
@@ -105,14 +104,9 @@ class AppShell extends StatefulWidget {
   final Future<void> Function() onLogout;
   final Future<void> Function() onReauth;
 
-  /// Pulsado en el nombre de la app en la barra lateral: dispara el cambio a
-  /// NeoTube. Ver `mode_toggle_text.dart` y `mode_host.dart`.
-  final VoidCallback onToggleMode;
-
-  /// Se llama a mitad de la animación del botón, con NeoFy todavía en
-  /// pantalla: hueco para soltar la caché de imágenes antes de irse a
-  /// NeoTube. Ver `ModeToggleText.onSufijoBorrado`.
-  final VoidCallback? onLiberarRam;
+  /// La sesión de YouTube Music, para poder conectarla desde Ajustes. Es lo
+  /// que hace sonar a las cuentas sin Premium (ver `core/reproduccion_libre.dart`).
+  final YtAuth ytAuth;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -423,13 +417,8 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// El teclado ya no se escucha aquí: lo hace [AtajosDeReproduccion], por
-  /// encima de los dos modos.
-  ///
-  /// ⚠️ Tenerlo en este shell era un fallo con NeoTube delante. `ModeHost`
-  /// mantiene los dos shells montados a la vez, así que este `Focus` seguía
-  /// recibiendo el espacio con NeoTube en pantalla y pausaba/reanudaba
-  /// Spotify. Ver el comentario de `ui/atajos.dart`.
+  /// El teclado no se escucha aquí: lo hace [AtajosDeReproduccion], por encima
+  /// del shell. Ver el comentario de `ui/atajos.dart`.
   @override
   Widget build(BuildContext context) {
     // Tras este frame se comprueba si hace falta seguir trayendo playlists sin
@@ -491,8 +480,9 @@ class _AppShellState extends State<AppShell> {
                     updater: widget.updater,
                     onSalirParaActualizar: widget.onSalirParaActualizar,
                     onReiniciarAudio: widget.onReiniciarAudio,
-                    onToggleMode: widget.onToggleMode,
-                    onLiberarRam: widget.onLiberarRam,
+                    ytAuth: widget.ytAuth,
+                    sinPremium: widget.player.premiumChecked &&
+                        !widget.player.isPremium,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -604,8 +594,8 @@ class _Sidebar extends StatelessWidget {
     required this.updater,
     required this.onSalirParaActualizar,
     required this.onReiniciarAudio,
-    required this.onToggleMode,
-    this.onLiberarRam,
+    required this.ytAuth,
+    required this.sinPremium,
   });
 
   final List<Playlist> playlists;
@@ -634,8 +624,12 @@ class _Sidebar extends StatelessWidget {
   final Updater updater;
   final Future<void> Function() onSalirParaActualizar;
   final Future<void> Function() onReiniciarAudio;
-  final VoidCallback onToggleMode;
-  final VoidCallback? onLiberarRam;
+  final YtAuth ytAuth;
+
+  /// Si la cuenta no es Premium, Ajustes ofrece conectar YouTube Music: es de
+  /// donde saldrá el audio. Con Premium no se enseña, que sería ofrecer algo
+  /// que no hace nada.
+  final bool sinPremium;
 
   /// La playlist que está sonando, si es una de las del panel. Es la que se
   /// deja a la vista cuando la sección está plegada.
@@ -660,10 +654,21 @@ class _Sidebar extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
-            child: ModeToggleText(
-              modo: AppMode.neofy,
-              onTap: onToggleMode,
-              onSufijoBorrado: onLiberarRam,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.graphic_eq, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'NeoFy',
+                      style: theme.textTheme.titleSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           _NavTile(
@@ -738,9 +743,11 @@ class _Sidebar extends StatelessWidget {
                         settings: settings,
                         updater: updater,
                         onSalirParaActualizar: onSalirParaActualizar,
-                        // Reiniciar la salida es reiniciar librespot: no tiene
-                        // equivalente en NeoTube, que reproduce aquí mismo.
-                        propiosDelModo: [
+                        // Reiniciar la salida es reiniciar librespot, así que
+                        // no lo pinta el diálogo por su cuenta: solo tiene
+                        // sentido con el sidecar de por medio.
+                        bloquesExtra: [
+                          if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
                           ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
                         ],
                       ),

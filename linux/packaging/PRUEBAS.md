@@ -38,10 +38,10 @@ sudo pacman -S --needed gtk3 libayatana-appindicator libpulse openssl \
 `python` ya **no** hace falta: desde la 0.2.5 yt-dlp va como binario autónomo,
 con su propio intérprete dentro.
 
-⚠️ **`mpv` (libmpv) no es opcional aunque no pienses usar NeoTube**, y hasta la
+⚠️ **`mpv` (libmpv) no es opcional aunque tengas Premium y nunca uses la via libre**, y hasta la
 0.2.3 faltaba en el PKGBUILD. Se abre con `dlopen` al arrancar, antes de que
 haya ventana: sin ella, la app **abría y se cerraba sin decir nada**. Ahora
-sobrevive y NeoTube enseña qué instalar, pero sigue haciendo falta para que
+sobrevive y Ajustes enseña qué instalar, pero sigue haciendo falta para que
 suene. Si ves ese mensaje, es que el paquete o el tarball se lo dejó: dilo.
 
 Di también **qué escritorio usas** (KDE, GNOME, Hyprland…) y si es Wayland o
@@ -169,7 +169,7 @@ sudo pacman -U ./neofy-bin-*-x86_64.pkg.tar.zst
 ```
 
 - [ ] ¿Instala sin quejarse? ¿Se resolvieron todas las dependencias solas?
-      **`mpv` es la que más importa**: si no la arrastra sola, NeoTube se queda
+      **`mpv` es la que más importa**: si no la arrastra sola, la vía libre se queda
       sin sonido y el paquete se publicó incompleto.
 - [ ] `which neofy` → `/usr/bin/neofy`, y lanzarlo desde ahí abre la app.
 - [ ] ¿Sale NeoFy en el menú de aplicaciones, **con su icono** y no con uno

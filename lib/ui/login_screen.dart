@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/auth.dart';
+import '../core/yt_auth.dart';
+import 'conectar_youtube.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -11,11 +13,17 @@ class LoginScreen extends StatefulWidget {
     required this.auth,
     required this.config,
     required this.onLoggedIn,
+    required this.ytAuth,
   });
 
   final SpotifyAuth auth;
   final AppConfig config;
   final Future<void> Function() onLoggedIn;
+
+  /// Para ofrecer aquí mismo la vía libre: sin Premium la API de Spotify no
+  /// deja controlar la reproducción, y quien lo descubra al entrar se queda
+  /// mirando una app muda. Mejor decirlo antes.
+  final YtAuth ytAuth;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -99,7 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Un cliente ligero que reproduce en local y se controla con la '
-                  'API oficial de Spotify. Necesita una cuenta Premium.',
+                  'API oficial de Spotify. Con cuenta Premium suena por sí solo; '
+                  'sin ella, puede sonar por YouTube Music.',
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -155,6 +164,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         ?.copyWith(color: theme.colorScheme.error),
                   ),
                 ],
+                // La vía libre se ofrece **aquí**, en el setup, y no solo
+                // cuando ya has entrado y descubres que la música no arranca.
+                // Se puede conectar antes o después del login de Spotify: son
+                // dos sesiones independientes y esto solo pone el audio.
+                const SizedBox(height: 24),
+                const Divider(),
+                const SizedBox(height: 16),
+                ConectarYouTubeMusic(auth: widget.ytAuth),
               ],
             ),
           ),

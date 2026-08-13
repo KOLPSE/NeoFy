@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/auth.dart';
+import 'package:neofy/core/librespot.dart';
 import 'package:neofy/core/liked_store.dart';
 import 'package:neofy/core/models.dart';
+import 'package:neofy/core/player_state.dart';
 import 'package:neofy/core/spotify_api.dart';
 import 'package:neofy/ui/like_button.dart';
+import 'package:neofy/ui/now_playing_bar.dart';
 import 'package:neofy/ui/track_tile.dart';
 
 const _pista = Track(
@@ -19,6 +22,13 @@ const _pista = Track(
   durationMs: 185000,
   isLocal: false,
 );
+
+class _FakeConfig extends AppConfig {
+  _FakeConfig() : super(initialVolume: 60);
+
+  @override
+  Future<void> save() async {}
+}
 
 /// Los scopes de verdad solo se rellenan al canjear un token, así que se
 /// sobrescribe la consulta: es justo lo que distingue una sesión antigua.
@@ -209,6 +219,87 @@ void main() {
       // Ni una consulta: la biblioteca ya dijo que estaban todas guardadas.
       expect(api.llamadas, isEmpty);
       expect(_corazonRojo, findsOneWidget);
+    });
+  });
+
+  group('NowPlayingBar con LikeButton', () {
+    testWidgets('muestra LikeButton cuando hay pista y likes', (tester) async {
+      final likes = crear();
+      final config = _FakeConfig();
+      final player = PlayerController(api, config);
+      player.state = Playback(
+        track: _pista,
+        isPlaying: true,
+        progressMs: 10000,
+        deviceId: 'dev',
+        deviceName: 'NeoFy',
+        volumePercent: 50,
+        shuffle: false,
+        repeat: 'off',
+        contextUri: null,
+      );
+      addTearDown(player.dispose);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: NowPlayingBar(
+            player: player,
+            librespot: LibrespotManager(config),
+            likes: likes,
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byType(LikeButton), findsOneWidget);
+    });
+
+    testWidgets('no muestra LikeButton cuando no hay pista', (tester) async {
+      final likes = crear();
+      final config = _FakeConfig();
+      final player = PlayerController(api, config);
+      addTearDown(player.dispose);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: NowPlayingBar(
+            player: player,
+            librespot: LibrespotManager(config),
+            likes: likes,
+          ),
+        ),
+      ));
+
+      expect(find.byType(LikeButton), findsNothing);
+    });
+
+    testWidgets('no muestra LikeButton cuando likes es null', (tester) async {
+      final config = _FakeConfig();
+      final player = PlayerController(_FakeApi(_FakeAuth()), config);
+      player.state = Playback(
+        track: _pista,
+        isPlaying: true,
+        progressMs: 10000,
+        deviceId: 'dev',
+        deviceName: 'NeoFy',
+        volumePercent: 50,
+        shuffle: false,
+        repeat: 'off',
+        contextUri: null,
+      );
+      addTearDown(player.dispose);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: NowPlayingBar(
+            player: player,
+            librespot: LibrespotManager(config),
+            likes: null,
+          ),
+        ),
+      ));
+
+      expect(find.byType(LikeButton), findsNothing);
     });
   });
 }

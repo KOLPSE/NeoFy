@@ -19,13 +19,26 @@ const String kDefaultClientId = '';
 /// ¿Hay Client ID configurado? Sin él no se puede ni empezar el login.
 bool get hayClientId => kDefaultClientId.isNotEmpty;
 
+/// Client ID de la aplicación de NeoFy en Discord, para el Rich Presence.
+///
+/// A diferencia de [kDefaultClientId], **este sí va compilado con un valor
+/// real**: no es un caso equivalente. El Client ID de Spotify abre un flujo de
+/// autorización con un tope real de 25 usuarios en Modo Desarrollo, así que
+/// publicarlo le agotaría la cuota a su dueño. El de Discord no autoriza nada
+/// ni tiene límite de usuarios: es solo la etiqueta (nombre e icono) que
+/// Discord IPC usa para identificar de qué app viene la presencia, y cada
+/// usuario sigue viendo únicamente su propia canción en su propia cuenta,
+/// hablando con su propio Discord local. Se puede sobrescribir desde Ajustes
+/// por si alguien prefiere su propia app.
+const String kDiscordClientId = '1537557680024199198';
+
 /// Versión de NeoFy.
 ///
 /// ⚠️ **Esta constante es la única fuente de la verdad.** `build_installer.ps1`
 /// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
 /// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
 /// y nada más.
-const String kVersion = '0.2.9';
+const String kVersion = '0.3.2';
 
 /// Repositorio de donde salen las actualizaciones.
 const String kRepoGitHub = 'KOLPSE/NeoFy';
@@ -167,19 +180,26 @@ class AppConfig {
   /// `core/settings.dart`.
   bool performanceMode;
 
-  /// Volumen de NeoTube, 0..100.
+  /// Volumen de la reproducción por YouTube (la vía libre), 0..100.
   ///
   /// Aparte de [initialVolume] porque son dos reproductores distintos: aquel
   /// se le pasa a librespot al arrancar y lo acaba mandando Spotify Connect;
-  /// este lo aplica `media_kit` en este mismo proceso. Compartir el campo
-  /// haría que bajar el volumen en un modo bajara el del otro.
+  /// este lo aplica `media_kit` en este mismo proceso.
+  ///
+  /// La clave sigue llamándose `volumenNeoTube` en el `config.json` aunque el
+  /// modo NeoTube ya no exista: renombrarla le borraría el volumen guardado a
+  /// todo el que venga de una versión anterior, y no se gana nada.
   int volumenNeoTube;
 
-  /// Modo activo: `'neofy'` o `'neotube'`. Se guarda como cadena y no como el
-  /// `enum AppMode` porque este fichero no depende de `core/app_mode.dart` —
-  /// `AppMode.fromNombre`/`.nombre` hacen la conversión en el lado de
-  /// `Settings`.
-  String modo;
+  /// Rich Presence de Discord. El interruptor va apagado por defecto: mostrar
+  /// lo que escuchas es una decisión del usuario, aunque el Client ID ya
+  /// venga listo de fábrica.
+  bool discordRpcEnabled;
+
+  /// Client ID de la aplicación de Discord para Rich Presence. Por defecto
+  /// [kDiscordClientId], pero editable desde Ajustes por si alguien prefiere
+  /// su propia app.
+  String discordClientId;
 
   AppConfig({
     this.clientId = kDefaultClientId,
@@ -187,7 +207,8 @@ class AppConfig {
     this.bitrate = 320,
     this.performanceMode = false,
     this.volumenNeoTube = 60,
-    this.modo = 'neofy',
+    this.discordRpcEnabled = false,
+    this.discordClientId = kDiscordClientId,
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -203,7 +224,8 @@ class AppConfig {
         bitrate: (map['bitrate'] as int?) ?? 320,
         performanceMode: (map['performanceMode'] as bool?) ?? false,
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
-        modo: (map['modo'] as String?) ?? 'neofy',
+        discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
+        discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
       );
     } catch (_) {
       // Un config corrupto no debe impedir arrancar: se vuelve a los valores
@@ -219,7 +241,9 @@ class AppConfig {
       'bitrate': bitrate,
       'performanceMode': performanceMode,
       'volumenNeoTube': volumenNeoTube,
-      'modo': modo,
+      'discordRpcEnabled': discordRpcEnabled,
+      'discordClientId': discordClientId,
     }));
   }
 }
+

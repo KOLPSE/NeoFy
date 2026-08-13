@@ -392,95 +392,56 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   `start()` hace `taskkill /F /IM librespot.exe` antes de lanzar el suyo. Es seguro porque
   la app es de instancia única.
 
-## NeoTube: trampas de la API interna de YouTube Music
+## La vía libre: sonar sin Premium
 
-NeoTube es el **segundo modo completo** de la app (`lib/core/app_mode.dart`): su propia
-sesión, su propia biblioteca y su propio reproductor. No es una pestaña dentro de NeoFy.
+La Web API de Spotify **exige Premium para controlar la reproducción**. Sin ella, `/me/player`
+contesta 403 y no hay forma de que librespot suene. La vía libre es la salida: los metadatos
+(listas, biblioteca, carátulas, búsquedas) siguen siendo los de tu cuenta de Spotify, y lo
+único que cambia es de dónde sale el audio — lo pone **YouTube Music**.
 
-La API que usa (`youtubei/v1`, en `lib/core/yt_music_api.dart`) no tiene documentación
-oficial para terceros. Todo lo de aquí abajo está **verificado contra la cuenta real** con
-`tool/probe_yt.dart`, que imprime qué renderers trae cada respuesta y de qué clave cuelgan
-sus elementos. A diferencia de las sondas de Spotify, esta **solo lee** y no rota nada: se
-puede ejecutar con la app abierta.
+Se enciende sola: `_cargarCuenta()` en `main.dart` mira `product` en `/me` y, si no es
+`premium`, construye `ReproduccionLibre` y **para librespot**. A partir de ahí
+`PlayerController` desvía cada orden (`play`, `next`, `seek`, volumen…) a `ReproduccionLibre`,
+que es lo que hace que el resto de la app no se entere: la barra, los atajos, MPRIS y el panel
+de Windows siguen hablando con el mismo controlador de siempre.
 
-- **`APISID` y `SAPISID` son cookies distintas, y firmar con la primera te deja anónimo.**
-  La API se autentica con la cabecera `Cookie` más una firma `SAPISIDHASH` calculada sobre
-  la cookie `SAPISID`. Buscar esa cookie por sufijo (`name.endsWith('APISID')`) parece
-  razonable para tolerar las variantes `__Secure-1PAPISID`/`__Secure-3PAPISID`... salvo que
-  **`APISID` a secas también acaba en `APISID`** y llega antes en la lista de la WebView.
-  Y así es como falla, que es lo peor de todo: **Google no contesta 401 ni 403, contesta 200
-  con la sesión anónima**. La portada llegaba llena (de recomendaciones genéricas para nadie)
-  y solo la biblioteca delataba el problema, con un `messageRenderer` que dice "Inicia sesión
-  para escuchar tus canciones favoritas" donde deberían estar tus playlists. Por eso
-  `YtAuth._nombresDeFirma` es una **lista cerrada y ordenada** y no una búsqueda por sufijo.
-- **`gridRenderer` guarda sus elementos en `items`; todo lo demás, en `contents`.** La
-  biblioteca entera (`FEmusic_liked_playlists`, `FEmusic_liked_albums`…) llega dentro de un
-  `gridRenderer`. Un parseo que solo mire `contents` ve cero elementos y pinta la pantalla
-  vacía sin un solo error de por medio.
-- **Una lista no se reproduce por `videoId`, porque no tiene.** Las tarjetas de listas y
-  álbumes traen un `browseId` (`VL…` para listas, `MPREb_…` para álbumes, `UC…` para
-  artistas) con el que hay que pedir sus pistas *después*. Aplanarlo todo a "pista sin
-  `videoId`" es lo que dejaba únicamente canciones sueltas reproducibles. El `playlistId`
-  que quiere `browse` es el `browseId` **sin el prefijo `VL`**: con él puesto dos veces, 400.
-- **Las mezclas y radios de la portada solo responden por `next`, no por `browse`.** Sus ids
-  empiezan por `RD` y `browse` sobre `VLRD…` falla. `next` es el endpoint que usa el propio
-  reproductor web para llenar su cola, y traga casi cualquier id: es el camino principal para
-  las mezclas y el plan B para todo lo demás.
-- **El `playlistId` de una mezcla no está en la tarjeta, sino en su botón de play.** Hay que
-  bajar hasta
-  `thumbnailOverlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer.playNavigationEndpoint.watchPlaylistEndpoint`.
-- **Las listas y los álbumes llegan en `twoColumnBrowseResultsRenderer`, y la pestaña solo
-  trae la cabecera.** Las pistas están en `secondaryContents`. Quedarse con la pestaña y dar
-  la lista por vacía es el error fácil aquí.
-- **La cabecera de una lista *propia* va envuelta.** Si la puedes editar llega dentro de
-  `musicEditablePlaylistDetailHeaderRenderer`; las ajenas y "Música que me gusta" llegan como
-  `musicResponsiveHeaderRenderer`, y los álbumes todavía como `musicDetailHeaderRenderer`
-  colgando de la raíz.
-- **Una lista larga llega en trozos de 100**, con dos formatos de continuación vivos a la
-  vez: el moderno manda el token en el cuerpo y contesta con `onResponseReceivedActions`; el
-  antiguo lo manda por la URL (`ctoken`/`continuation`/`type=next`) y contesta con
-  `continuationContents`. Se prueban los dos.
-- **La biblioteca no es un `browseId`, son cuatro.** Playlists, álbumes, canciones y artistas
-  viven en endpoints distintos y se piden en paralelo.
-- **La primera tarjeta de la rejilla de biblioteca es el botón "Nueva lista"**: tiene título y
-  carátula, pero no lleva a ningún sitio. Se filtra por `YtItem.tieneDestino`.
-- **El buscador con el filtro de "solo canciones" no puede devolver listas.** Es una obviedad
-  vista así, pero pasarle `params` de canciones era justo lo que impedía llegar a una playlist
-  desde la búsqueda.
+| Fichero | Papel |
+|---|---|
+| `core/reproduccion_libre.dart` | La cola en memoria y el puente con `PlayerController`. |
+| `core/puente_yt.dart` | Dada una pista de Spotify, encuentra su equivalente en YouTube. |
+| `core/yt_music_api.dart` | Cliente de la API interna `youtubei/v1`. |
+| `core/yt_auth.dart` | La sesión de Google, capturada de una WebView. |
+| `core/yt_player.dart` | yt-dlp resuelve la URL, `media_kit` (libmpv) la suena. |
+| `ui/conectar_youtube.dart` | El bloque para conectar la sesión, en el setup y en Ajustes. |
 
-### Los dos modos comparten ventana, teclado y altavoces
+Tres cosas que no son evidentes:
 
-El aislamiento entre NeoFy y NeoTube **no sale gratis**, porque `ModeHost` mantiene los dos
-shells **montados a la vez** (es lo que conserva el scroll y el estado de cada uno al
-alternar). Tres cosas hubo que separar a mano:
+- **Hace falta sesión de YouTube, y se pide en el setup.** Sin ella no hay de dónde sacar el
+  audio y la app se queda muda con una cuenta que por lo demás funciona. Por eso
+  `LoginScreen` lo ofrece desde el primer arranque y no solo cuando ya has entrado y
+  descubierto el problema; después sigue estando en Ajustes, que solo lo enseña si la cuenta
+  **no** es Premium.
+- **La cola vive en memoria, no en Spotify Connect.** No hay dispositivo que consultar ni
+  sondeo que hacer: `ReproduccionLibre` publica el estado en el `PlayerController` cada vez
+  que `media_kit` avanza. Por eso `player_state.dart` está lleno de `if (libre != null)
+  return …`: son las ramas que se saltan todo lo que asume un dispositivo Connect.
+- **La siguiente canción se resuelve por adelantado.** Buscar el equivalente en YouTube y
+  pedirle la URL a yt-dlp tarda; hacerlo al terminar la pista anterior se oiría como un
+  silencio entre canciones.
 
-- **El teclado.** `IgnorePointer` solo tapa el ratón: un evento de teclado va por el árbol de
-  foco, no por el de punteros. El `Focus` de `AppShell` seguía escuchando con NeoTube en
-  pantalla, y el espacio reanudaba Spotify. Y no bastaba con que cada shell filtrara por su
-  cuenta, porque un evento que un `Focus` ignora sube a sus **ancestros**, nunca a un
-  hermano. Los atajos viven ahora en `ui/atajos.dart`, **por encima de los dos**, y reparten
-  según el modo activo. `ModeHost` añade además `ExcludeFocus` sobre el modo que no se ve.
-  ⚠️ Ese `ExcludeFocus` desengancha el foco del shell saliente y lo sube al *scope* raíz, que
-  está por encima del nodo de los atajos: por eso `AtajosDeReproduccion` escucha `modoApp` y
-  lo recupera. Sin eso, el espacio se quedaba mudo justo después de alternar.
-- **Los mandos de fuera.** Teclas multimedia, panel de Windows, MPRIS y menú de la bandeja
-  iban **siempre** a Spotify. Ahora pasan por `_alternar`/`_siguiente`/`_anterior` de
-  `main.dart`, que miran el modo activo, y el estado que se anuncia al escritorio es el del
-  modo activo (`_estadoDeNeoTube` construye un `Track` al vuelo, que es el vocabulario que
-  hablan MPRIS y SMTC).
-- **Los altavoces.** Cambiar de modo pausa el modo que se deja, y arrancar cualquier pista en
-  NeoTube pausa Spotify (`YtPlayer.alEmpezarAReproducir`). Se pausa, **no** se apaga:
-  librespot es lo que mantiene el dispositivo registrado en Spotify Connect y matarlo
-  obligaría a esperar a que se vuelva a registrar. De paso, con NeoTube delante el sondeo de
-  la Web API baja a su ritmo lento: son 1.200 peticiones a la hora para no enseñar nada.
-
-⚠️ **El `mpris:trackid` es una ruta de objeto D-Bus**, y solo admite `[A-Za-z0-9_]`. Los
-`videoId` de YouTube traen `-` con frecuencia: sin sanearlo, D-Bus rechaza el diccionario
-entero y el widget del escritorio se queda sin título ni carátula.
+> **Las trampas de la API interna de YouTube Music no están aquí.** Están documentadas en el
+> repositorio **[NeoTube](https://github.com/KOLPSE/NeoTube)**, que es de donde salió este
+> código: hasta la 0.2.9 fue un segundo modo completo dentro de esta misma app y desde
+> entonces vive por su cuenta. NeoFy se quedó con el núcleo que necesita la vía libre, así que
+> **son dos copias del mismo código**: un arreglo de parseo allí no llega solo hasta aquí.
+>
+> La más cara, por si sirve de aviso: `APISID` y `SAPISID` son cookies **distintas**, y firmar
+> con la primera no da un 401 — da un **200 con la sesión anónima**, así que todo parece
+> funcionar salvo lo único que depende de saber quién eres.
 
 ### yt-dlp: el tercer sidecar
 
-NeoTube no reproduce **nada** sin `yt-dlp`, que es quien resuelve la URL del stream de cada
+La vía libre no reproduce **nada** sin `yt-dlp`, que es quien resuelve la URL del stream de cada
 pista. Se trata como un sidecar más: `YtPlayer.findYtDlpBinary()` lo busca junto al
 ejecutable, luego en `tool/ytdlp-build/bin/` (el árbol de desarrollo) y, por último, **en el
 PATH** — a diferencia de librespot, es el mismo binario que empaqueta cualquier
@@ -491,8 +452,8 @@ distribución, así que el del usuario sirve igual y suele estar más fresco.
   la release anterior puede estar ya muerto.
 - **En Linux se empaqueta `yt-dlp_linux`, el binario autónomo (~40 MB), y no el *zipapp*
   (3 MB)**, que necesitaría un `python3 >= 3.9` en el sistema. Hasta la 0.2.4 era al revés,
-  para ahorrar esos 40 MB en cada artefacto. El problema no era el tamaño: era que NeoTube
-  dejaba de reproducir en cuanto el intérprete no estaba o era viejo, o sea una dependencia
+  para ahorrar esos 40 MB en cada artefacto. El problema no era el tamaño: era que la vía
+  libre dejaba de reproducir en cuanto el intérprete no estaba o era viejo, o sea una dependencia
   que el usuario tiene que entender y resolver antes de que la app le sirva. El autónomo
   trae su propio Python dentro y **ningún paquete declara ya `python3`**. Si algún día se
   vuelve al zipapp, hay que devolver esa dependencia.
@@ -502,7 +463,7 @@ distribución, así que el del usuario sirve igual y suele estar más fresco.
   canción en una copia ya instalada. El contenedor de Arch **no lleva `python` instalado a
   propósito**: es lo que demuestra que el binario es de verdad autónomo, porque el runner de
   Ubuntu trae python de serie y allí la comprobación pasaría igual con el zipapp.
-- Ajustes → NeoTube enseña la versión y la ruta del que se está usando, por lo mismo.
+- Ajustes enseña la versión y la ruta del que se está usando, por lo mismo.
 
 ## RAM: cómo se mide
 
@@ -973,7 +934,7 @@ de por qué mantener cuatro formatos salía caro.
 
 #### ⚠️ Fallos de WebKitGTK en la WebView del login (ventana en blanco y aborto por GBM/DMA-BUF)
 
-El login de NeoTube abre una WebView de verdad (`YtAuth.login()`). Existen **dos fallos independientes** en WebKitGTK al inicializar el soporte gráfico que pueden impedir el login si no se desactivan explícitamente:
+El login de YouTube Music (la vía libre) abre una WebView de verdad (`YtAuth.login()`). Existen **dos fallos independientes** en WebKitGTK al inicializar el soporte gráfico que pueden impedir el login si no se desactivan explícitamente:
 
 1. **Ventana en blanco por composición acelerada (0.2.6)**: WebKitGTK intenta composición acelerada al crear la ventana y, donde no hay un contexto OpenGL utilizable, falla con `Failed to setup compositor shaders, unable to make OpenGL context current`. La ventana sale completamente en blanco, pero WebKit arranca perfectamente (`WebKitWebProcess` y `WebKitNetworkProcess` siguen vivos) y a la app no le llega ningún error.
 
@@ -1024,7 +985,7 @@ sed -i 's|^Exec=.*|Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 /usr/bin/neofy|' \
 
 #### ⚠️ libmpv se abre con `dlopen`, así que `ldd` no la ve
 
-`media_kit`, con el que suena NeoTube, **no empaqueta libmpv en Linux** (a diferencia de
+`media_kit`, con el que suena la vía libre, **no empaqueta libmpv en Linux** (a diferencia de
 Windows, donde `libmpv-2.dll` viaja dentro del paquete): la busca en el sistema y la abre en
 caliente al llamar a `MediaKit.ensureInitialized()`. Nadie enlaza contra ella, así que **no
 aparece en `ldd`** y el binario parece completo sin estarlo.
@@ -1041,15 +1002,15 @@ Dos cosas lo cierran, y hacen falta las dos:
   soname en Debian 13 y Ubuntu 24.04), y en el `.rpm` va **por soname**
   (`libmpv.so.2()(64bit)`) porque el paquete se llama `mpv-libs` en Fedora y `libmpv2` en
   openSUSE, pero los dos declaran el mismo `Provides`.
-- **Que faltar no mate la app.** La llamada va en un `try`/`catch` que apaga NeoTube
-  (`YtPlayer.libmpvDisponible`) y deja NeoFy entera, que suena por librespot en otro proceso y
+- **Que faltar no mate la app.** La llamada va en un `try`/`catch` que apaga la vía libre
+  (`YtPlayer.libmpvDisponible`) y deja NeoFy entera, que con Premium suena por librespot en otro proceso y
   no depende de libmpv para nada. Hace falta por el tarball, que no tiene forma de exigir nada
-  a nadie. En ese estado el shell de NeoTube enseña qué paquete instalar en vez de aceptar
-  pulsaciones que no harían nada.
+  a nadie. En ese estado Ajustes enseña qué paquete instalar en vez de dejar la app muda sin
+  explicar por qué.
 
 Y una tercera para que no se repita: el job `arch` **arranca la app de verdad**
 (`dbus-run-session xvfb-run`), comprueba que sigue viva a los 25 s y que no ha renunciado a
-NeoTube por el camino. Es el único paso que la ejecuta; todo lo demás mira ficheros y
+la vía libre por el camino. Es el único paso que la ejecuta; todo lo demás mira ficheros y
 enlazado estático, que es exactamente lo que no pilla un `dlopen`. Por eso `mpv` **no** se
 instala a mano en el paso de dependencias del job: lo tiene que traer `pacman -U` resolviendo
 las del paquete, o la comprobación no comprobaría nada.

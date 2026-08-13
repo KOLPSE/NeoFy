@@ -9,7 +9,7 @@ import 'package:neofy/core/yt_player.dart';
 /// `runApp()`, en un Arch sin `mpv` instalado la app abría y se cerraba sin
 /// ventana y sin un mensaje que mirar. El arreglo de verdad es que los paquetes
 /// declaren la dependencia; esto es la red de seguridad para quien instala el
-/// tarball, que no puede exigir nada: NeoTube se apaga y NeoFy sigue entera.
+/// tarball, que no puede exigir nada: la via libre se apaga y NeoFy sigue entera.
 ///
 /// Lo que se fija aquí es que **construir el reproductor sin libmpv no lanza**.
 /// Antes ni se podía llegar a intentar: el objeto se creaba en el constructor
@@ -17,7 +17,7 @@ import 'package:neofy/core/yt_player.dart';
 /// completa, NeoFy incluido.
 void main() {
   // Se restaura al terminar: es estado global y dejarlo tocado apagaría
-  // NeoTube en cualquier test que corra después en este mismo proceso.
+  // la via libre en cualquier test que corra después en este mismo proceso.
   tearDown(() => YtPlayer.libmpvDisponible = true);
 
   YtPlayer sinLibmpv() {
@@ -30,7 +30,7 @@ void main() {
     addTearDown(p.dispose);
 
     expect(p.disponible, isFalse);
-    // Con algo que enseñar: la pantalla de NeoTube lo pinta tal cual, y un
+    // Con algo que enseñar: la interfaz lo pinta tal cual, y un
     // hueco en blanco no le dice a nadie que le falta un paquete.
     expect(p.error, isNotEmpty);
     // El volumen guardado se conserva aunque no haya nada a lo que aplicarlo:

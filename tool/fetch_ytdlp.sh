@@ -22,7 +22,7 @@ bin="$destino/yt-dlp"
 # `yt-dlp`, que es el zipapp (3 MB) y necesita un python3 >= 3.9 en el sistema.
 #
 # Lo era al reves hasta la 0.2.4, para ahorrar 40 MB en cada artefacto. El
-# problema no es el tamano sino que NeoTube dejaba de reproducir en cuanto el
+# problema no es el tamano sino que la via libre dejaba de reproducir en cuanto el
 # interprete no estaba o era viejo, y eso es una dependencia que el usuario
 # tiene que entender y resolver antes de que la app le sirva. El autonomo trae
 # su propio Python dentro: ni los paquetes lo declaran ni hay nada que instalar.

@@ -11,20 +11,18 @@ import '../core/updater.dart';
 /// El consumo se enseña aquí y no en una barra permanente porque es un dato de
 /// diagnóstico, no algo que haga falta mirar mientras escuchas música.
 ///
-/// **El mismo diálogo sirve a los dos modos.** Casi todo lo que hay dentro es
-/// de la app entera y no de uno de ellos: la memoria y la CPU las gasta un
-/// único proceso, el modo rendimiento toca la caché de imágenes que comparten
-/// los dos, y la actualización trae un solo binario. Duplicar el diálogo
-/// habría significado mantener dos copias de eso para que solo cambiara un
-/// bloque — de ahí [propiosDelModo], que es justo ese bloque: en NeoFy,
-/// reiniciar la salida de audio de librespot; en NeoTube, el estado de yt-dlp.
+/// Casi todo lo que hay dentro es de la app entera: la memoria y la CPU las
+/// gasta un único proceso, el modo rendimiento toca la caché de imágenes y la
+/// actualización trae un solo binario. Lo que depende de cómo esté sonando la
+/// música entra por [bloquesExtra]: reiniciar la salida de librespot siempre,
+/// y el estado de yt-dlp solo cuando la cuenta va por la vía libre.
 Future<void> mostrarAjustes(
   BuildContext context, {
   required ResourceMonitor monitor,
   required Settings settings,
   required Updater updater,
   required Future<void> Function() onSalirParaActualizar,
-  List<Widget> propiosDelModo = const [],
+  List<Widget> bloquesExtra = const [],
 }) {
   return showDialog<void>(
     context: context,
@@ -33,7 +31,7 @@ Future<void> mostrarAjustes(
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
-      propiosDelModo: propiosDelModo,
+      bloquesExtra: bloquesExtra,
     ),
   );
 }
@@ -44,7 +42,7 @@ class _DialogoAjustes extends StatelessWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
-    required this.propiosDelModo,
+    required this.bloquesExtra,
   });
 
   final ResourceMonitor monitor;
@@ -55,8 +53,8 @@ class _DialogoAjustes extends StatelessWidget {
   /// ejecutable en uso.
   final Future<void> Function() onSalirParaActualizar;
 
-  /// Los bloques que solo tienen sentido en el modo desde el que se abrió.
-  final List<Widget> propiosDelModo;
+  /// Bloques que el llamador añade según cómo esté reproduciendo la app.
+  final List<Widget> bloquesExtra;
 
   @override
   Widget build(BuildContext context) {
@@ -98,20 +96,42 @@ class _DialogoAjustes extends StatelessWidget {
             const Divider(height: 28),
             AnimatedBuilder(
               animation: settings,
-              builder: (context, _) => SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: settings.performanceMode,
-                onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
-                title: const Text('Modo rendimiento'),
-                subtitle: Text(
-                  'Sustituye las carátulas por mosaicos de color y apaga el '
-                  'lector de metadatos. El audio no se toca.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.performanceMode,
+                    onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
+                    title: const Text('Modo rendimiento'),
+                    subtitle: Text(
+                      'Sustituye las carátulas por mosaicos de color y apaga el '
+                      'lector de metadatos. El audio no se toca.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  const Divider(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.discordRpcEnabled,
+                    onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
+                    title: const Text('Mostrar en Discord (Rich Presence)'),
+                    subtitle: Text(
+                      'Enseña en tu perfil de Discord la canción que suena, la '
+                      'siguiente de la cola y un botón a GitHub.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  if (settings.discordRpcEnabled) ...[
+                    const SizedBox(height: 8),
+                    _CampoDiscordClientId(settings: settings),
+                  ],
+                ],
               ),
             ),
-            for (final bloque in propiosDelModo) ...[
+            for (final bloque in bloquesExtra) ...[
               const Divider(height: 12),
               bloque,
             ],
@@ -133,9 +153,9 @@ class _DialogoAjustes extends StatelessWidget {
   }
 }
 
-/// Salida de emergencia para cuando la música se queda muda. **Solo NeoFy**:
-/// es librespot lo que se reinicia, y NeoTube no lo usa (reproduce en este
-/// mismo proceso). Se pasa por `mostrarAjustes(propiosDelModo:)`.
+/// Salida de emergencia para cuando la música se queda muda. Reinicia
+/// librespot, así que **no sirve en la vía libre**, que reproduce en este mismo
+/// proceso. Se pasa por `mostrarAjustes(bloquesExtra:)`.
 ///
 /// La app ya reinicia el audio sola al cambiar la salida del sistema o al ver
 /// un error del backend en el log, pero no todo se detecta: un driver que se
@@ -229,13 +249,8 @@ class _Actualizaciones extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // El nombre del modo activo, no siempre "NeoFy": el binario
-                  // y la versión son los mismos para los dos, pero la app se
-                  // presenta con la identidad del modo en el que estás (es lo
-                  // que hace también el título de la barra lateral).
                   Text(
-                    '${modoApp.value.esNeoTube ? 'NeoTube' : 'NeoFy'} '
-                    '${updater.versionActual}',
+                    'NeoFy ${updater.versionActual}',
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 2),
@@ -324,3 +339,72 @@ class _Medida extends StatelessWidget {
     );
   }
 }
+
+class _CampoDiscordClientId extends StatefulWidget {
+  const _CampoDiscordClientId({required this.settings});
+
+  final Settings settings;
+
+  @override
+  State<_CampoDiscordClientId> createState() => _CampoDiscordClientIdState();
+}
+
+class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
+  late final TextEditingController _controller;
+  late final FocusNode _foco;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.settings.discordClientId);
+    // Guardar (y reconectar a Discord) al vuelo en cada letra escribiría en
+    // disco y reintentaría el handshake decenas de veces mientras se pega o
+    // se teclea el id: se guarda solo al terminar, con Intro o al salir del
+    // campo.
+    _foco = FocusNode()..addListener(_alPerderElFoco);
+  }
+
+  void _alPerderElFoco() {
+    if (!_foco.hasFocus) _guardar();
+  }
+
+  void _guardar() => unawaited(widget.settings.setDiscordClientId(_controller.text));
+
+  @override
+  void didUpdateWidget(covariant _CampoDiscordClientId oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.settings.discordClientId != _controller.text) {
+      _controller.text = widget.settings.discordClientId;
+    }
+  }
+
+  @override
+  void dispose() {
+    _foco.removeListener(_alPerderElFoco);
+    _foco.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return TextField(
+      controller: _controller,
+      focusNode: _foco,
+      decoration: InputDecoration(
+        labelText: 'Client ID de Discord',
+        hintText: 'Pega aquí el Client ID de tu aplicación',
+        helperText:
+            'Crea una app en el Discord Developer Portal con un asset llamado "logo"',
+        helperMaxLines: 2,
+        helperStyle: theme.textTheme.bodySmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      onSubmitted: (_) => _guardar(),
+    );
+  }
+}
+
