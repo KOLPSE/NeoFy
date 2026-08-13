@@ -111,6 +111,17 @@ void main() {
       expect(assets['large_image'], 'logo');
       expect(assets['large_text'], 'NeoFy');
     });
+
+    test('tipo de actividad 2 (Escuchando), no 0 (Jugando)', () {
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      expect(actividad['type'], 2);
+    });
   });
 
   group('DiscordRpc.construirPayloadSetActivity', () {

@@ -242,6 +242,9 @@ class DiscordRpc {
         (ahora ?? DateTime.now()).millisecondsSinceEpoch - progresoMs;
 
     return {
+      // Sin esto Discord asume el tipo 0 (Jugando) y NeoFy sale como si fuera
+      // un juego. 2 es "Escuchando", el tipo pensado para reproductores.
+      'type': 2,
       'details': track.name,
       'state': stateStr,
       if (sonando) 'timestamps': {'start': startEpoch},
