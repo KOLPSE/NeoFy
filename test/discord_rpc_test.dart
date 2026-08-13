@@ -183,6 +183,40 @@ void main() {
 
       expect(actividad['type'], 2);
     });
+
+    test('con pista de Spotify normal incluye sync_id y flags para enlace con Spotify', () {
+      final actividad = DiscordRpc.construirActividad(
+        track: _track(id: '4cOdK2wGLETKBW3PvgPWqT', isLocal: false),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      expect(actividad['sync_id'], '4cOdK2wGLETKBW3PvgPWqT');
+      expect(actividad['flags'], 48);
+    });
+
+    test('con tema local o sin ID de Spotify, ni sync_id ni flags aparecen en el mapa', () {
+      final actividadLocal = DiscordRpc.construirActividad(
+        track: _track(id: 'local-123', isLocal: true),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      expect(actividadLocal.containsKey('sync_id'), isFalse);
+      expect(actividadLocal.containsKey('flags'), isFalse);
+
+      final actividadSinId = DiscordRpc.construirActividad(
+        track: _track(id: '', isLocal: false),
+        siguiente: null,
+        sonando: true,
+        progresoMs: 0,
+      );
+
+      expect(actividadSinId.containsKey('sync_id'), isFalse);
+      expect(actividadSinId.containsKey('flags'), isFalse);
+    });
   });
 
   group('DiscordRpc.construirPayloadSetActivity', () {

@@ -294,6 +294,12 @@ class DiscordRpc {
       'type': 2,
       'details': track.name,
       'state': stateStr,
+      // Flags experimentales de Discord (SYNC: 16 | PLAY: 32 = 48) y sync_id
+      // para intentar que Discord abra la pista en Spotify al pulsar en el
+      // título (details). Solo aplica a temas del catálogo con ID válido; si
+      // Discord lo ignora por ser cliente no verificado, degrada en silencio.
+      if (!track.isLocal && track.id.isNotEmpty) 'sync_id': track.id,
+      if (!track.isLocal && track.id.isNotEmpty) 'flags': 48, // SYNC (16) | PLAY (32)
       // Los dos timestamps a la vez son lo que dibuja la barra de progreso;
       // con solo "start" Discord se limita a enseñar el tiempo transcurrido
       // en texto, sin barra.
