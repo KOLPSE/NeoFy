@@ -6,6 +6,7 @@ import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import 'art_image.dart';
+import 'like_button.dart';
 
 String formatMs(int ms) {
   final total = (ms / 1000).round();
@@ -71,24 +72,36 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 200,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            track?.name ?? 'Nada sonando',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  track?.name ?? 'Nada sonando',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  track?.artists ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
                           ),
-                          Text(
-                            track?.artists ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                          ),
+                          if (widget.likes != null && track != null && track.uri.isNotEmpty)
+                            LikeButton(
+                              likes: widget.likes!,
+                              uri: track.uri,
+                              size: 20,
+                            ),
                         ],
                       ),
                     ),
