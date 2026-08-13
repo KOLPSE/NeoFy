@@ -19,6 +19,19 @@ const String kDefaultClientId = '';
 /// ¿Hay Client ID configurado? Sin él no se puede ni empezar el login.
 bool get hayClientId => kDefaultClientId.isNotEmpty;
 
+/// Client ID de la aplicación de NeoFy en Discord, para el Rich Presence.
+///
+/// A diferencia de [kDefaultClientId], **este sí va compilado con un valor
+/// real**: no es un caso equivalente. El Client ID de Spotify abre un flujo de
+/// autorización con un tope real de 25 usuarios en Modo Desarrollo, así que
+/// publicarlo le agotaría la cuota a su dueño. El de Discord no autoriza nada
+/// ni tiene límite de usuarios: es solo la etiqueta (nombre e icono) que
+/// Discord IPC usa para identificar de qué app viene la presencia, y cada
+/// usuario sigue viendo únicamente su propia canción en su propia cuenta,
+/// hablando con su propio Discord local. Se puede sobrescribir desde Ajustes
+/// por si alguien prefiere su propia app.
+const String kDiscordClientId = '1537557680024199198';
+
 /// Versión de NeoFy.
 ///
 /// ⚠️ **Esta constante es la única fuente de la verdad.** `build_installer.ps1`
@@ -178,10 +191,14 @@ class AppConfig {
   /// todo el que venga de una versión anterior, y no se gana nada.
   int volumenNeoTube;
 
-  /// Rich Presence de Discord opcional.
+  /// Rich Presence de Discord. El interruptor va apagado por defecto: mostrar
+  /// lo que escuchas es una decisión del usuario, aunque el Client ID ya
+  /// venga listo de fábrica.
   bool discordRpcEnabled;
 
-  /// Client ID de la aplicación de Discord para Rich Presence.
+  /// Client ID de la aplicación de Discord para Rich Presence. Por defecto
+  /// [kDiscordClientId], pero editable desde Ajustes por si alguien prefiere
+  /// su propia app.
   String discordClientId;
 
   AppConfig({
@@ -191,7 +208,7 @@ class AppConfig {
     this.performanceMode = false,
     this.volumenNeoTube = 60,
     this.discordRpcEnabled = false,
-    this.discordClientId = '',
+    this.discordClientId = kDiscordClientId,
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -208,7 +225,7 @@ class AppConfig {
         performanceMode: (map['performanceMode'] as bool?) ?? false,
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
         discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
-        discordClientId: (map['discordClientId'] as String?) ?? '',
+        discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
       );
     } catch (_) {
       // Un config corrupto no debe impedir arrancar: se vuelve a los valores
