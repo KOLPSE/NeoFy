@@ -304,8 +304,11 @@ class DiscordRpc {
         // El mini logo de la esquina, igual que hace Spotify con el suyo:
         // este sí tiene que ser la clave subida al Developer Portal, porque
         // small_image (a diferencia de large_image) no admite URLs externas.
+        // El texto al pasar el ratón por encima lleva al repositorio: es el
+        // único sitio del RPC donde el enlace se ve siempre, sin depender de
+        // que Discord decida mostrar los botones.
         'small_image': 'logo',
-        'small_text': 'NeoFy',
+        'small_text': 'github.com/KOLPSE/NeoFy',
       },
       'buttons': const [
         {

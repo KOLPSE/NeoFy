@@ -13,6 +13,7 @@ Track _track({
   String? artSmall = 'https://i.scdn.co/image/pequena',
   String? artMedium = 'https://i.scdn.co/image/mediana',
   int durationMs = 213573,
+  bool isLocal = false,
 }) =>
     Track(
       id: id,
@@ -23,7 +24,7 @@ Track _track({
       artSmall: artSmall,
       artMedium: artMedium,
       durationMs: durationMs,
-      isLocal: false,
+      isLocal: isLocal,
     );
 
 void main() {
@@ -169,7 +170,7 @@ void main() {
 
       final assets = actividad['assets'] as Map<String, dynamic>;
       expect(assets['small_image'], 'logo');
-      expect(assets['small_text'], 'NeoFy');
+      expect(assets['small_text'], 'github.com/KOLPSE/NeoFy');
     });
 
     test('tipo de actividad 2 (Escuchando), no 0 (Jugando)', () {
