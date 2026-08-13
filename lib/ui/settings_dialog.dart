@@ -351,12 +351,24 @@ class _CampoDiscordClientId extends StatefulWidget {
 
 class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
   late final TextEditingController _controller;
+  late final FocusNode _foco;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.settings.discordClientId);
+    // Guardar (y reconectar a Discord) al vuelo en cada letra escribiría en
+    // disco y reintentaría el handshake decenas de veces mientras se pega o
+    // se teclea el id: se guarda solo al terminar, con Intro o al salir del
+    // campo.
+    _foco = FocusNode()..addListener(_alPerderElFoco);
   }
+
+  void _alPerderElFoco() {
+    if (!_foco.hasFocus) _guardar();
+  }
+
+  void _guardar() => unawaited(widget.settings.setDiscordClientId(_controller.text));
 
   @override
   void didUpdateWidget(covariant _CampoDiscordClientId oldWidget) {
@@ -368,6 +380,8 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
 
   @override
   void dispose() {
+    _foco.removeListener(_alPerderElFoco);
+    _foco.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -377,6 +391,7 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
     final theme = Theme.of(context);
     return TextField(
       controller: _controller,
+      focusNode: _foco,
       decoration: InputDecoration(
         labelText: 'Client ID de Discord',
         hintText: 'Pega aquí el Client ID de tu aplicación',
@@ -388,8 +403,7 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
         isDense: true,
         border: const OutlineInputBorder(),
       ),
-      onChanged: (valor) =>
-          unawaited(widget.settings.setDiscordClientId(valor)),
+      onSubmitted: (_) => _guardar(),
     );
   }
 }
