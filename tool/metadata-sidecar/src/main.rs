@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use librespot_core::cache::Cache;
@@ -20,17 +20,20 @@ use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_core::SpotifyUri;
 use librespot_metadata::{Metadata, Playlist, Track};
+use librespot_protocol as protocol;
+use protobuf::Message;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 const PUERTO_POR_DEFECTO: u16 = 8900;
 
-/// Una playlist ya resuelta. `Playlist::get` trae la lista entera de una vez,
-/// asi que se guarda: pedir la pagina 2 no debe volver a descargar las 3.000
-/// referencias.
+/// Una playlist ya resuelta. `obtener_lista` trae la lista completa (paginando
+/// por el protocolo interno si Spotify la devolvió truncada), así que se guarda
+/// para que pedir páginas sucesivas no vuelva a consultar a Spotify.
 struct ListaCacheada {
     nombre: String,
+    total: usize,
     pistas: Vec<SpotifyUri>,
 }
 
@@ -59,6 +62,31 @@ fn fallo(code: StatusCode, msg: impl Into<String>) -> Fallo {
     (code, Json(json!({ "error": msg.into() })))
 }
 
+fn resolver_cache_dir() -> Result<PathBuf, String> {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let neofy = PathBuf::from(&appdata).join("neofy").join("librespot");
+        if neofy.exists() {
+            return Ok(neofy);
+        }
+        let legacy = PathBuf::from(&appdata).join("spotify-native").join("librespot");
+        if legacy.exists() {
+            return Ok(legacy);
+        }
+        return Ok(neofy);
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return Ok(PathBuf::from(xdg).join("neofy").join("librespot"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            return Ok(PathBuf::from(home).join(".config").join("neofy").join("librespot"));
+        }
+    }
+    Err("No se pudo determinar el directorio de datos (APPDATA o HOME no definidos)".into())
+}
+
 #[tokio::main]
 async fn main() {
     let puerto: u16 = std::env::args()
@@ -66,14 +94,13 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(PUERTO_POR_DEFECTO);
 
-    let appdata = match std::env::var("APPDATA") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("ERROR: no hay APPDATA en el entorno");
+    let cache_dir = match resolver_cache_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("ERROR: {e}");
             std::process::exit(2);
         }
     };
-    let cache_dir = PathBuf::from(appdata).join("spotify-native").join("librespot");
 
     let cache = match Cache::new(Some(&cache_dir), Some(&cache_dir), None, None) {
         Ok(c) => c,
@@ -163,7 +190,7 @@ async fn playlist(
 
     Ok(Json(RespuestaPlaylist {
         name: lista.nombre.clone(),
-        total: lista.pistas.len(),
+        total: lista.total,
         items: recogidas.into_iter().map(|(_, v)| v).collect(),
     }))
 }
@@ -176,13 +203,94 @@ async fn obtener_lista(estado: &Estado, id: &str) -> Result<Arc<ListaCacheada>, 
     let uri = SpotifyUri::from_uri(&format!("spotify:playlist:{id}"))
         .map_err(|e| fallo(StatusCode::BAD_REQUEST, format!("id de playlist invalido: {e}")))?;
 
+    let playlist_id = match uri {
+        SpotifyUri::Playlist { id: pid, .. } => pid,
+        _ => return Err(fallo(StatusCode::BAD_REQUEST, "no es una URI de playlist")),
+    };
+
     let pl = Playlist::get(&estado.session, &uri)
         .await
         .map_err(|e| fallo(StatusCode::BAD_GATEWAY, format!("Spotify no devolvio la playlist: {e}")))?;
 
+    let total_declarado = pl.length.max(0) as usize;
+    let mut pistas: Vec<SpotifyUri> = pl.contents.items.iter().map(|item| item.id.clone()).collect();
+
+    // Paginación interna para playlists grandes o truncadas:
+    //
+    // Spotify trunca o devuelve solo la primera ventana en peticiones estándar a
+    // `/playlist/v2/playlist/{id}`. Tras verificación empírica contra la API real:
+    // - Cabecera `Range: items=X-Y` o `Range: items=X-`: ignorada por Spotify (devuelve desde 0).
+    // - Sufijo de ruta `/range/X/Y`: devuelve 404 Not Found.
+    // - Query params `?offset=X&limit=Y`: ignorados por Spotify (devuelve desde 0).
+    // - Query params `?from=X&length=Y`: SÍ responde devolviendo la ventana exacta solicitada
+    //   (con `contents.pos = X` y hasta `length` elementos).
+    //
+    // Solicitamos en bloques de hasta 100 canciones mientras falten pistas para completar
+    // el `total_declarado` o mientras `pl.contents.is_truncated` sea `true`.
+    let batch_size = 100;
+    while pl.contents.is_truncated || pistas.len() < total_declarado {
+        let from = pistas.len();
+        if from >= total_declarado && !pl.contents.is_truncated {
+            break;
+        }
+        let length = if total_declarado > from {
+            (total_declarado - from).min(batch_size)
+        } else {
+            batch_size
+        };
+
+        let playlist_b62 = match playlist_id.to_base62() {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Error codificando playlist id en base62: {e}");
+                break;
+            }
+        };
+
+        let endpoint = format!("/playlist/v2/playlist/{playlist_b62}?from={from}&length={length}");
+        let bytes = match estado.session.spclient().request(&Method::GET, &endpoint, None, None).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Aviso: fallo al paginar playlist {id} en from={from}: {e}");
+                break;
+            }
+        };
+
+        let proto = match protocol::playlist4_external::SelectedListContent::parse_from_bytes(&bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Aviso: error parseando respuesta proto de playlist {id}: {e}");
+                break;
+            }
+        };
+
+        let contents = proto.contents.unwrap_or_default();
+        if contents.items.is_empty() {
+            break;
+        }
+
+        let mut anadidas = 0;
+        for item in contents.items.iter() {
+            if let Ok(t_uri) = SpotifyUri::from_uri(item.uri()) {
+                pistas.push(t_uri);
+                anadidas += 1;
+            }
+        }
+
+        // Salvaguarda contra bucle infinito si la respuesta no aportó elementos nuevos
+        if anadidas == 0 {
+            break;
+        }
+
+        if !contents.truncated() && pistas.len() >= total_declarado {
+            break;
+        }
+    }
+
     let lista = Arc::new(ListaCacheada {
         nombre: pl.name().to_string(),
-        pistas: pl.tracks().cloned().collect(),
+        total: total_declarado.max(pistas.len()),
+        pistas,
     });
     estado.listas.lock().await.insert(id.to_string(), lista.clone());
     Ok(lista)

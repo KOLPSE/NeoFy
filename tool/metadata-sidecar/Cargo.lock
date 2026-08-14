@@ -1153,6 +1153,8 @@ dependencies = [
  "axum",
  "librespot-core",
  "librespot-metadata",
+ "librespot-protocol",
+ "protobuf",
  "serde",
  "serde_json",
  "tokio",
