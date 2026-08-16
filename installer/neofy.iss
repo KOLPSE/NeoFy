@@ -1,21 +1,4 @@
-; Instalador de NeoFy (Inno Setup 6).
-;
-; Empaqueta los TRES ejecutables en uno solo: la interfaz, librespot (audio) y
-; el sidecar de metadatos. Sin esto, publicar el proyecto obligaba a cada
-; usuario a compilar Rust por su cuenta.
-;
-; Se genera con:
-;   powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1
-;
-; Es un instalador **por usuario** (PrivilegesRequired=lowest): no pide
-; administrador, no toca Archivos de programa y no necesita firma para
-; instalarse. Para una app que solo escribe en %APPDATA% y %LOCALAPPDATA% no
-; hace falta más, y quita la fricción de un SmartScreen pidiendo elevación.
-
 #define Nombre    "NeoFy"
-; La versión la inyecta build_installer.ps1 leyéndola de `kVersion` en
-; lib/core/app_config.dart, que es la única fuente de la verdad: así el
-; instalador y el actualizador no pueden decir cosas distintas.
 #ifndef Version
   #define Version "0.0.0"
 #endif
@@ -45,7 +28,6 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 1809 en adelante, que es lo que pide Flutter en escritorio.
 MinVersion=10.0.17763
 
 [Languages]
@@ -57,9 +39,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startup"; Description: "Iniciar NeoFy al encender el equipo"; GroupDescription: "Inicio"; Flags: unchecked
 
 [Files]
-; Todo el contenido de la carpeta Release: el exe, flutter_windows.dll, los
-; plugins, la carpeta data\ con los assets... y los dos sidecars, que el script
-; de compilación deja ahí antes de invocar a Inno.
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -69,28 +48,15 @@ Name: "{autodesktop}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: desktop
 Name: "{userstartup}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: startup
 
 [Run]
-; Instalación normal: la casilla de "ejecutar ahora" del final del asistente.
 Filename: "{app}\{#Ejecutable}"; Description: "{cm:LaunchProgram,{#Nombre}}"; Flags: nowait postinstall skipifsilent
-; ⚠️ Y en silencio hay que lanzarla igualmente, sin casilla que marcar. Una
-; actualización desde la propia app va con `/SILENT` (ver `updater.dart`), y
-; ahí `skipifsilent` se saltaba la línea de arriba: la app se cerraba para
-; dejarse actualizar y no volvía nunca, mientras Ajustes había prometido que
-; "NeoFy se reiniciará". `runasoriginaluser` importa si alguien elevó el
-; instalador a mano: sin él, NeoFy se quedaría corriendo como administrador.
 Filename: "{app}\{#Ejecutable}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
-; Los sidecars sobreviven a un cierre a lo bruto de la app. Si el usuario
-; desinstala con la música sonando, quedarían dos procesos huérfanos ocupando
-; el nombre del dispositivo en Spotify Connect y sin ventana que los pare.
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM neofy.exe"; Flags: runhidden; RunOnceId: "MatarApp"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM librespot.exe"; Flags: runhidden; RunOnceId: "MatarAudio"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM metadata-sidecar.exe"; Flags: runhidden; RunOnceId: "MatarMeta"
 
 [UninstallDelete]
-; La caché de carátulas y de audio se puede regenerar; no tiene sentido dejarla
-; ocupando disco tras desinstalar. Los tokens y las credenciales NO se tocan
-; aquí a propósito: si el usuario reinstala, no tendrá que volver a loguearse.
 Type: filesandordirs; Name: "{userappdata}\neofy\art"
 Type: filesandordirs; Name: "{userappdata}\neofy\librespot\audio"
 
@@ -99,11 +65,6 @@ var
   PaginaClientId: TInputQueryWizardPage;
   EditRedirect: TNewEdit;
 
-// ¿Hay algún proceso con ese nombre?
-//
-// El código de salida lo da `find`, que sale con 1 si no encuentra la línea:
-// `tasklist` sale con 0 tanto si hay proceso como si no, así que preguntarle a
-// él directamente no distingue los dos casos.
 function ProcesoVivo(Nombre: String): Boolean;
 var
   Codigo: Integer;
@@ -114,8 +75,6 @@ begin
                  '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0);
 end;
 
-// Espera a que el proceso desaparezca de la lista, como mucho `Intentos`
-// cuartos de segundo. Devuelve si se fue.
 function EsperarAQueMuera(Nombre: String; Intentos: Integer): Boolean;
 var
   i: Integer;
@@ -132,20 +91,12 @@ begin
   Result := not ProcesoVivo(Nombre);
 end;
 
-// Instalar encima de una copia en marcha deja ficheros bloqueados y el
-// instalador falla a mitad. Se cierra todo antes de empezar.
 function InitializeSetup(): Boolean;
 var
   Codigo: Integer;
 begin
-  // Cuando la actualización sale de la propia app, NeoFy ya se está cerrando
-  // por las buenas mientras esto corre (`updater.dart` lanza el instalador y
-  // acto seguido sale). Se le dan cuatro segundos para que termine él solo:
-  // así para los sidecars por las buenas y suelta la bandeja y MPRIS.
   EsperarAQueMuera('neofy.exe', 16);
 
-  // Y lo que siga vivo —un cuelgue, o alguien que ha ejecutado el instalador a
-  // mano con la app abierta—, a la fuerza.
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM neofy.exe', '',
        SW_HIDE, ewWaitUntilTerminated, Codigo);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM librespot.exe', '',
@@ -153,13 +104,6 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM metadata-sidecar.exe', '',
        SW_HIDE, ewWaitUntilTerminated, Codigo);
 
-  // ⚠️ **Esperar aquí no es opcional, y es el motivo de que exista todo esto.**
-  // `ewWaitUntilTerminated` espera a que termine `taskkill`, no a que termine
-  // NeoFy: taskkill vuelve en cuanto *pide* la muerte del proceso. Durante ese
-  // rato `flutter_windows.dll` sigue mapeada y el copiado falla con un "no se
-  // puede borrar el fichero" que **se arregla solo dándole a Reintentar**, que
-  // es exactamente el error que salía en cada actualización. Parecía cosa de
-  // permisos y no lo era: un error de permisos no se cura reintentando.
   EsperarAQueMuera('neofy.exe', 40);
   EsperarAQueMuera('librespot.exe', 40);
   EsperarAQueMuera('metadata-sidecar.exe', 40);
@@ -174,8 +118,6 @@ begin
             SW_SHOWNORMAL, ewNoWait, Codigo);
 end;
 
-// El Client ID ya configurado, si el usuario reinstala o actualiza. Evita
-// pedirle otra vez algo que ya dio.
 function ClientIdGuardado(): String;
 var
   Contenido: AnsiString;
@@ -187,8 +129,6 @@ begin
     Exit;
   Inicio := Pos('"clientId"', Contenido);
   if Inicio = 0 then Exit;
-  // Saltar hasta la comilla que abre el valor, pasando por encima de los dos
-  // puntos y de los espacios que pudiera haber si alguien lo editó a mano.
   Inicio := Inicio + Length('"clientId"');
   while (Inicio <= Length(Contenido)) and (Contenido[Inicio] <> '"') do
     Inicio := Inicio + 1;
@@ -215,8 +155,6 @@ begin
     'Puedes dejarlo en blanco y hacerlo más tarde desde la propia aplicación.');
 
   PaginaClientId.Add('Client ID:', False);
-  // `/CLIENTID=xxx` permite instalaciones desatendidas sin pasar por la
-  // interfaz; si no viene, se recupera el que ya estuviera configurado.
   if ExpandConstant('{param:clientid|}') <> '' then
     PaginaClientId.Values[0] := ExpandConstant('{param:clientid|}')
   else
@@ -243,8 +181,6 @@ begin
     '2. Marca "Web API" y pon este Redirect URI, exactamente así ' +
     '(Spotify ya no acepta "localhost", solo el 127.0.0.1 literal):';
 
-  // Un campo de solo lectura en vez de texto suelto: así se puede seleccionar
-  // y copiar, que es justo lo que hay que hacer con esto.
   EditRedirect := TNewEdit.Create(PaginaClientId);
   EditRedirect.Parent := PaginaClientId.Surface;
   EditRedirect.Left := 0;
@@ -277,9 +213,6 @@ begin
   Valor := Trim(PaginaClientId.Values[0]);
   if Valor = '' then Exit; // Se permite seguir y configurarlo luego.
 
-  // Un Client ID son 32 caracteres hexadecimales. Comprobarlo aquí evita que
-  // un valor mal pegado —o el Client Secret, que mide lo mismo— acabe en un
-  // error incomprensible de Spotify a mitad del login.
   if Length(Valor) <> 32 then
   begin
     MsgBox('El Client ID debe tener 32 caracteres. El que has pegado tiene ' +
@@ -303,8 +236,6 @@ begin
   end;
 end;
 
-// Escribe el Client ID en config.json conservando lo demás: si el usuario ya
-// tenía volumen o modo rendimiento guardados, reinstalar no debe borrárselos.
 procedure GuardarClientId(Valor: String);
 var
   Ruta, Dir: String;

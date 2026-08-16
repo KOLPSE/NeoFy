@@ -1,13 +1,3 @@
-# Descarga el binario de yt-dlp y lo deja donde la app lo busca.
-#
-# A diferencia de librespot, yt-dlp no se compila aqui: es Python empaquetado
-# como binario independiente por el propio proyecto, asi que basta con bajar
-# el ultimo release. Hay que repetir este paso de vez en cuando -YouTube
-# rompe extractores sin aviso y yt-dlp se actualiza para seguirle el paso-,
-# no es un "una vez y ya" como librespot.
-#
-#   powershell -ExecutionPolicy Bypass -File tool\fetch_ytdlp.ps1
-
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot

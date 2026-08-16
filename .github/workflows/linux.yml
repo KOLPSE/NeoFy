@@ -1,35 +1,3 @@
-# Compila NeoFy para Linux y publica el paquete de Arch.
-#
-# Desde la 0.2.6 las unicas plataformas con soporte son Windows y Arch. El .deb
-# y el .rpm se retiraron a proposito: mantener cinco artefactos que nadie podia
-# probar salia mas caro que el alcance que daban. Las releases anteriores
-# conservan los suyos, asi que quien los tenga instalados no se queda sin nada
-# de golpe; simplemente dejan de publicarse nuevos.
-#
-# Quedan tres artefactos por version: el .exe de Inno Setup, que sube
-# tool/release.ps1 desde Windows, y de aqui salen el .pkg.tar.zst de Arch y el
-# tarball. El tarball NO es una descarga para usuarios: es lo que se baja el
-# PKGBUILD, que necesita una url estable. Por eso el job `compilar` sigue
-# existiendo aunque ya no monte instaladores.
-#
-# Va en un workflow aparte del de `ci.yml` a proposito: aquello son treinta
-# segundos de analyze y tests en cada push, y esto son veinte minutos de
-# compilar dos binarios de Rust. Mezclarlos haria esperar a cada push por algo
-# que solo hace falta al publicar o al pedirlo.
-#
-# Dos disparadores, y cada uno tiene su motivo:
-#
-#   - workflow_dispatch: compila y deja el tarball como artefacto descargable.
-#     Es la via para que alguien pruebe en Arch sin instalar Flutter ni Rust,
-#     que es como se esta desarrollando este port (quien compila esta en
-#     Windows y no puede probar nada de esto).
-#
-#   - release published: sube el tarball a la release que acaba de crear
-#     tool/release.ps1, que solo publica el instalador de Windows.
-#
-# ⚠️ El disparador es `release: published`, **no** `push: tags`. release.ps1
-# sube la etiqueta ANTES de crear la release, asi que un workflow colgado del
-# tag arrancaria cuando la release todavia no existe y la subida fallaria.
 name: Linux
 
 on:
@@ -46,18 +14,8 @@ on:
 
 jobs:
   compilar:
-    # ubuntu-latest a proposito y no una distro rolling: su glibc es mas antigua
-    # que la de Arch, y un binario compilado contra una glibc vieja corre en una
-    # nueva, nunca al reves. Compilar aqui es lo que hace que el paquete -bin
-    # sirva en Arch.
     runs-on: ubuntu-latest
 
-    # ⚠️ Sin esto, subir los paquetes falla con un 403 "Resource not accessible
-    # by integration" **despues** de haber compilado todo. El GITHUB_TOKEN de
-    # este repositorio viene con Contents:read por defecto, y para adjuntar
-    # ficheros a una release hace falta escritura. Se declara aqui y no en los
-    # ajustes del repositorio para que el permiso viaje con el workflow y se vea
-    # de un vistazo quien puede escribir que.
     permissions:
       contents: write
 
@@ -65,23 +23,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Dependencias del sistema
-        # libpulse-dev lo pide el backend de audio de librespot; libssl-dev, el
-        # sidecar de metadatos (librespot-core arrastra native-tls por sus
-        # features por defecto). ninja y libgtk-3-dev son de Flutter.
-        #
-        # Ya no hace falta `rpm`: traia el rpmbuild del paquete de Fedora, que
-        # se retiro en la 0.2.6.
-        #
-        # ⚠️ libayatana-appindicator3-dev hace falta **al compilar**, no solo al
-        # ejecutar: el plugin de tray_manager lo busca con pkg-config desde su
-        # CMakeLists y, si no esta, `flutter build linux` ni siquiera llega a
-        # generar los ficheros de build.
-        #
-        # ⚠️ libwebkit2gtk-4.1-dev es lo mismo pero para la WebView del login de
-        # YouTube (desktop_webview_window). Su CMakeLists prueba primero
-        # webkit2gtk-4.1 y, si no lo encuentra, EXIGE webkit2gtk-4.0, que ya no
-        # existe en Ubuntu 24.04: sin el paquete -4.1, `flutter build linux`
-        # muere con "The following required packages were not found".
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -94,8 +35,6 @@ jobs:
           channel: stable
           cache: true
 
-      # El target/ de Rust pasa de 3 GB y compilar librespot de cero son ~20
-      # minutos. Con cache, las siguientes vueltas bajan a un par.
       - name: Cache de Rust
         uses: actions/cache@v4
         with:
@@ -112,38 +51,19 @@ jobs:
       - name: Bundle
         run: ./tool/build_linux_bundle.sh
 
-      # Comprobacion barata que pilla el fallo mas probable de todos: que el
-      # tarball salga sin alguno de los sidecars. Sin librespot la app arranca
-      # pero no suena, y eso solo se descubre usandola.
-      #
-      # Antes esto se hacia sobre el .deb y el .rpm; retirados esos, se hace
-      # sobre el tarball, que es lo que se lleva el PKGBUILD y por tanto lo que
-      # acaba dentro del paquete de Arch.
       - name: Que el tarball este completo
         run: |
           tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
-          # ⚠️ Nada de AssetManifest.json: Flutter lo dejo de generar hace
-          # versiones y ahora es AssetManifest.bin. Las anclas de aqui son las
-          # que el ejecutable necesita SI O SI a su lado para arrancar
-          # (data/ y lib/), mas los tres binarios sueltos.
           for f in neofy librespot metadata-sidecar yt-dlp \
                    xyz.neogex.neofy.desktop LICENSE \
                    data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
             grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
           done
 
-          # Que esten no basta: tienen que poder ARRANCAR. Si no, un usuario lo
-          # descubre pulsando una cancion y sin ninguna pista.
-          #
-          # ⚠️ El contenedor de Arch es el que de verdad prueba que yt-dlp no
-          # necesita python, porque alli no esta instalado; aqui Ubuntu lo trae
-          # de serie y esta comprobacion solo dice que el binario no esta roto.
           tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz -C /tmp
           /tmp/NeoFy-*-linux-x86_64/yt-dlp --version
           echo "El tarball esta completo."
 
-      # Para el probador: se descarga de la pestana de Actions sin necesitar
-      # cuenta de nada ni compilar nada.
       - name: Artefactos
         uses: actions/upload-artifact@v4
         with:
@@ -151,12 +71,6 @@ jobs:
           path: dist/NeoFy-*-linux-x86_64.tar.gz
           retention-days: 30
 
-      # El tarball no es una descarga para usuarios: es lo que se baja el
-      # PKGBUILD de Arch, que necesita una url estable en la release.
-      # Se sube al publicar una release, y tambien a mano indicando una etiqueta
-      # ya publicada. Lo segundo existe porque este paso ya fallo una vez con
-      # todo compilado: sin una via de reintento habria que republicar la
-      # version entera, y reetiquetar una release rompe a quien ya la tenga.
       - name: Subir a la release
         if: github.event_name == 'release' || inputs.tag != ''
         env:
@@ -170,52 +84,20 @@ jobs:
           echo "sha256 para el sha256sums del PKGBUILD:"
           sha256sum dist/NeoFy-*-linux-x86_64.tar.gz
 
-  # Lo unico que ningun otro paso puede comprobar: que un binario compilado en
-  # Ubuntu funcione en Arch, y que el PKGBUILD monte el paquete de verdad.
-  #
-  # Es la apuesta central del empaquetado -bin (glibc vieja corre en glibc
-  # nueva, nunca al reves) y hasta ahora dependia de que alguien con Arch lo
-  # probara a mano. Aqui se responde en dos minutos y en cada vuelta.
   arch:
     needs: compilar
     runs-on: ubuntu-latest
     container: archlinux:latest
 
-    # Publica el paquete y la base de datos del repositorio pacman.
     permissions:
       contents: write
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Las ordenes `gh` se lanzan desde /tmp, fuera del clon, asi que hay que
-      # decirle a que repositorio se refieren.
       GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Dependencias
-        # Exactamente las que declara el PKGBUILD. Que este paso funcione ya
-        # demuestra que los nombres existen en los repositorios de Arch, que es
-        # justo lo que no se puede verificar desde Debian.
-        #
-        # github-cli no es del paquete: hace falta para publicar, y el contenedor
-        # de Arch no lo trae de serie como si hace el runner de Ubuntu.
-        #
-        # xorg-server-xvfb, xorg-xauth y dbus tampoco son del paquete: son lo
-        # que hace falta para ARRANCAR la app aqui dentro, sin pantalla, en el
-        # paso de humo (xvfb-run llama a `xauth`, que en Arch va aparte). Ver
-        # ese paso para por que existe.
-        #
-        # ⚠️ `mpv` (libmpv, el audio de la via libre) se deja fuera A PROPOSITO
-        # aunque el PKGBUILD lo declare. Ponerlo aqui haria que estuviera
-        # instalado pasara lo que pasara, y el paso de humo dejaria de detectar
-        # que el PKGBUILD se lo dejo: lo instala `pacman -U` al resolver las
-        # dependencias del paquete, que es justo lo que se quiere probar.
-        #
-        # ⚠️ Y `python` se deja fuera porque ya NO es dependencia de nada: desde
-        # la 0.2.5 yt-dlp es el binario autonomo, que trae su propio interprete.
-        # Un contenedor sin python es lo que demuestra que de verdad no le hace
-        # falta — el `yt-dlp --version` de mas abajo fallaria si volviera el
-        # zipapp sin devolver la dependencia.
         run: |
           pacman -Syu --noconfirm --needed \
             gtk3 libayatana-appindicator libpulse openssl xdg-utils \
@@ -230,9 +112,6 @@ jobs:
           path: dist
 
       - name: Que los binarios resuelvan sus librerias en Arch
-        # El fallo que buscamos: una .so que exista en Ubuntu y no en Arch, o
-        # con otro soname. Se manifestaria como una app que no arranca y un
-        # mensaje del enlazador que no dice de quien es la culpa.
         run: |
           tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
           cd NeoFy-*-linux-x86_64
@@ -245,14 +124,6 @@ jobs:
               echo "ok  $bin"
             fi
           done
-          # Y las librerias que el propio bundle trae dentro.
-          #
-          # ⚠️ Aqui hace falta LD_LIBRARY_PATH=lib y no es opcional. Las .so de
-          # los plugins no llevan RPATH propio: se cargan dentro del proceso de
-          # neofy, que si lo lleva ($ORIGIN/lib) y para entonces ya tiene
-          # cargada libflutter_linux_gtk.so. Un ldd sobre la .so suelta no
-          # simula eso y las cuatro salen como si les faltara una libreria que
-          # esta en su misma carpeta.
           for so in lib/*.so; do
             faltan="$(LD_LIBRARY_PATH="$PWD/lib" ldd "$so" 2>&1 | grep 'not found' || true)"
             if [ -n "$faltan" ]; then
@@ -263,9 +134,6 @@ jobs:
           echo "Todos los binarios resuelven sus dependencias en Arch."
 
       - name: Que el PKGBUILD y kVersion no se hayan desincronizado
-        # Si el pkgver se queda atras, el PKGBUILD se baja el tarball de una
-        # version anterior y se publica como neofy-bin algo que no es lo que
-        # dice ser.
         run: |
           version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
           pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
@@ -281,28 +149,12 @@ jobs:
           mkdir -p /tmp/pkg
           cp linux/packaging/PKGBUILD /tmp/pkg/
           cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
-          # El PKGBUILD real se baja el tarball de la release; aqui se apunta al
-          # que acabamos de compilar, que es la unica forma de validarlo antes
-          # de que exista ninguna release. El package() no se toca, que es lo
-          # que de verdad se esta probando.
           sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
-          # Y el hash tiene que quedar en SKIP: el del PKGBUILD es el del
-          # tarball PUBLICADO, y este es uno recien compilado. Dos compilaciones
-          # no dan ficheros identicos (marcas de tiempo dentro del tar), asi que
-          # comparar aqui solo conseguiria que el job fallara siempre. Lo que
-          # este paso valida es el package(), no la integridad de la descarga.
           sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
           chown -R builder /tmp/pkg
-          # makepkg se niega a correr como root, de ahi el usuario. --nodeps
-          # porque las dependencias ya estan puestas arriba.
           sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
           ls -la /tmp/pkg/*.pkg.tar.zst
 
-      # El paso de arriba compila una COPIA PARCHEADA del PKGBUILD (source y
-      # sha256sums cambiados), asi que el fichero tal y como esta en el
-      # repositorio —el que se lleva quien quiera montarselo con makepkg— no lo
-      # llega a leer nadie. Aqui se le pasa makepkg por encima para que un error
-      # de sintaxis o un campo mal puesto salga en el CI y no en su maquina.
       - name: Que el PKGBUILD de verdad sea valido
         run: |
           install -dm755 /tmp/srcinfo
@@ -317,41 +169,18 @@ jobs:
           test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
           test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
           test -x /opt/neofy/yt-dlp         || { echo "::error::falta yt-dlp"; exit 1; }
-          # Que arranque de verdad, no solo que el fichero este. Y aqui vale
-          # doble: este contenedor NO tiene python instalado (ver el paso de
-          # dependencias), asi que esto es lo que demuestra que yt-dlp es de
-          # verdad autonomo y que el paquete no necesita un interprete.
           /opt/neofy/yt-dlp --version       || { echo "::error::yt-dlp no arranca"; exit 1; }
           test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
           test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
           test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "::error::falta el .desktop"; exit 1; }
           test -f /usr/share/icons/hicolor/256x256/apps/neofy.png  || { echo "::error::falta el icono"; exit 1; }
-          # El enlace tiene que llevar al binario real: de eso depende que
-          # findBinary() encuentre los sidecars a su lado.
           [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
             echo "::error::el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
           echo "Instalado correctamente."
 
-      # El unico paso que ejecuta la app. Todo lo demas comprueba ficheros y
-      # enlazado estatico, y hay una clase entera de fallo que eso no ve: las
-      # librerias que se abren con dlopen EN CALIENTE. Nadie enlaza contra
-      # ellas, asi que ldd no las nombra y el paquete parece completo.
-      #
-      # Que es justo lo que se escapo en la serie 0.2: media_kit carga libmpv
-      # con dlopen al inicializarse, la llamada va antes de runApp(), el
-      # PKGBUILD no declaraba `mpv` y en Arch la app abria y se cerraba sin
-      # ventana ni mensaje. Los cinco paquetes se publicaron verdes.
-      #
-      # Se comprueban las dos mitades del arreglo: que la app siga viva pasado
-      # el arranque, y que no haya renunciado a la via libre por el camino. Lo
-      # segundo hace falta porque ahora la app SOBREVIVE a que falte libmpv
-      # (apaga la via libre y sigue), asi que sin mirar el log el paquete podria
-      # volver a salir sin la dependencia y este paso pasaria igual.
       - name: Que la app arranque de verdad
         run: |
           export HOME=/root
-          # Sin sesion guardada se queda en la pantalla de login sin tocar la
-          # red ni levantar librespot: es el arranque mas barato que hay.
           dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
           pid=$!
           sleep 25
@@ -386,9 +215,6 @@ jobs:
           path: /tmp/pkg/*.pkg.tar.zst
           retention-days: 30
 
-      # Arch se queda fuera de los instaladores del job anterior porque su
-      # paquete se monta aqui, que es donde hay un Arch de verdad. Se publica en
-      # dos sitios y cada uno resuelve una cosa distinta.
       - name: Publicar el paquete y el repositorio pacman
         if: github.event_name == 'release' || inputs.tag != ''
         run: |
@@ -396,32 +222,15 @@ jobs:
           pkg="$(ls /tmp/pkg/neofy-bin-*.pkg.tar.zst)"
           nombre="$(basename "$pkg")"
 
-          # 1. Suelto, en la release de la version: se instala con una sola
-          #    orden apuntando a la url, sin configurar nada.
           gh release upload "$tag" "$pkg" --clobber
           echo "  $nombre subido a $tag"
 
-          # 2. Como repositorio pacman, en una release de etiqueta fija para que
-          #    la url que la gente pone en pacman.conf no cambie nunca.
           cd /tmp/pkg
           repo-add neofy.db.tar.gz "$nombre"
-          # repo-add deja neofy.db y neofy.files como enlaces simbolicos, y una
-          # release de GitHub no guarda enlaces: se suben como ficheros reales,
-          # que son ademas los nombres exactos que pide pacman.
-          #
-          # ⚠️ Hay que BORRAR el enlace antes de copiar. Con el enlace puesto,
-          # `cp neofy.db.tar.gz neofy.db` resuelve origen y destino al mismo
-          # fichero y falla con "are the same file".
           rm -f neofy.db neofy.files
           cp neofy.db.tar.gz neofy.db
           cp neofy.files.tar.gz neofy.files
 
-          # ⚠️ --latest=false NO es opcional. Si esta release quedara marcada
-          # como la ultima, `releases/latest` devolveria la etiqueta "repo" y el
-          # actualizador de la app (core/updater.dart) la leeria como numero de
-          # version: dejaria de ver las versiones de verdad.
-          # Las notas van por fichero: escritas en linea, sus saltos romperian
-          # el bloque de YAML que contiene este script.
           cat > /tmp/notas-repo.md <<'NOTAS'
           Esta release **no contiene una version de NeoFy**: es el repositorio
           pacman para Arch. Su etiqueta no cambia nunca, para que la url que se
@@ -441,7 +250,6 @@ jobs:
           A partir de ahi se actualiza con el resto del sistema en cada
           `sudo pacman -Syu`.
           NOTAS
-          # El heredoc va indentado para no romper el YAML; se quita aqui.
           sed -i 's/^          //' /tmp/notas-repo.md
 
           if ! gh release view repo >/dev/null 2>&1; then

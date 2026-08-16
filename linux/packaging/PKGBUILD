@@ -1,18 +1,4 @@
 # Maintainer: KOLPSE <https://github.com/KOLPSE>
-#
-# Receta con la que se construye `neofy-bin`, el paquete de Arch. NO va al AUR:
-# el job `arch` de .github/workflows/linux.yml lo compila con makepkg y publica
-# el .pkg.tar.zst en la release y en el repositorio pacman propio (etiqueta
-# `repo`). Vive aqui para que se actualice junto al codigo, y sigue sirviendo a
-# quien prefiera montarselo el mismo con makepkg.
-#
-# Es un paquete -bin porque compilar desde fuentes obligaria a cada usuario a
-# bajarse Flutter entero y a compilar dos binarios de Rust cuyo target/ pasa de
-# 3 GB. El tarball lo genera GitHub Actions sobre ubuntu-latest, cuya glibc es
-# mas antigua que la de Arch: por eso el binario corre aqui.
-#
-# Para subir de version: cambiar pkgver y actualizar sha256sums (el propio
-# workflow lo imprime al terminar).
 
 pkgname=neofy-bin
 _pkgname=neofy
@@ -25,29 +11,10 @@ license=('MIT')
 
 depends=(
   'gtk3'
-  # La bandeja. En GNOME hace falta ademas la extension de AppIndicator; sin
-  # ella el icono no aparece, y por eso la app detecta que no hay bandeja y
-  # deja que la X cierre de verdad en vez de esconderse sin retorno.
   'libayatana-appindicator'
-  # El backend de audio de librespot. Lo aporta pipewire-pulse en cualquier
-  # escritorio moderno.
   'libpulse'
-  # Solo lo pide el sidecar de metadatos: librespot va con rustls, pero
-  # librespot-core arrastra native-tls por sus features por defecto.
   'openssl'
-  # La WebView del login de YouTube (la via libre, para cuentas sin Premium).
-  # Es dependencia dura aunque la cuenta sea Premium y no se use nunca: el
-  # plugin se enlaza al compilar, asi que sin ella el ejecutable ni arranca.
   'webkit2gtk-4.1'
-  # libmpv, con la que suena la via libre. En Arch la trae el paquete `mpv`; no hay
-  # un mpv-libs suelto en los repositorios oficiales.
-  #
-  # ⚠️ Esta se olvido en la 0.2.x y el sintoma fue el peor posible: media_kit
-  # no empaqueta libmpv en Linux, la carga con dlopen al arrancar, y la llamada
-  # va antes de runApp() — la app abria y se cerraba SIN VENTANA NI MENSAJE en
-  # cualquier Arch sin mpv instalado, que son casi todos. Un ldd sobre los
-  # binarios no lo pilla, porque nadie enlaza contra libmpv: se abre en
-  # caliente. De ahi el arranque de verdad que hace el job `arch` del workflow.
   'mpv'
 )
 optdepends=(
@@ -59,29 +26,18 @@ options=('!strip')
 
 _tarball="NeoFy-$pkgver-linux-x86_64"
 source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
-# ⚠️ Hay que actualizarlo EN CADA VERSION, junto con pkgver. Con SKIP, makepkg
-# se traga cualquier cosa que le sirva esa url; con el hash puesto, comprueba
-# que el tarball es exactamente el que se publico.
-#
-# El workflow de Linux lo imprime al terminar de subirlo, y tambien sale con
-# `makepkg -g` o descargando el tarball y pasandole sha256sum.
 sha256sums=('5eea89e08b3e0606bcbefebd456c9df13b53edd079a491f3c6f08bba1ba1a541')
 
 package() {
   cd "$srcdir/$_tarball"
 
-  # El bundle va entero a /opt y no se reparte por /usr: el ejecutable de
-  # Flutter busca data/ y lib/ a su lado, y separarlos lo rompe.
   install -dm755 "$pkgdir/opt/$_pkgname"
   cp -r data lib "$pkgdir/opt/$_pkgname/"
   install -Dm755 neofy "$pkgdir/opt/$_pkgname/neofy"
   install -Dm755 librespot "$pkgdir/opt/$_pkgname/librespot"
   install -Dm755 metadata-sidecar "$pkgdir/opt/$_pkgname/metadata-sidecar"
-  # Sin el, las cuentas sin Premium no suenan.
   install -Dm755 yt-dlp "$pkgdir/opt/$_pkgname/yt-dlp"
 
-  # El enlace es seguro: Dart resuelve Platform.resolvedExecutable al destino
-  # real, asi que findBinary() sigue encontrando los sidecars en /opt.
   install -dm755 "$pkgdir/usr/bin"
   ln -s "/opt/$_pkgname/neofy" "$pkgdir/usr/bin/$_pkgname"
 

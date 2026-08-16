@@ -1,12 +1,3 @@
-//! Sidecar de metadatos: lee por el protocolo interno de Spotify lo que la Web
-//! API deniega en Modo Desarrollo (el contenido de playlists ajenas), y lo sirve
-//! en localhost con la misma forma de JSON que la Web API.
-//!
-//!   metadata-sidecar.exe [puerto]
-//!
-//! Reutiliza las credenciales que librespot ya dejo cacheadas; no pide login.
-//! Escribe la linea "READY <puerto>" en stdout cuando esta listo para atender.
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,9 +19,6 @@ use tokio::sync::Mutex;
 
 const PUERTO_POR_DEFECTO: u16 = 8900;
 
-/// Una playlist ya resuelta. `obtener_lista` trae la lista completa (paginando
-/// por el protocolo interno si Spotify la devolvió truncada), así que se guarda
-/// para que pedir páginas sucesivas no vuelva a consultar a Spotify.
 struct ListaCacheada {
     nombre: String,
     total: usize,
@@ -112,8 +100,7 @@ async fn main() {
     let creds = match cache.credentials() {
         Some(c) => c,
         None => {
-            // Normal en el primer arranque: la app lanza antes librespot, que
-            // hace el login y deja las credenciales aqui.
+
             eprintln!("ERROR: no hay credenciales cacheadas todavia");
             std::process::exit(3);
         }
@@ -143,7 +130,6 @@ async fn main() {
         }
     };
 
-    // El proceso padre espera esta linea para saber que ya puede preguntar.
     println!("READY {puerto}");
 
     if let Err(e) = axum::serve(listener, app).await {
@@ -170,7 +156,6 @@ async fn playlist(
         .cloned()
         .collect();
 
-    // En paralelo: 50 pistas tardan ~85 ms sobre la sesion ya abierta.
     let mut tareas = tokio::task::JoinSet::new();
     for (i, uri) in pagina.into_iter().enumerate() {
         let s = estado.session.clone();
@@ -179,13 +164,12 @@ async fn playlist(
 
     let mut recogidas: Vec<(usize, Value)> = Vec::new();
     while let Some(res) = tareas.join_next().await {
-        // Una pista que no se puede leer (retirada del catalogo, region) se
-        // omite en vez de tumbar la pagina entera.
+
         if let Ok((i, Ok(t))) = res {
             recogidas.push((i, track_a_json(&t)));
         }
     }
-    // JoinSet devuelve en orden de finalizacion; hay que restaurar el de la playlist.
+
     recogidas.sort_by_key(|(i, _)| *i);
 
     Ok(Json(RespuestaPlaylist {
@@ -215,18 +199,6 @@ async fn obtener_lista(estado: &Estado, id: &str) -> Result<Arc<ListaCacheada>, 
     let total_declarado = pl.length.max(0) as usize;
     let mut pistas: Vec<SpotifyUri> = pl.contents.items.iter().map(|item| item.id.clone()).collect();
 
-    // Paginación interna para playlists grandes o truncadas:
-    //
-    // Spotify trunca o devuelve solo la primera ventana en peticiones estándar a
-    // `/playlist/v2/playlist/{id}`. Tras verificación empírica contra la API real:
-    // - Cabecera `Range: items=X-Y` o `Range: items=X-`: ignorada por Spotify (devuelve desde 0).
-    // - Sufijo de ruta `/range/X/Y`: devuelve 404 Not Found.
-    // - Query params `?offset=X&limit=Y`: ignorados por Spotify (devuelve desde 0).
-    // - Query params `?from=X&length=Y`: SÍ responde devolviendo la ventana exacta solicitada
-    //   (con `contents.pos = X` y hasta `length` elementos).
-    //
-    // Solicitamos en bloques de hasta 100 canciones mientras falten pistas para completar
-    // el `total_declarado` o mientras `pl.contents.is_truncated` sea `true`.
     let batch_size = 100;
     while pl.contents.is_truncated || pistas.len() < total_declarado {
         let from = pistas.len();
@@ -277,7 +249,6 @@ async fn obtener_lista(estado: &Estado, id: &str) -> Result<Arc<ListaCacheada>, 
             }
         }
 
-        // Salvaguarda contra bucle infinito si la respuesta no aportó elementos nuevos
         if anadidas == 0 {
             break;
         }
@@ -296,8 +267,6 @@ async fn obtener_lista(estado: &Estado, id: &str) -> Result<Arc<ListaCacheada>, 
     Ok(lista)
 }
 
-/// Convierte una pista al JSON de la Web API, para que el cliente Flutter la
-/// parsee con el mismo `Track.fromJson` que usa para todo lo demas.
 fn track_a_json(t: &Track) -> Value {
     let artistas: Vec<Value> = t
         .artists
@@ -319,8 +288,6 @@ fn track_a_json(t: &Track) -> Value {
     })
 }
 
-/// Spotify sirve las caratulas en `https://i.scdn.co/image/<file_id en hex>`.
-/// librespot da el file_id; la URL se construye a mano.
 fn imagenes(t: &Track) -> Vec<Value> {
     t.album
         .covers

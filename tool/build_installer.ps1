@@ -1,11 +1,4 @@
-﻿# Compila NeoFy entero y lo empaqueta en un instalador único.
-#
-#   powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1
-#
-# Deja en dist\ un solo .exe con la interfaz, librespot y el sidecar de
-# metadatos dentro. Es lo que hay que subir a GitHub Releases.
-#
-# Requiere Inno Setup 6:  winget install JRSoftware.InnoSetup
+﻿
 
 $ErrorActionPreference = 'Stop'
 $raiz = Split-Path -Parent $PSScriptRoot
@@ -13,8 +6,6 @@ Set-Location $raiz
 
 function Paso($texto) { Write-Host "`n=== $texto ===" -ForegroundColor Cyan }
 
-# --- 1. Los sidecars -------------------------------------------------------
-# Se compilan una vez y se quedan cacheados; build_librespot.ps1 ya lo detecta.
 $librespot = "tool\librespot-build\bin\librespot.exe"
 $sidecar   = "tool\metadata-sidecar\target\release\metadata-sidecar.exe"
 
@@ -27,36 +18,23 @@ foreach ($f in @($librespot, $sidecar)) {
   if (-not (Test-Path $f)) { throw "No se encuentra $f" }
 }
 
-# yt-dlp: el descodificador de la via libre. No se compila (es un binario que
-# publica el propio proyecto), pero sin él las cuentas sin Premium no suenan, y el
-# fallo solo se ve al pulsar una canción ya con la app instalada.
-#
-# Se rebaja de golpe cada vez que se empaqueta a propósito: YouTube le rompe
-# los extractores cada pocas semanas, así que el que haya cacheado de la
-# release anterior puede estar ya muerto.
 $ytdlp = "tool\ytdlp-build\bin\yt-dlp.exe"
 Paso "Actualizando yt-dlp (el descodificador de la via libre)"
 & powershell -ExecutionPolicy Bypass -File tool\fetch_ytdlp.ps1
 if ($LASTEXITCODE -ne 0) { throw "Falló la descarga de yt-dlp" }
 if (-not (Test-Path $ytdlp)) { throw "No se encuentra $ytdlp" }
 
-# --- 2. La app -------------------------------------------------------------
 Paso "Compilando NeoFy"
-# Con la app abierta, el enlazador no puede escribir el .exe.
 foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
   Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
-# Flutter sale del PATH, no de una ruta fija: cada uno lo tiene donde le cabe,
-# y una ruta absoluta aquí hace que el script solo funcione en un equipo.
 $flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source
 if (-not $flutter -and $env:FLUTTER_ROOT) {
   $candidato = Join-Path $env:FLUTTER_ROOT 'bin\flutter.bat'
   if (Test-Path $candidato) { $flutter = $candidato }
 }
 if (-not $flutter) {
-  # Sitios habituales, por si alguien no lo tiene en el PATH. Ninguna ruta
-  # personal: para eso está FLUTTER_ROOT.
   foreach ($c in @('C:\src\flutter\bin\flutter.bat',
                    'C:\flutter\bin\flutter.bat',
                    "$env:LOCALAPPDATA\flutter\bin\flutter.bat")) {
@@ -72,12 +50,10 @@ if ($LASTEXITCODE -ne 0) { throw "Falló la compilación de Flutter" }
 
 $release = "build\windows\x64\runner\Release"
 
-# --- 3. Juntarlo todo ------------------------------------------------------
 Paso "Copiando los sidecars junto al ejecutable"
 Copy-Item $librespot $release -Force
 Copy-Item $sidecar   $release -Force
 Copy-Item $ytdlp     $release -Force
-# El .iss empaqueta Release\* entero, así que con copiarlos aquí ya viajan.
 foreach ($n in @('librespot.exe', 'metadata-sidecar.exe', 'yt-dlp.exe')) {
   if (-not (Test-Path (Join-Path $release $n))) { throw "No llegó $n al Release" }
 }
@@ -85,10 +61,7 @@ Get-ChildItem $release -Filter *.exe | ForEach-Object {
   "  {0,-24} {1,7:N1} MB" -f $_.Name, ($_.Length / 1MB)
 }
 
-# --- 4. El instalador ------------------------------------------------------
 Paso "Generando el instalador"
-# winget lo instala por usuario si no hay permisos de administrador, así que
-# hay que mirar también en %LOCALAPPDATA%.
 $iscc = @(
   "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
   "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
@@ -99,9 +72,6 @@ if (-not $iscc) {
   throw "Falta Inno Setup 6. Instálalo con: winget install JRSoftware.InnoSetup"
 }
 
-# La versión sale de `kVersion` en app_config.dart y no del .iss: es la misma
-# constante que usa el actualizador para decidir si hay algo más nuevo, así que
-# teniéndola en dos sitios acabarían por no coincidir.
 $fuente = Get-Content "lib\core\app_config.dart" -Raw
 if ($fuente -notmatch "kVersion\s*=\s*'([^']+)'") {
   throw "No encuentro kVersion en lib\core\app_config.dart"
