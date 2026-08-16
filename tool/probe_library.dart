@@ -1,22 +1,4 @@
-// Sonda de los endpoints de "me gusta" (guardar / quitar / consultar).
-//
-//   dart run tool/probe_library.dart
-//
-// Existe por lo mismo que probe_art.dart: `flutter test` no puede hacer red, y
-// la migración de febrero de 2026 movió media API de sitio. Aquí se comprueba
-// contra la cuenta de verdad cuál de las rutas candidatas responde, en vez de
-// fiarse de la documentación de terceros (que sigue con los nombres viejos).
-//
-// SEGURIDAD: no se prueba ningún DELETE —borraría un favorito de verdad— y el
-// PUT se hace sobre una canción que YA está guardada, así que en el peor caso
-// es idempotente. Además la sesión actual no tiene `user-library-modify`, con
-// lo que lo esperable es un 403; lo que interesa es distinguir ese 403 (la
-// ruta existe, falta permiso) de un 404/405 (la ruta no es esa).
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
-// El refresco del token se hace aquí a mano en vez de reutilizar `SpotifyAuth`
-// porque `auth.dart` importa url_launcher, que es un plugin de Flutter: con él
-// en el árbol de imports, `dart run` no compila.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 

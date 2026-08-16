@@ -10,15 +10,6 @@ import 'art_image.dart';
 import 'tira_horizontal.dart';
 import 'track_tile.dart';
 
-/// Portada: lo último que has escuchado, lo que más pones y dos secciones que
-/// intentan sustituir al Discover Weekly / Release Radar reales.
-///
-/// **No hay mixes diarios ni radar de novedades de verdad, y no es un
-/// descuido**: las listas que Spotify genera para cada usuario no las expone
-/// la Web API (`/recommendations` retirado, `/browse/featured-playlists` ya
-/// ni existe; comprobado en `tool/probe_home.dart`). "Hecho para ti" y
-/// "Novedades" son sucedáneos armados en `HomeStore` con lo que la API sí
-/// deja tocar — ver el comentario de esa clase para el detalle.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -34,8 +25,6 @@ class HomeScreen extends StatefulWidget {
   final LikedStore likes;
   final Future<void> Function() onReauth;
 
-  /// Pulsar un artista abre su pantalla en vez de ponerlo a sonar: primero se
-  /// ve qué se va a reproducir, y desde allí se decide.
   final void Function(Artist) onAbrirArtista;
 
   @override
@@ -46,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Si ya está cargada de una visita anterior, no hace nada.
     unawaited(widget.home.cargar());
   }
 
@@ -97,9 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
               _Titulo('Vuelve a escuchar', theme),
               TiraDeCanciones(
                 tracks: home.recientes,
-                // Se manda la tira entera y no solo la canción pulsada: con una
-                // sola, "siguiente" no tiene adónde ir y la deja empezando otra
-                // vez. Ver `PlayerController.playLista`.
                 onPlay: (i) => widget.player.playLista(
                   [for (final t in home.recientes) t.uri],
                   desde: i,
@@ -156,8 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
-              // La uri que suena se escucha aquí para que el título verde salte
-              // de canción en canción sin repintar la portada entera.
               ValueListenableBuilder<String?>(
                 valueListenable: widget.player.currentUri,
                 builder: (context, currentUri, _) => Column(
@@ -258,17 +241,9 @@ class _Titulo extends StatelessWidget {
       );
 }
 
-/// Hueco entre la carátula y el texto, y margen de la tarjeta.
 const double _huecoTarjeta = 6;
 const double _margenTarjeta = 4;
 
-/// Alto que hay que reservar para una tarjeta de [lado] píxeles con [lineas]
-/// líneas de texto debajo.
-///
-/// Estaba a ojo (`lado + 46` y `lado + 28`) y **la tira de artistas se pasaba
-/// por dos píxeles**: el nombre salía recortado por abajo. Calcularlo del
-/// estilo real, con la escala de texto del sistema aplicada, es lo único que
-/// aguanta un Windows al 125 % sin volver a recortar nada.
 double _altoDeTarjeta(
   BuildContext context,
   TextStyle estilo, {
@@ -283,9 +258,6 @@ double _altoDeTarjeta(
       (altoDeLinea * lineas).ceilToDouble();
 }
 
-/// Tira horizontal de carátulas. Se pide la variante de 300 px de Spotify (no
-/// la de 640) porque la tarjeta mide 128: es la regla de siempre, y la que
-/// mantiene la memoria plana.
 class TiraDeCanciones extends StatelessWidget {
   const TiraDeCanciones({super.key, required this.tracks, required this.onPlay});
 
@@ -293,9 +265,6 @@ class TiraDeCanciones extends StatelessWidget {
 
   final List<Track> tracks;
 
-  /// Recibe **la posición** y no la canción a propósito: las tiras traen
-  /// repetidos —en "Vuelve a escuchar" es de lo más normal— y buscar la pulsada
-  /// por uri empezaría siempre por su primera aparición.
   final void Function(int indice) onPlay;
 
   @override
@@ -303,7 +272,6 @@ class TiraDeCanciones extends StatelessWidget {
     final theme = Theme.of(context);
     final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
     return TiraHorizontal(
-      // Carátula + dos líneas de texto (título y artistas).
       alto: _altoDeTarjeta(context, estilo, lado: _ladoTarjeta, lineas: 2),
       centroDeFlechas: _margenTarjeta + _ladoTarjeta / 2,
       itemCount: tracks.length,
@@ -353,8 +321,6 @@ class TiraDeArtistas extends StatelessWidget {
 
   final List<Artist> artistas;
 
-  /// Abre el artista; **no** lo reproduce. Antes pulsar aquí ponía música de
-  /// golpe sin enseñar qué iba a sonar.
   final void Function(Artist) onAbrir;
 
   @override
@@ -377,7 +343,6 @@ class TiraDeArtistas extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Radio la mitad del lado = círculo.
                   ArtImage(url: a.art, size: _lado, radius: _lado / 2),
                   const SizedBox(height: _huecoTarjeta),
                   Text(a.name,
@@ -395,9 +360,6 @@ class TiraDeArtistas extends StatelessWidget {
   }
 }
 
-/// Tira de "Novedades". Igual que [TiraDeCanciones] pero con [Album]: al
-/// pulsar se reproduce el álbum entero como contexto, no una pista suelta —no
-/// hay una canción "la pulsada" porque la tarjeta es del álbum, no de un tema.
 class TiraDeAlbumes extends StatelessWidget {
   const TiraDeAlbumes({super.key, required this.albumes, required this.onAbrir});
 

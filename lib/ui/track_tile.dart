@@ -6,8 +6,6 @@ import 'art_image.dart';
 import 'like_button.dart';
 import 'now_playing_bar.dart' show formatMs;
 
-/// Acciones que puede ofrecer una fila de canción. Se pasan las que apliquen:
-/// "quitar" solo tiene sentido dentro de una playlist propia.
 class TrackActions {
   const TrackActions({
     this.onPlay,
@@ -38,14 +36,8 @@ class TrackTile extends StatelessWidget {
   final bool isCurrent;
   final int? leadingNumber;
 
-  /// Estado de "me gusta" compartido por toda la app. Sin él no se pinta el
-  /// corazón, que es lo que quieren los tests de alto y cualquier lista que no
-  /// tenga sesión detrás.
   final LikedStore? likes;
 
-  /// Con `false` se pinta el hueco en vez de la carátula. Lo usan las listas
-  /// muy largas para no tener miles de imágenes descargándose y decodificándose
-  /// solo porque el usuario ha pasado el scroll por encima.
   final bool showArt;
 
   @override
@@ -68,8 +60,6 @@ class TrackTile extends StatelessWidget {
               ),
             ),
           const SizedBox(width: 8),
-          // 40 px en listas: se pide la variante de 64 px de Spotify, no la de
-          // 640. Es la diferencia entre una lista que ocupa megas y una que no.
           ArtImage(url: showArt ? track.artSmall : null, size: 40),
         ],
       ),
@@ -122,7 +112,6 @@ class TrackTile extends StatelessWidget {
   }
 }
 
-/// Diálogo para elegir a qué playlist va una canción.
 Future<Playlist?> pickPlaylist(BuildContext context, List<Playlist> playlists) {
   return showDialog<Playlist>(
     context: context,

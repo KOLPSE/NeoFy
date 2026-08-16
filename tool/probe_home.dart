@@ -1,19 +1,4 @@
-// Sonda de lo que hace falta para dos funciones nuevas:
-//
-//   1. crear y borrar playlists
-//   2. una portada con las listas "hechas para ti" (Radar, Daily Mix…)
-//
-//   dart run tool/probe_home.dart
-//
-// Igual que probe_library.dart: la migración de febrero de 2026 movió rutas de
-// sitio y la documentación de terceros sigue con los nombres viejos. Aquí se
-// mira contra la cuenta real.
-//
-// OJO: este script **crea una playlist de prueba y la borra**. Es la única
-// manera de comprobar las dos mitades del ciclo. Si el borrado fallara, queda
-// una lista llamada "· prueba neofy ·" que hay que quitar a mano.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -68,7 +53,6 @@ Future<void> main() async {
   final userId = me['id'] as String;
   print('Cuenta: $userId');
 
-  // ------------------------------------------------------------- playlists
   print('\n[1] Crear una playlist');
   final creada = await req('POST', '/me/playlists', null, {
     'name': _nombrePrueba,
@@ -76,7 +60,6 @@ Future<void> main() async {
     'description': 'Creada por probe_home.dart; se borra sola.',
   });
   informe('POST /me/playlists', creada);
-  // La ruta vieja, por comparar.
   informe('POST /users/{id}/playlists',
       await req('POST', '/users/$userId/playlists', null, {'name': _nombrePrueba}));
 
@@ -90,8 +73,6 @@ Future<void> main() async {
   if (id == null) {
     print('    No se creó nada; no hay qué borrar.');
   } else {
-    // Se prueban en orden y se para en la primera que funcione, para no
-    // enmascarar el resultado con llamadas sobre algo ya borrado.
     final candidatas = <List<Object?>>[
       ['DELETE', '/playlists/$id/followers', null],
       ['DELETE', '/me/playlists', {'uris': 'spotify:playlist:$id'}],
@@ -108,7 +89,6 @@ Future<void> main() async {
     informe('¿la sigo aún?', sigue);
   }
 
-  // ------------------------------------------------------------- portada
   print('\n[3] ¿Qué hay para una portada de "hecho para ti"?');
   informe('GET /browse/featured-playlists',
       await req('GET', '/browse/featured-playlists', {'limit': '3'}));

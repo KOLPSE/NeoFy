@@ -32,8 +32,6 @@ void main() {
   const canal = MethodChannel('neofy/system_media');
   final llamadas = <MethodCall>[];
 
-  // Lo que le llega al runner de C++. Es lo único que se puede comprobar desde
-  // aquí: el panel del sistema en sí es COM y no existe en los tests.
   Map<Object?, Object?> ultimoEstado() =>
       llamadas.last.arguments as Map<Object?, Object?>;
 
@@ -65,16 +63,12 @@ void main() {
         .setMockMethodCallHandler(canal, null);
   });
 
-  // El canal es del runner de Windows; en Linux esto no se arranca siquiera,
-  // que allí el trabajo lo hace MPRIS.
   group('lo que se le manda a Windows', () {
     test('sin canción no se anuncia una en pausa', () async {
       estado = EstadoDelSistema.vacio;
       smtc.start();
       await Future<void>.delayed(Duration.zero);
 
-      // ⚠️ Distinguir "sin canción" de "en pausa" es lo que decide si Windows
-      // quita el reproductor del panel o lo deja ahí con los botones muertos.
       expect(ultimoEstado()['hayCancion'], isFalse);
       expect(ultimoEstado()['sonando'], isFalse);
       expect(ultimoEstado()['puedeSaltar'], isFalse);
@@ -97,8 +91,6 @@ void main() {
       expect(ultimoEstado()['titulo'], 'Never Gonna Give You Up');
       expect(ultimoEstado()['artista'], 'Rick Astley');
       expect(ultimoEstado()['album'], 'Whenever You Need Somebody');
-      // El runner cuenta en milisegundos y convierte él a las unidades de
-      // 100 ns de WinRT; mandarlo ya convertido lo multiplicaría dos veces.
       expect(ultimoEstado()['duracionMs'], 213573);
       expect(ultimoEstado()['posicionMs'], 42000);
     });
@@ -116,8 +108,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       final despuesDelPrimero = llamadas.length;
 
-      // El sondeo salta cada 3 s aunque no haya cambiado nada, y la posición
-      // avanza sola: Windows la extrapola, así que no es motivo para anunciar.
       estado = EstadoDelSistema(
         track: _track(),
         sonando: true,
@@ -153,8 +143,6 @@ void main() {
       );
       smtc.notificarCambio();
       await Future<void>.delayed(Duration.zero);
-      // Sin esto el panel del sistema se quedaría diciendo "reproduciendo" con
-      // la música parada.
       expect(ultimoEstado()['sonando'], isFalse);
     });
 
@@ -172,9 +160,6 @@ void main() {
 
       smtc.notificarSalto(90000);
       await Future<void>.delayed(Duration.zero);
-      // Windows lleva la posición por su cuenta desde la última que le dieron:
-      // sin este aviso, arrastrar la barra dentro de NeoFy deja el panel del
-      // sistema en el minuto de antes hasta que cambie la canción.
       expect(ultimoEstado()['posicionMs'], 90000);
     });
 
@@ -191,15 +176,11 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       await smtc.stop();
-      // Si no, Windows se queda enseñando la última canción de una sesión que
-      // ya no existe, con botones que no hacen nada.
       expect(ultimoEstado()['hayCancion'], isFalse);
       expect(smtc.activo, isFalse);
     });
   }, skip: !Platform.isWindows);
 
-  // La carátula la comparten MPRIS y Windows, pero **no en el mismo formato**:
-  // el escritorio de Linux quiere una url file:// y Windows la ruta a secas.
   group('carátula', () {
     final dir = Directory(p.join(cacheDir().path, 'art'));
 
@@ -216,14 +197,10 @@ void main() {
       final ruta = ficheroDeCaratula(_track())!.path;
       expect(ruta, isNot(startsWith('file:')));
       expect(File(ruta).existsSync(), isTrue);
-      // Y la de MPRIS sigue siendo la url, que es lo que pide su especificación.
       expect(caratulaEnDisco(_track()), startsWith('file:'));
     });
 
     test('sin nada en disco no se inventa una ruta', () {
-      // Dar la url http haría que el sistema se la bajara por su cuenta, y
-      // esperar a la descarga bloquearía la respuesta. La cache está vacía, así
-      // que lo correcto es no dar nada.
       final f = ficheroDe('https://i.scdn.co/image/smtc-mediana');
       if (f.existsSync()) f.deleteSync();
       final g = ficheroDe('https://i.scdn.co/image/smtc-pequena');

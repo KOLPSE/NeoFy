@@ -1,27 +1,4 @@
-// Sonda para la pantalla de artista: ¿se pueden LEER sus canciones?
-//
-//   dart run tool/probe_artist.dart
-//
-// Que un artista se pueda REPRODUCIR (playContext con su uri, que es lo que
-// hace hoy la portada) no implica que se puedan leer sus canciones. En este
-// proyecto esa distincion ya ha mordido varias veces: en Modo Desarrollo,
-// `/v1/tracks?ids=` da 403 y el contenido de una playlist ajena tambien,
-// aunque las dos cosas suenen perfectamente.
-//
-// Antes de construir una pantalla encima hay que saber cual de estas vias
-// existe de verdad:
-//
-//   1. /artists/{id}/top-tracks   lo natural: las 10 mas populares
-//   2. /artists/{id}              para el nombre y la foto
-//   3. /artists/{id}/albums       plan B: sus discos...
-//   4. /albums/{id}/tracks        ...y las canciones de cada uno, que segun
-//                                 ARQUITECTURA.md si se dejan leer
-//
-// ⚠️ Ejecutar con la app CERRADA: renueva el token, y Spotify rota el refresh
-// token en cada renovacion. Este script lo guarda de vuelta en tokens.json,
-// igual que probe_top.dart; sin eso, la app se queda sin sesion.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnostico.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -36,9 +13,6 @@ Future<http.Response> get(String path, [Map<String, String>? q]) => http.get(
       headers: {'Authorization': 'Bearer $_token'},
     );
 
-/// Cuenta lo que paso, distinguiendo los dos 403 que este proyecto ya conoce:
-/// "Insufficient client scope" es una ruta viva a la que le falta permiso, y
-/// "Forbidden" a secas es una ruta muerta en Modo Desarrollo.
 void informe(String etiqueta, http.Response r) {
   final cuerpo = utf8.decode(r.bodyBytes);
   var nota = '';
@@ -68,7 +42,6 @@ Future<void> main() async {
     exit(1);
   }
 
-  // --- Renovar, y devolver el token rotado a su sitio ------------------------
   final r = await http.post(
     Uri.https('accounts.spotify.com', '/api/token'),
     body: {
@@ -83,8 +56,6 @@ Future<void> main() async {
   }
   final tok = jsonDecode(r.body) as Map<String, dynamic>;
   _token = tok['access_token'] as String;
-  // ⚠️ Esto es lo que evita dejar la app sin sesion: Spotify rota el refresh
-  // token en cada renovacion y el viejo deja de valer.
   guardado['refresh_token'] = (tok['refresh_token'] as String?) ?? refresh;
   guardado['access_token'] = _token;
   guardado['expires_at'] = DateTime.now()
@@ -93,7 +64,6 @@ Future<void> main() async {
   fichero.writeAsStringSync(jsonEncode(guardado));
   print('Token renovado y guardado de vuelta.\n');
 
-  // --- Un artista de verdad, de los que ya salen en la portada --------------
   final top = await get('/me/top/artists', {'limit': '1'});
   if (top.statusCode != 200) {
     print('No se pudo leer /me/top/artists: ${top.statusCode}');
@@ -109,7 +79,6 @@ Future<void> main() async {
   final id = a['id'] as String;
   print('Artista de prueba: ${a['name']}  ($id)\n');
 
-  // --- Las cuatro vias ------------------------------------------------------
   print('1. Las canciones mas populares del artista');
   final t1 = await get('/artists/$id/top-tracks', {'market': 'from_token'});
   informe('/artists/$id/top-tracks?market=from_token', t1);
@@ -121,7 +90,6 @@ Future<void> main() async {
       print('        - ${m['name']}  (${m['duration_ms']} ms)');
     }
   }
-  // Sin market, por si el parametro fuera el problema y no la ruta.
   final t1b = await get('/artists/$id/top-tracks');
   informe('/artists/$id/top-tracks  (sin market)', t1b);
 
@@ -151,7 +119,6 @@ Future<void> main() async {
       final items =
           jsonDecode(utf8.decode(t4.bodyBytes))['items'] as List<dynamic>?;
       print('        ${items?.length ?? 0} canciones');
-      // Lo que hace falta para el total: que venga la duracion de cada una.
       final primera = (items?.firstOrNull) as Map<String, dynamic>?;
       print('        duration_ms presente: ${primera?['duration_ms'] != null}');
     }

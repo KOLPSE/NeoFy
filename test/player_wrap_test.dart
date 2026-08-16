@@ -5,8 +5,6 @@ import 'package:neofy/core/models.dart';
 import 'package:neofy/core/player_state.dart';
 import 'package:neofy/core/spotify_api.dart';
 
-/// `save()` escribiría en el `%APPDATA%` de verdad del usuario. Aquí solo
-/// interesa que el valor quede guardado en memoria.
 class _FakeConfig extends AppConfig {
   _FakeConfig() : super(initialVolume: 60);
 
@@ -16,10 +14,6 @@ class _FakeConfig extends AppConfig {
   Future<void> save() async => guardados++;
 }
 
-/// API de mentira: apunta lo que se le pide y no toca la red.
-///
-/// Hereda de `SpotifyApi` y sobrescribe solo los comandos del reproductor, así
-/// que nunca llega a `_request` y el token nunca hace falta.
 class _FakeApi extends SpotifyApi {
   _FakeApi() : super(SpotifyAuth(AppConfig()));
 
@@ -27,10 +21,8 @@ class _FakeApi extends SpotifyApi {
   bool nextProhibido = false;
   bool traspasoProhibido = false;
 
-  /// Lo que contesta `GET /me/player`.
   Playback? estadoRemoto;
 
-  /// Lo que contesta `GET /me/player/devices`.
   List<Device> dispositivos = const [];
 
   @override
@@ -137,7 +129,6 @@ void main() {
       });
 
       expect(pb.canSkipNext, isFalse);
-      // `disallows` solo lista lo prohibido: lo que no aparece está permitido.
       expect(pb.canSkipPrevious, isTrue);
     });
 
@@ -162,8 +153,6 @@ void main() {
       player.state = _sonando(canSkipNext: false);
       await player.next();
 
-      // Ni se le pide el salto a Spotify: pedirlo es lo que dejaba el
-      // dispositivo mudo.
       expect(api.llamadas, ['play spotify:playlist:abc offset=0']);
     });
 
@@ -180,7 +169,6 @@ void main() {
       await player.next();
 
       expect(api.llamadas, ['next', 'play spotify:playlist:abc offset=0']);
-      // El 403 queda resuelto: no hay por qué enseñarle un error al usuario.
       expect(player.lastError, isNull);
     });
 
@@ -192,8 +180,6 @@ void main() {
     });
   });
 
-  // Las tiras de la portada no son un contexto de Spotify: no tienen uri y
-  // `GET /me/player` no las devuelve, así que hay que mandarlas enteras.
   group('tiras de la portada', () {
     test('al pulsar una se manda la tira entera, no solo esa canción', () async {
       await player.playLista(
@@ -209,9 +195,6 @@ void main() {
       await player.playLista(const ['spotify:track:a', 'spotify:track:b']);
       api.llamadas.clear();
 
-      // Este es el fallo que se arreglo. Mandando solo la cancion pulsada,
-      // Spotify marcaba el salto como prohibido, no habia lista que reiniciar
-      // y el unico efecto visible era que la misma cancion volvia a empezar.
       player.state = _sonando(canSkipNext: false, contextUri: null);
       await player.next();
 
@@ -226,8 +209,6 @@ void main() {
       player.state = _sonando(canSkipNext: false, contextUri: null);
       await player.next();
 
-      // Lo que no puede pasar es que reviva la tira anterior, que ya no es lo
-      // que esta sonando.
       expect(api.llamadas, ['next']);
     });
 
@@ -247,8 +228,6 @@ void main() {
     await player.playContext('spotify:user:usuario:collection');
     api.llamadas.clear();
 
-    // Al terminarse la lista, `GET /me/player` contesta 204 y el estado se
-    // queda vacío. Aun así hay que saber qué había que reanudar.
     player.state = Playback.empty;
     await player.togglePlay();
 
@@ -267,7 +246,6 @@ void main() {
       player.state = _sonando(isPlaying: false);
       await player.next();
 
-      // El salto conserva el estado de pausa, así que hay que arrancar aparte.
       expect(api.llamadas, ['next', 'play null offset=null']);
       expect(player.state.isPlaying, isTrue);
     });
@@ -294,7 +272,6 @@ void main() {
 
       expect(api.llamadas, ['playbackState', 'pause']);
       expect(player.state.isPlaying, isFalse);
-      // El estado se conserva: la barra enseña qué había, solo que parado.
       expect(player.state.track, isNotNull);
     });
 
@@ -306,16 +283,12 @@ void main() {
     });
   });
 
-  // Cambiar la salida de audio deja a librespot escribiendo en un dispositivo
-  // que ya no suena, y la única cura es reiniciarlo. Lo que no puede pasar es
-  // que arreglar el sonido cueste perder la canción.
   group('reinicio del audio', () {
     Device neofy(String id) =>
         Device(id: id, name: kDeviceName, isActive: false, volumePercent: 50);
 
     test('no se pilla el dispositivo del librespot que acabamos de matar',
         () async {
-      // Spotify sigue listando el viejo unos segundos después de morir.
       api.dispositivos = [neofy('viejo')];
       expect(
         await player.resolveDevice(transfer: false, distintoDe: 'viejo'),
@@ -338,8 +311,6 @@ void main() {
       player.ourDeviceId = 'nuevo';
       await player.retomar(antes);
 
-      // El traspaso recupera la canción (el estado vive en la sesión), pero la
-      // posición se quedó clavada mientras el dispositivo estuvo muerto.
       expect(api.llamadas, ['transfer nuevo play=true', 'seek 42000']);
     });
 
@@ -364,8 +335,6 @@ void main() {
       player.ourDeviceId = 'nuevo';
       await player.retomar(antes);
 
-      // Con contexto se vuelve a él apuntando a la canción concreta: perder la
-      // lista significaría que al acabar no hay adónde seguir.
       expect(api.llamadas, [
         'transfer nuevo play=true',
         'play spotify:playlist:abc offset=spotify:track:1 pos=42000',
@@ -400,7 +369,6 @@ void main() {
     test('sin reproducción activa se enseña el último, no un 50 inventado',
         () async {
       config.initialVolume = 73;
-      // `GET /me/player` no informa de volumen cuando no hay nada sonando.
       expect(player.state.volumePercent, isNull);
       expect(player.volumeShown, 73);
     });

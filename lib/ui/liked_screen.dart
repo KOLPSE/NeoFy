@@ -10,17 +10,6 @@ import '../core/player_state.dart';
 import '../core/spotify_api.dart';
 import 'track_tile.dart';
 
-/// "Canciones que te gustan".
-///
-/// No es una playlist: es la biblioteca guardada, vive en `GET /me/tracks` y no
-/// aparece en `GET /me/playlists`. Por eso tiene pantalla propia en vez de
-/// reutilizar `PlaylistScreen`.
-///
-/// La lista **no vive aquí sino en `LikedStore`**: el shell construye solo la
-/// vista activa, así que al ir a una playlist y volver esta pantalla se
-/// reconstruye entera, y con la lista dentro se rebajaba las ~60 páginas cada
-/// vez. Aquí queda solo lo que sí es de la pantalla: el scroll y la ventana de
-/// carátulas.
 class LikedScreen extends StatefulWidget {
   const LikedScreen({
     super.key,
@@ -44,22 +33,12 @@ class LikedScreen extends StatefulWidget {
 }
 
 class _LikedScreenState extends State<LikedScreen> {
-  /// Alto fijo de cada fila. Hace falta un valor exacto para poder deducir por
-  /// aritmética qué índice está mirando el usuario sin medir nada, y de paso
-  /// evita que la lista mida 3.000 filas para saber cuánto scroll hay.
-  /// 64 px es el alto de un `ListTile` `dense` de dos líneas.
   static const double _altoFila = 64;
 
-  /// Cuántas filas a cada lado del centro llevan carátula. 25 arriba y 25 abajo
-  /// dan una ventana de ~50 imágenes vivas como mucho, sin importar si la lista
-  /// tiene 3.000 canciones.
   static const int _radioPortadas = 25;
 
   final _scroll = ScrollController();
 
-  /// Índice que queda en mitad de la pantalla. Va en un `ValueNotifier` y no en
-  /// el estado porque cambia con cada píxel de scroll: así solo se repintan las
-  /// carátulas, no la lista entera.
   final ValueNotifier<int> _centro = ValueNotifier(0);
 
   @override
@@ -67,8 +46,6 @@ class _LikedScreenState extends State<LikedScreen> {
     super.initState();
     _scroll.addListener(_alHacerScroll);
     if (widget.auth.hasScope(kScopeLibraryRead)) {
-      // Si ya está cargada de una visita anterior, esto no hace nada: es lo que
-      // evita rebajarse la biblioteca cada vez que se vuelve a la pantalla.
       unawaited(widget.likes.cargarBiblioteca());
     }
   }
@@ -85,8 +62,6 @@ class _LikedScreenState extends State<LikedScreen> {
     final centro =
         ((_scroll.offset + _scroll.position.viewportDimension / 2) / _altoFila)
             .round();
-    // Con histéresis: notificar en cada píxel repintaría las carátulas sin
-    // parar y no cambiaría nada, porque la ventana es de 50.
     if ((centro - _centro.value).abs() >= 5) _centro.value = centro;
   }
 
@@ -107,7 +82,6 @@ class _LikedScreenState extends State<LikedScreen> {
     }
   }
 
-  /// Reproduce toda la biblioteca desde la posición [offset].
   Future<void> _play({int? offset}) async {
     final userId = widget.player.currentUserId;
     if (userId == null) {
@@ -133,8 +107,6 @@ class _LikedScreenState extends State<LikedScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Solo se mira el permiso que necesita ESTA pantalla: si faltara otro (el
-    // de editar favoritos, por ejemplo), la biblioteca se lee igual de bien.
     if (!widget.auth.hasScope(kScopeLibraryRead)) return _reauthNotice(theme);
 
     return AnimatedBuilder(
@@ -187,9 +159,6 @@ class _LikedScreenState extends State<LikedScreen> {
                               label: const Text('Reproducir'),
                             ),
                             const SizedBox(width: 8),
-                            // La biblioteca se carga una vez por sesión, así
-                            // que hace falta una forma de pedirla otra vez
-                            // cuando has guardado algo desde el móvil.
                             IconButton(
                               tooltip: 'Volver a cargar la biblioteca',
                               icon: const Icon(Icons.refresh),
@@ -206,8 +175,6 @@ class _LikedScreenState extends State<LikedScreen> {
                 ],
               ),
             ),
-            // Barra fina mientras entran las ~60 páginas. Con total conocido va
-            // progresando; sin él, indeterminada.
             if (likes.cargandoBiblioteca)
               LinearProgressIndicator(
                 minHeight: 2,
@@ -237,16 +204,10 @@ class _LikedScreenState extends State<LikedScreen> {
   }
 
   Widget _lista(LikedStore likes) {
-    // La uri que suena se escucha aquí y no en el `build` general: así cambiar
-    // de canción mueve el título verde a la siguiente, y los sondeos que no
-    // cambian nada no repintan la lista.
     return ValueListenableBuilder<String?>(
       valueListenable: widget.player.currentUri,
       builder: (context, currentUri, _) => ListView.builder(
         controller: _scroll,
-        // Alto fijo: con miles de filas evita que Flutter mida cada una, y
-        // permite deducir el índice central a partir del scroll para saber a
-        // quién le toca carátula.
         itemExtent: _altoFila,
         itemCount: likes.biblioteca.length,
         itemBuilder: (context, i) {
@@ -259,8 +220,6 @@ class _LikedScreenState extends State<LikedScreen> {
             },
             onAddToPlaylist: () => _addToPlaylist(t),
           );
-          // Solo se repinta la fila cuando entra o sale de la ventana de
-          // carátulas; el resto del scroll no la toca.
           return ValueListenableBuilder<int>(
             valueListenable: _centro,
             builder: (context, centro, _) => TrackTile(
@@ -277,8 +236,6 @@ class _LikedScreenState extends State<LikedScreen> {
     );
   }
 
-  /// La sesión guardada se concedió antes de que la app pidiera
-  /// `user-library-read`, y un token viejo no gana permisos al renovarse.
   Widget _reauthNotice(ThemeData theme) {
     return Center(
       child: ConstrainedBox(

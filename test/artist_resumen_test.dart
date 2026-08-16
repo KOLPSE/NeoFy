@@ -14,7 +14,6 @@ Track _de(int ms) => Track(
       isLocal: false,
     );
 
-/// [cuantas] canciones de [minutos] minutos cada una.
 List<Track> _lista(int cuantas, {required double minutos}) =>
     List.generate(cuantas, (_) => _de((minutos * 60000).round()));
 
@@ -34,7 +33,6 @@ void main() {
     });
 
     test('una sola cancion va en singular', () {
-      // "1 canciones" se lee mal, y es el caso que siempre se escapa.
       expect(resumenDeArtista(_lista(1, minutos: 3)), '1 canción · 3 min');
     });
 
@@ -43,8 +41,6 @@ void main() {
     });
 
     test('se redondea al minuto, no se trunca', () {
-      // 3 canciones de 1 min 40 s son 5 min justos; truncando saldrian 4 y el
-      // total no cuadraria con lo que suma la lista a ojo.
       expect(resumenDeArtista(_lista(3, minutos: 1 + 40 / 60)),
           '3 canciones · 5 min');
     });

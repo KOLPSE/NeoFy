@@ -3,13 +3,6 @@ import 'package:neofy/core/yt_auth.dart';
 import 'package:neofy/core/yt_models.dart';
 import 'package:neofy/core/yt_music_api.dart';
 
-/// Lo que se prueba aquí es el **parseo** de las respuestas de YouTube Music,
-/// no la red: los JSON son recortes con la misma forma que devuelve la API
-/// real, reducidos a los campos que se leen.
-///
-/// Es la parte que de verdad se rompió: la biblioteca llegaba entera y se
-/// descartaba al leerla, con lo que "no aparecen mis playlists" no era un
-/// problema de sesión ni de permisos sino de dos líneas de parseo.
 void main() {
   final api = YtMusicApi(YtAuth());
 
@@ -80,10 +73,6 @@ void main() {
   group('biblioteca', () {
     test('las playlists de un gridRenderer se leen de `items`, no de `contents`',
         () {
-      // ⚠️ Este es el fallo original. La biblioteca del usuario llega dentro
-      // de un `gridRenderer`, que guarda sus elementos en `items`; el parseo
-      // solo miraba `contents` y por eso la pantalla salía vacía aunque la
-      // respuesta viniera llena.
       final j = unaColumna([
         {
           'itemSectionRenderer': {
@@ -128,7 +117,6 @@ void main() {
 
       final item = api.seccionesDeRespuesta(j).single.items.single;
       expect(item.tipo, YtTipo.lista);
-      // Sin quitar el `VL`, `browse` sobre `VLVLPLabc123` da 400.
       expect(item.playlistId, 'PLabc123');
       expect(item.esNavegable, isTrue);
       expect(item.esCancion, isFalse);
@@ -160,7 +148,6 @@ void main() {
       ]);
       final item = api.seccionesDeRespuesta(j).single.items.single;
       expect(item.tipo, YtTipo.artista);
-      // No tiene pistas propias ni lista que resolver: pulsarlo no reproduce.
       expect(item.esNavegable, isFalse);
     });
 
@@ -178,13 +165,10 @@ void main() {
       expect(item.tipo, YtTipo.cancion);
       expect(item.comoPista?.videoId, 'abc-_123');
       expect(item.comoPista?.artista, 'Un grupo');
-      // La API manda las miniaturas de menor a mayor: se coge la última.
       expect(item.miniatura, 'https://ejemplo/grande.jpg');
     });
 
     test('una mezcla de la portada saca su playlistId del botón de play', () {
-      // Las mezclas (`RD…`) no traen endpoint propio en la tarjeta: el
-      // `playlistId` solo está en el play que se superpone a la carátula.
       final j = unaColumna([
         {
           'musicCarouselShelfRenderer': {
@@ -214,8 +198,6 @@ void main() {
     });
 
     test('el botón de "Nueva lista" no se cuela como si fuera una playlist', () {
-      // La biblioteca lo mete como primera tarjeta de la rejilla: tiene título
-      // y carátula pero no lleva a ningún sitio.
       final j = unaColumna([
         {
           'gridRenderer': {
@@ -236,8 +218,6 @@ void main() {
     });
 
     test('el subtítulo se une entero, no solo su primer trozo', () {
-      // "Lista • 42 canciones" llega repartido en varios `runs`; quedarse con
-      // el primero dejaba las tarjetas diciendo solo "Lista".
       final j = unaColumna([
         {
           'gridRenderer': {
@@ -271,10 +251,6 @@ void main() {
   });
 
   group('contenido de una lista', () {
-    /// La forma exacta que devuelve la API para una playlist propia,
-    /// comprobada con `tool/probe_yt.dart`: la cabecera va **dentro de la
-    /// pestaña** (envuelta en `musicEditablePlaylistDetailHeaderRenderer`
-    /// porque es editable) y las pistas en `secondaryContents`.
     Map<String, dynamic> listaPropia(List<dynamic> pistas, {List<dynamic>? extra}) => {
           'contents': {
             'twoColumnBrowseResultsRenderer': {
@@ -379,8 +355,6 @@ void main() {
         };
 
     test('las pistas se leen de secondaryContents, no de la pestaña', () {
-      // ⚠️ La pestaña solo trae la cabecera. Quedarse con ella y dar la lista
-      // por vacía es el error fácil aquí.
       final (c, _) = api.coleccionDeRespuesta(listaPropia([
         fila('Take On Me', 'a-ha', 'djV11Xbc914', duracion: '3:47'),
         fila('Hola', 'Alguien', 'K4xmzYN3k50'),
@@ -400,8 +374,6 @@ void main() {
     });
 
     test('una lista larga devuelve el token del siguiente trozo', () {
-      // Sin seguir la continuación, una playlist de 800 canciones se
-      // reproduciría entera... hasta la 100.
       final (c, token) = api.coleccionDeRespuesta(listaPropia(
         [fila('Take On Me', 'a-ha', 'djV11Xbc914')],
         extra: [

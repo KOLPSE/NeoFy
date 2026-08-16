@@ -41,10 +41,6 @@ Future<void> _pintar(WidgetTester tester, Widget tira, double escala) async {
 }
 
 void main() {
-  // Los altos de las dos tiras estaban a ojo (`lado + 46` y `lado + 28`) y el
-  // de artistas se quedaba dos píxeles corto: el nombre salía recortado por
-  // abajo. Ahora salen del estilo real y de la escala de texto del sistema, así
-  // que hay que comprobarlo también con Windows al 125 %.
   for (final escala in [1.0, 1.25, 1.5]) {
     testWidgets('las canciones caben en su tira al ${escala}x', (tester) async {
       await _pintar(

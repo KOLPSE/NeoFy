@@ -9,18 +9,6 @@ import 'package:path/path.dart' as p;
 
 import 'models.dart';
 
-/// Integración con Rich Presence de Discord (Discord RPC).
-///
-/// Permite mostrar en el perfil de Discord qué canción está sonando en NeoFy,
-/// la siguiente pista de la cola y un botón con enlace al repositorio de GitHub.
-///
-/// Funciona hablando directamente con el socket o named pipe local de Discord
-/// mediante el protocolo Discord IPC (framing de 8 bytes + payload JSON), sin
-/// librerías externas para no engordar el binario ni la memoria.
-///
-/// Si Discord no está abierto o se cierra, no se lanza ninguna excepción ni
-/// aviso visible: degrada en silencio y reintenta la conexión periódicamente
-/// mientras el ajuste esté activo.
 class DiscordRpc {
   DiscordRpc({
     DiscordTransport? transporte,
@@ -50,7 +38,6 @@ class DiscordRpc {
   bool get activo => _activo;
   bool get conectado => _transporte.conectado;
 
-  /// Arranca o actualiza el Rich Presence con el [clientId] indicado.
   void start(String clientId) {
     final nuevoId = clientId.trim();
     if (nuevoId.isEmpty) {
@@ -92,11 +79,9 @@ class DiscordRpc {
         }
       }
     } catch (_) {
-      // Degradar en silencio sin interrumpir al usuario.
     }
   }
 
-  /// Detiene el Rich Presence y cierra la conexión.
   Future<void> stop() async {
     _activo = false;
     _reintentoTimer?.cancel();
@@ -117,7 +102,6 @@ class DiscordRpc {
     await _transporte.desconectar();
   }
 
-  /// Limpia la presencia en Discord sin apagar el servicio.
   Future<void> limpiar() async {
     _timeoutPausa?.cancel();
     _timeoutPausa = null;
@@ -133,10 +117,6 @@ class DiscordRpc {
     }
   }
 
-  /// Actualiza la presencia actual según la pista en reproducción.
-  ///
-  /// Solo pide la cola de reproducción cuando cambia el URI de la pista actual,
-  /// evitando saturar la API de Spotify con peticiones innecesarias.
   void actualizarActividad({
     required Track? track,
     required bool sonando,
@@ -155,9 +135,6 @@ class DiscordRpc {
       return;
     }
 
-    // El temporizador de pausa no tiene sentido con el RPC apagado: sin este
-    // corte, cualquier usuario -- tenga o no encendido el interruptor --
-    // armaría un Timer de 5 minutos en cada pausa, para nada.
     if (!_activo || _clientId.isEmpty) return;
 
     if (track.uri != _ultimoTrackUri) {
@@ -224,14 +201,6 @@ class DiscordRpc {
     final ahora = DateTime.now();
     final firma = '${track.uri}|$sonando|${siguiente?.uri}';
 
-    // ⚠️ No reenviar solo porque la posición se desvió unos milisegundos:
-    // Discord dibuja la barra de progreso él solo a partir de
-    // `timestamps.start`/`end`, sin que haga falta tocar nada más. Reenviar en
-    // cada deriva gastaba la ventana de 15 s que Discord impone entre
-    // actualizaciones (las de más se descartan en silencio, sin avisar), y si
-    // el cambio de canción de verdad caía dentro de esa ventana, se quedaba
-    // sin publicarse hasta la siguiente — el síntoma era justo "tarda mucho
-    // en actualizar".
     if (!forzar && firma == _ultimaFirma) {
       return;
     }
@@ -264,9 +233,6 @@ class DiscordRpc {
     await _transporte.enviar(1, jsonEncode(payload));
   }
 
-  /// Construye el objeto `activity` para el payload `SET_ACTIVITY` de Discord.
-  ///
-  /// Función pura sin dependencias de red ni sockets, pensada para testing.
   static Map<String, dynamic> construirActividad({
     required Track track,
     Track? siguiente,
@@ -281,38 +247,18 @@ class DiscordRpc {
         (ahora ?? DateTime.now()).millisecondsSinceEpoch - progresoMs;
     final endEpoch = startEpoch + track.durationMs;
 
-    // La carátula de verdad, como hace Spotify: Discord acepta una URL
-    // externa directamente en large_image (no hace falta subirla al
-    // Developer Portal), así que no hay que alojar nada propio. Al pausar o
-    // si la pista no tiene carátula (un tema local, por ejemplo), se cae al
-    // logo subido de NeoFy.
     final caratula = sonando ? (track.artMedium ?? track.artSmall) : null;
 
     return {
-      // Sin esto Discord asume el tipo 0 (Jugando) y NeoFy sale como si fuera
-      // un juego. 2 es "Escuchando", el tipo pensado para reproductores.
       'type': 2,
       'details': track.name,
       'state': stateStr,
-      // Flags experimentales de Discord (SYNC: 16 | PLAY: 32 = 48) y sync_id
-      // para intentar que Discord abra la pista en Spotify al pulsar en el
-      // título (details). Solo aplica a temas del catálogo con ID válido; si
-      // Discord lo ignora por ser cliente no verificado, degrada en silencio.
       if (!track.isLocal && track.id.isNotEmpty) 'sync_id': track.id,
-      if (!track.isLocal && track.id.isNotEmpty) 'flags': 48, // SYNC (16) | PLAY (32)
-      // Los dos timestamps a la vez son lo que dibuja la barra de progreso;
-      // con solo "start" Discord se limita a enseñar el tiempo transcurrido
-      // en texto, sin barra.
+      if (!track.isLocal && track.id.isNotEmpty) 'flags': 48,
       if (sonando) 'timestamps': {'start': startEpoch, 'end': endEpoch},
       'assets': {
         'large_image': caratula ?? 'logo',
         'large_text': track.album.isNotEmpty ? track.album : 'NeoFy',
-        // El mini logo de la esquina, igual que hace Spotify con el suyo:
-        // este sí tiene que ser la clave subida al Developer Portal, porque
-        // small_image (a diferencia de large_image) no admite URLs externas.
-        // El texto al pasar el ratón por encima lleva al repositorio: es el
-        // único sitio del RPC donde el enlace se ve siempre, sin depender de
-        // que Discord decida mostrar los botones.
         'small_image': 'logo',
         'small_text': 'github.com/KOLPSE/NeoFy',
       },
@@ -325,7 +271,6 @@ class DiscordRpc {
     };
   }
 
-  /// Construye el mapa completo del frame `SET_ACTIVITY`.
   static Map<String, dynamic> construirPayloadSetActivity({
     required int pid,
     required String nonce,
@@ -340,8 +285,6 @@ class DiscordRpc {
         },
       };
 
-  /// Empaqueta un mensaje según el protocolo de framing de Discord IPC:
-  /// 4 bytes little-endian de opcode + 4 bytes little-endian de longitud + JSON UTF-8.
   static Uint8List empaquetar(int opcode, String jsonStr) {
     final payloadBytes = utf8.encode(jsonStr);
     final bytes = Uint8List(8 + payloadBytes.length);
@@ -357,7 +300,6 @@ class DiscordRpc {
   }
 }
 
-/// Contrato para el canal de comunicación IPC con Discord (named pipe o socket Unix).
 abstract class DiscordTransport {
   bool get conectado;
   Future<bool> conectar(String clientId);
@@ -384,10 +326,6 @@ class _NoopTransport implements DiscordTransport {
   @override
   Future<void> desconectar() async {}
 }
-
-// -----------------------------------------------------------------------------
-// Windows: Named Pipe con FFI de Win32 (kernel32.dll)
-// -----------------------------------------------------------------------------
 
 typedef _CreateFileWC = IntPtr Function(
   Pointer<Utf16> lpFileName,
@@ -500,7 +438,6 @@ class _WindowsPipeTransport implements DiscordTransport {
     for (var i = 0; i < 10; i++) {
       final nombrePipe = r'\\.\pipe\discord-ipc-' + i.toString();
       final pathPtr = nombrePipe.toNativeUtf16();
-      // GENERIC_READ | GENERIC_WRITE = 0xC0000000, OPEN_EXISTING = 3
       final handle = createFile(pathPtr, 0xC0000000, 0, nullptr, 3, 0, 0);
       calloc.free(pathPtr);
 
@@ -508,7 +445,6 @@ class _WindowsPipeTransport implements DiscordTransport {
         continue;
       }
 
-      // Enviar Handshake (Opcode 0)
       final handshakeJson = jsonEncode({'v': 1, 'client_id': clientId});
       final paquete = DiscordRpc.empaquetar(0, handshakeJson);
       final buf = calloc<Uint8>(paquete.length);
@@ -525,7 +461,6 @@ class _WindowsPipeTransport implements DiscordTransport {
         continue;
       }
 
-      // Esperar respuesta READY sin bloquear el hilo
       var listo = false;
       final bytesDisp = calloc<Uint32>();
       try {
@@ -560,7 +495,6 @@ class _WindowsPipeTransport implements DiscordTransport {
           await Future<void>.delayed(const Duration(milliseconds: 50));
         }
       } catch (_) {
-        // Ignorar fallo de lectura
       } finally {
         calloc.free(bytesDisp);
       }
@@ -617,10 +551,6 @@ class _WindowsPipeTransport implements DiscordTransport {
     _handle = 0;
   }
 }
-
-// -----------------------------------------------------------------------------
-// Linux: Unix Domain Socket
-// -----------------------------------------------------------------------------
 
 class _LinuxSocketTransport implements DiscordTransport {
   Socket? _socket;
@@ -694,7 +624,6 @@ class _LinuxSocketTransport implements DiscordTransport {
             s.destroy();
           }
         } catch (_) {
-          // Intentar el siguiente socket disponible
         }
       }
     }

@@ -17,12 +17,6 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// OAuth 2.0 con PKCE contra `accounts.spotify.com`.
-///
-/// PKCE en vez del flujo clásico porque somos un cliente público: no hay dónde
-/// guardar un Client Secret de forma segura en una app de escritorio, y desde
-/// noviembre de 2025 Spotify eliminó el grant implícito, así que PKCE es
-/// además la única opción viable.
 class SpotifyAuth {
   SpotifyAuth(this.config);
 
@@ -36,30 +30,16 @@ class SpotifyAuth {
 
   bool get isLoggedIn => _refreshToken != null;
 
-  /// `true` si la sesión guardada se concedió con menos permisos de los que la
-  /// app pide ahora.
-  ///
-  /// Un token viejo no gana permisos al renovarse: hay que volver a pasar por
-  /// el consentimiento. Sin esto, añadir un scope nuevo se manifiesta como un
-  /// 403 "Insufficient client scope" incomprensible en mitad de una pantalla.
   bool get needsReauth =>
       isLoggedIn && !kScopes.every(_grantedScopes.contains);
 
-  /// Los permisos que faltan, para poder decir cuáles en el aviso.
   List<String> get missingScopes =>
       kScopes.where((s) => !_grantedScopes.contains(s)).toList();
 
-  /// ¿Se concedió este permiso concreto?
-  ///
-  /// Cada pantalla pregunta por el suyo en vez de mirar `needsReauth`, que es
-  /// global: si no, estrenar un scope dejaría inservibles de golpe pantallas
-  /// que funcionaban perfectamente con los permisos que ya había.
   bool hasScope(String scope) => _grantedScopes.contains(scope);
 
   static File get _tokenFile => File(p.join(appDataDir().path, 'tokens.json'));
 
-  /// Recupera el refresh token del disco. El access token no se persiste: dura
-  /// una hora y se vuelve a pedir al vuelo.
   Future<void> loadStored() async {
     try {
       final f = _tokenFile;
@@ -91,10 +71,6 @@ class SpotifyAuth {
     if (await f.exists()) await f.delete();
   }
 
-  /// Devuelve un access token válido, renovándolo si le quedan menos de 60 s.
-  ///
-  /// Todo el resto de la app pasa por aquí, así que el refresco es un único
-  /// punto y no hay forma de que una petición salga con un token caducado.
   Future<String> accessToken() async {
     if (_accessToken != null &&
         DateTime.now().isBefore(_expiresAt.subtract(const Duration(seconds: 60)))) {
@@ -107,9 +83,6 @@ class SpotifyAuth {
     return _accessToken!;
   }
 
-  /// Fuerza un refresco aunque el token parezca vivo. Se usa cuando la API
-  /// responde 401 pese a que creíamos tener un token bueno (reloj desfasado,
-  /// token revocado desde la web, etc.).
   Future<void> forceRefresh() async {
     if (_refreshToken == null) throw AuthException('No hay sesión iniciada.');
     await _refresh();
@@ -126,8 +99,6 @@ class SpotifyAuth {
       },
     );
     if (res.statusCode != 200) {
-      // Un refresh token revocado no se arregla reintentando: se borra para
-      // que la app vuelva a la pantalla de login en vez de fallar en bucle.
       if (res.statusCode == 400) await logout();
       throw AuthException('No se pudo renovar la sesión (${res.statusCode}): ${res.body}');
     }
@@ -139,17 +110,12 @@ class SpotifyAuth {
     _accessToken = body['access_token'] as String;
     final expiresIn = (body['expires_in'] as num?)?.toInt() ?? 3600;
     _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
-    // Spotify rota el refresh token en cada renovación; si viene uno nuevo hay
-    // que quedarse con él o la siguiente renovación fallará.
     final newRefresh = body['refresh_token'] as String?;
     if (newRefresh != null) _refreshToken = newRefresh;
-    // La respuesta dice qué permisos quedaron concedidos de verdad, que no
-    // tienen por qué ser los que pedimos.
     final scope = body['scope'] as String?;
     if (scope != null) _grantedScopes = scope.split(' ').toSet();
   }
 
-  /// Flujo interactivo completo: abre el navegador y espera el callback.
   Future<void> login() async {
     final verifier = _randomVerifier();
     final challenge = base64Url
@@ -161,7 +127,6 @@ class SpotifyAuth {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, kRedirectPort);
     final completer = Completer<String>();
 
-    // El servidor vive solo lo que dure el login y se cierra en el finally.
     unawaited(() async {
       await for (final req in server) {
         if (req.uri.path != '/callback') {
@@ -231,8 +196,6 @@ class SpotifyAuth {
     }
   }
 
-  /// El fallo más común de este flujo es un Redirect URI que no cuadra con el
-  /// del Dashboard, y el mensaje crudo de Spotify no lo deja nada claro.
   String _explainTokenError(int status, String body) {
     if (body.contains('redirect_uri') || body.contains('INVALID_CLIENT')) {
       return 'Spotify rechazó el Redirect URI. Comprueba que en el Dashboard '
@@ -243,7 +206,6 @@ class SpotifyAuth {
     return 'No se pudo canjear el código ($status): $body';
   }
 
-  /// 64 caracteres del alfabeto no reservado que exige la RFC 7636.
   String _randomVerifier() {
     const chars =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';

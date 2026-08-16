@@ -1,14 +1,4 @@
-// Sonda de los tres endpoints de la portada.
-//
-//   dart run tool/probe_top.dart      (con la app CERRADA)
-//
-// ⚠️ Spotify **rota el refresh token en cada renovación**: el viejo deja de
-// valer. Por eso este script guarda el nuevo en `tokens.json` en vez de
-// quedárselo, que es justo lo que hay que hacer para no dejar a la app con un
-// token muerto. Y por eso hay que cerrar la app antes: si está abierta, tiene
-// el suyo en memoria y se pisarían el uno al otro.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,7 +31,6 @@ Future<void> main() async {
   final body = jsonDecode(res.body) as Map<String, dynamic>;
   final token = body['access_token'] as String;
 
-  // Devolver el token rotado a su sitio, o la app se queda sin sesión.
   final nuevo = body['refresh_token'] as String?;
   if (nuevo != null && nuevo != stored['refresh_token']) {
     stored['refresh_token'] = nuevo;

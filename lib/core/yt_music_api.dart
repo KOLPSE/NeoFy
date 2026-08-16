@@ -14,31 +14,6 @@ class YtApiException implements Exception {
   String toString() => message;
 }
 
-/// Cliente de la API interna de YouTube Music (`youtubei/v1`).
-///
-/// No hay documentación oficial de esta API para terceros: la forma de las
-/// peticiones y de las respuestas está sacada de proyectos abiertos que la
-/// usan igual (`ytmusicapi`, InnerTune, el extractor de `yt-dlp`).
-///
-/// ## Las tres trampas que costaron las playlists
-///
-/// 1. **`gridRenderer` guarda sus elementos en `items`, no en `contents`.**
-///    Toda la biblioteca (`FEmusic_liked_playlists`) llega dentro de un
-///    `gridRenderer`, así que un parseo que solo mirase `contents` veía cero
-///    elementos y la pantalla salía vacía aunque la respuesta viniera llena.
-///    Es *el* motivo de que "no aparecen mis playlists".
-/// 2. **Una lista no se reproduce por `videoId`.** Las tarjetas de listas y
-///    álbumes no traen vídeo: traen un `browseId` (`VL…` para listas,
-///    `MPREb_…` para álbumes) con el que hay que pedir sus pistas *después*.
-///    Aplanarlo todo a "pista sin videoId" es lo que dejaba solo canciones
-///    sueltas reproducibles.
-/// 3. **Las mezclas y radios de la portada no se pueden pedir por `browse`.**
-///    Sus ids empiezan por `RD` y solo responden por el endpoint `next`, que
-///    es el que usa el propio reproductor web para llenar su cola.
-///
-/// El parseo es deliberadamente defensivo: una sección con forma inesperada
-/// se descarta, no tira la pantalla entera. Google cambia este JSON sin
-/// avisar a nadie.
 class YtMusicApi {
   YtMusicApi(this.auth);
 
@@ -47,10 +22,6 @@ class YtMusicApi {
 
   static const _base = 'music.youtube.com';
 
-  /// `browseId` de cada pestaña de la biblioteca. Los mismos que usa
-  /// `ytmusicapi`. La biblioteca **no es un solo `browseId`**: las playlists,
-  /// los álbumes y las canciones guardadas viven en tres sitios distintos, y
-  /// pedir solo el primero era otra razón por la que faltaba media pantalla.
   static const browseIdInicio = 'FEmusic_home';
   static const browseIdExplorar = 'FEmusic_explore';
   static const browseIdListas = 'FEmusic_liked_playlists';
@@ -58,12 +29,8 @@ class YtMusicApi {
   static const browseIdCanciones = 'FEmusic_liked_videos';
   static const browseIdArtistas = 'FEmusic_library_corpus_track_artists';
 
-  /// Idioma y país de la sesión. Se sacan del sistema para que los títulos de
-  /// las secciones ("Escuchado recientemente", "Mezclas para ti") lleguen ya
-  /// traducidos desde Google en vez de en inglés: son texto que pintamos tal
-  /// cual, no hay nada que traducir por nuestra cuenta.
   static final String _hl = () {
-    final l = Platform.localeName; // "es_ES.UTF-8", "en-US"…
+    final l = Platform.localeName;
     final corte = l.indexOf(RegExp(r'[_\-.]'));
     return corte > 0 ? l.substring(0, corte) : 'en';
   }();
@@ -81,8 +48,6 @@ class YtMusicApi {
             'hl': _hl,
             'gl': _gl,
           },
-          // Sin esto, una cuenta con el modo restringido activado en el
-          // navegador recibe una biblioteca recortada sin decir por qué.
           'user': {'lockedSafetyMode': false},
         },
       };
@@ -93,13 +58,6 @@ class YtMusicApi {
     Map<String, String>? query,
   }) async {
     if (!auth.isLoggedIn) throw YtApiException('No hay sesión de NeoTube iniciada.');
-    // Sin parámetro `key`. Autenticando por cookies + SAPISIDHASH, la API no
-    // lo pide: comprobado contra la cuenta real con tool/probe_yt.dart, que
-    // devuelve exactamente lo mismo con y sin el. Se quita porque era la clave
-    // pública del cliente web de YouTube Music -no un secreto nuestro, la
-    // misma que reparte music.youtube.com en su propio JavaScript- pero el
-    // escaneo de secretos de GitHub la marca igual, y aqui no hay nada que
-    // rotar: no es nuestra. La forma de no volver a verla es no llevarla.
     final uri = Uri.https(_base, '/youtubei/v1/$endpoint', query);
     final res = await _http
         .post(
@@ -121,14 +79,6 @@ class YtMusicApi {
     return jsonDecode(res.body);
   }
 
-  // ------------------------------------------------------------------ búsqueda
-
-  /// Busca y devuelve los resultados **por categorías** (canciones, listas,
-  /// álbumes, artistas), no una lista plana de canciones.
-  ///
-  /// Antes se pasaba el filtro `params` de "solo canciones", y por eso desde
-  /// la búsqueda tampoco había forma de llegar a una lista: literalmente se le
-  /// pedía a Google que no las mandara.
   Future<List<YtSection>> buscar(String query) async {
     final j = await _post('search', {'query': query});
     final secciones = <YtSection>[];
@@ -146,11 +96,6 @@ class YtMusicApi {
     return secciones;
   }
 
-  // ------------------------------------------------------- portada / explorar
-
-  /// Portada (`FEmusic_home`), explorar (`FEmusic_explore`) o cualquier
-  /// pestaña de biblioteca: el mismo endpoint sirve las tres cambiando solo el
-  /// `browseId`.
   Future<List<YtSection>> browseSections(String browseId) async {
     final secciones = seccionesDeRespuesta(await _post('browse', {'browseId': browseId}));
     if (secciones.isEmpty) {
@@ -159,9 +104,6 @@ class YtMusicApi {
     return secciones;
   }
 
-  /// El parseo de una respuesta de `browse` ya descodificada, separado del
-  /// viaje de red para poder probarlo: es la parte que se rompe cuando Google
-  /// cambia la forma del JSON, y la única que se puede comprobar sin cuenta.
   @visibleForTesting
   List<YtSection> seccionesDeRespuesta(dynamic j) {
     final secciones = <YtSection>[];
@@ -172,10 +114,6 @@ class YtMusicApi {
     return secciones;
   }
 
-  /// Las pestañas de biblioteca de golpe, cada una como una sección con su
-  /// título. Se piden en paralelo porque son cuatro viajes independientes y en
-  /// serie se notaba la espera; una que falle no se lleva por delante a las
-  /// otras tres.
   Future<List<YtSection>> biblioteca() async {
     final peticiones = <String, String>{
       browseIdListas: 'Tus playlists',
@@ -197,9 +135,6 @@ class YtMusicApi {
     var i = 0;
     for (final titulo in peticiones.values) {
       for (final s in resultados[i]) {
-        // La respuesta de biblioteca casi nunca trae título de sección propio
-        // (es una rejilla pelada), así que se pone el de la pestaña; si trae
-        // uno de verdad, manda el suyo.
         secciones.add(s.titulo.isEmpty ? YtSection(titulo: titulo, items: s.items) : s);
       }
       i++;
@@ -207,18 +142,6 @@ class YtMusicApi {
     return secciones;
   }
 
-  // ------------------------------------------------------ listas y álbumes
-
-  /// Las pistas de una lista, un álbum o una mezcla, elija el llamador lo que
-  /// elija de la portada.
-  ///
-  /// Tres caminos porque la API tiene tres, no por gusto:
-  /// - **Mezclas y radios** (`RD…`): solo responden por `next`. `browse` da 400.
-  /// - **Álbumes** (`MPREb_…`): `browse` directo, sin prefijo `VL`.
-  /// - **Listas** (`PL…`, `LM`, `VL…`): `browse` con `VL` delante.
-  ///
-  /// Si el camino principal no saca ni una pista se intenta `next`, que es el
-  /// que usa el reproductor web y traga casi cualquier id.
   Future<YtColeccion> coleccion({String? playlistId, String? browseId}) async {
     if (browseId != null && browseId.startsWith('MPRE')) {
       final album = await _browseColeccion(browseId);
@@ -238,8 +161,6 @@ class YtMusicApi {
   Future<YtColeccion> _browseColeccion(String browseId) async {
     final j = await _post('browse', {'browseId': browseId});
     final (coleccion, continuacion) = coleccionDeRespuesta(j);
-    // Una lista larga llega en trozos de 100. Sin esto, una playlist de 800
-    // canciones se reproducía entera... hasta la 100.
     var token = continuacion;
     var restantes = 20;
     final pistas = [...coleccion.pistas];
@@ -254,9 +175,6 @@ class YtMusicApi {
     );
   }
 
-  /// El parseo de una lista/álbum ya descodificado, separado del viaje de red
-  /// para poder probarlo. Devuelve además el token del siguiente trozo, si la
-  /// lista no cabía entera en la respuesta.
   @visibleForTesting
   (YtColeccion, String?) coleccionDeRespuesta(dynamic j) {
     final cabecera = _parseCabecera(j);
@@ -281,13 +199,6 @@ class YtMusicApi {
     );
   }
 
-  /// Pide el siguiente trozo y devuelve el token del que venga después (o
-  /// `null` si ya no hay más).
-  ///
-  /// Dos formatos vivos a la vez: el moderno manda el token en el cuerpo y
-  /// contesta con `onResponseReceivedActions`; el antiguo lo manda como
-  /// parámetros de la URL y contesta con `continuationContents`. Cuál de los
-  /// dos te toca depende del endpoint y del día, así que se prueban los dos.
   Future<String?> _continuacion(String token, List<YtTrack> acumulador) async {
     dynamic j;
     try {
@@ -333,7 +244,6 @@ class YtMusicApi {
       }
     } catch (_) {}
     try {
-      // El moderno viene como último elemento de la propia lista.
       final ultimo = lista.isEmpty ? null : lista.last;
       if (ultimo is Map && ultimo.containsKey('continuationItemRenderer')) {
         return ultimo['continuationItemRenderer']['continuationEndpoint']
@@ -343,15 +253,11 @@ class YtMusicApi {
     return null;
   }
 
-  /// La cola del reproductor web (`next`): el único camino para las mezclas y
-  /// radios, y el plan B para todo lo demás.
   Future<YtColeccion> _colaDe({String? playlistId, String? videoId}) async {
     final j = await _post('next', {
       'playlistId': ?playlistId,
       'videoId': ?videoId,
       'isAudioOnly': true,
-      // El mismo `params` que manda el reproductor web para pedir la cola
-      // completa en vez de solo la canción actual.
       'params': 'wAEB',
     });
     final pistas = <YtTrack>[];
@@ -379,9 +285,6 @@ class YtMusicApi {
     );
   }
 
-  /// La radio infinita a partir de una canción: lo que hace el botón de
-  /// "reproducir" del cliente oficial cuando le das a una canción suelta, y lo
-  /// que evita que la reproducción se pare en seco al acabar esa única pista.
   Future<List<YtTrack>> radioDe(String videoId) async {
     try {
       final c = await _colaDe(videoId: videoId, playlistId: 'RDAMVM$videoId');
@@ -392,11 +295,6 @@ class YtMusicApi {
     }
   }
 
-  // -------------------------------------------------------------- navegación
-
-  /// Los bloques de sección de una respuesta de `browse`, venga en una columna
-  /// (portada, explorar, biblioteca) o en dos (listas y álbumes, que desde
-  /// 2024 llegan con `twoColumnBrowseResultsRenderer`).
   List _bloquesDeSecciones(dynamic j) {
     for (final ruta in [_rutaUnaColumna, _rutaDosColumnasPrimaria]) {
       final r = ruta(j);
@@ -405,8 +303,6 @@ class YtMusicApi {
     return const [];
   }
 
-  /// Igual, pero para el lado donde viven las pistas de una lista: en dos
-  /// columnas es `secondaryContents`, no la pestaña.
   List _bloquesDeContenido(dynamic j) {
     final dos = _rutaDosColumnasSecundaria(j);
     if (dos != null && dos.isNotEmpty) return dos;
@@ -416,8 +312,6 @@ class YtMusicApi {
   List? _rutaUnaColumna(dynamic j) {
     try {
       final tabs = j['contents']['singleColumnBrowseResultsRenderer']['tabs'] as List;
-      // La pestaña seleccionada, no siempre la primera: explorar y biblioteca
-      // llegan con varias y la primera puede venir vacía.
       for (final tab in tabs) {
         final c = tab['tabRenderer']?['content']?['sectionListRenderer']?['contents'];
         if (c is List && c.isNotEmpty) return c;
@@ -446,15 +340,6 @@ class YtMusicApi {
     return null;
   }
 
-  /// Título, subtítulo y carátula de una lista/álbum abierto.
-  ///
-  /// Tres formas vivas, y cuál te toca depende de qué abras: las listas
-  /// **propias** llegan envueltas en `musicEditablePlaylistDetailHeaderRenderer`
-  /// (porque se pueden editar), las ajenas y "Música que me gusta" en
-  /// `musicResponsiveHeaderRenderer`, y los álbumes todavía en el
-  /// `musicDetailHeaderRenderer` de siempre, colgando de la raíz. Verificado
-  /// con `tool/probe_yt.dart`: las dos primeras van **dentro de la pestaña**,
-  /// no en `j['header']`.
   (String, String, String?) _parseCabecera(dynamic j) {
     for (final candidata in [
       () => _bloquesDeSecciones(j).firstOrNull,
@@ -463,8 +348,6 @@ class YtMusicApi {
       try {
         var h = _valorDeRenderer(candidata());
         if (h == null) continue;
-        // La envoltura de "esta lista es tuya y puedes editarla" trae la
-        // cabecera de verdad por dentro.
         if (h.containsKey('header') && h['header'] is Map) {
           h = _valorDeRenderer(h['header']) ?? h;
         }
@@ -481,13 +364,6 @@ class YtMusicApi {
     return ('', '', null);
   }
 
-  // ------------------------------------------------------------------ parseo
-
-  /// El valor del único renderer que trae un bloque. Cada bloque de
-  /// `sectionListRenderer.contents` es un mapa de una sola clave
-  /// (`musicCarouselShelfRenderer`, `gridRenderer`, `musicShelfRenderer`…) y
-  /// basta con quedarse con su valor, como hace `parse_mixed_content` de
-  /// `ytmusicapi`.
   Map? _valorDeRenderer(dynamic bloque) {
     if (bloque is! Map || bloque.isEmpty) return null;
     final v = bloque.values.first;
@@ -498,9 +374,6 @@ class YtMusicApi {
     try {
       if (bloque is! Map || bloque.isEmpty) return null;
       final clave = bloque.keys.first;
-      // `itemSectionRenderer` no es una sección: es un envoltorio de un solo
-      // elemento que trae la sección de verdad por dentro. Así llega la
-      // biblioteca, y sin desenvolverlo no hay nada que encontrar.
       if (clave == 'itemSectionRenderer') {
         final dentro = (bloque.values.first as Map)['contents'] as List?;
         if (dentro == null || dentro.isEmpty) return null;
@@ -509,8 +382,6 @@ class YtMusicApi {
       final contenido = _valorDeRenderer(bloque);
       if (contenido == null) return null;
 
-      // ⚠️ `gridRenderer` usa `items`; los estantes y carruseles usan
-      // `contents`. Toda la biblioteca del usuario llega por la primera vía.
       final lista = contenido['contents'] ?? contenido['items'];
       if (lista is! List) return null;
 
@@ -549,8 +420,6 @@ class YtMusicApi {
               duracion: p.duracion,
             );
     }
-    // Chips de navegación de "Explorar", separadores, el botón de "Nueva
-    // playlist" de la biblioteca… no son contenido.
     return null;
   }
 
@@ -571,26 +440,16 @@ class YtMusicApi {
     return runs.first['text'] as String?;
   }
 
-  /// Une todos los `runs` de una línea: el subtítulo de una lista es
-  /// "Lista • 42 canciones" repartido en varios trozos, y quedarse solo con el
-  /// primero dejaba las tarjetas diciendo únicamente "Lista".
   String _runsCompletos(dynamic runs) {
     if (runs is! List) return '';
     return runs.map((r) => (r is Map ? r['text'] : null) as String? ?? '').join();
   }
 
-  /// `musicTwoRowItemRenderer`: la tarjeta de dos líneas de los carruseles de
-  /// la portada y de las rejillas de la biblioteca. Es la que trae listas,
-  /// álbumes, artistas y mezclas — de aquí sale el `playlistId`/`browseId`
-  /// que hace falta para poder reproducirlas.
   YtItem? _parseTwoRowItem(dynamic item) {
     if (item is! Map) return null;
     try {
       final nav = item['navigationEndpoint'];
       final videoId = nav?['watchEndpoint']?['videoId'] as String?;
-      // Dos sitios para el `playlistId`: el endpoint de la tarjeta entera y el
-      // del botón de play que se superpone a la carátula. Las mezclas de la
-      // portada solo lo traen en el segundo.
       final playlistId = (nav?['watchPlaylistEndpoint']?['playlistId'] ??
               nav?['watchEndpoint']?['playlistId'] ??
               _playlistDelOverlay(item)) as String?;
@@ -607,8 +466,6 @@ class YtMusicApi {
         titulo: titulo,
         subtitulo: subtitulo,
         videoId: videoId,
-        // El `browseId` de una lista es su `playlistId` con `VL` delante: se
-        // le quita aquí para no tener que recordarlo en cada sitio.
         playlistId: playlistId ??
             (browseId != null && browseId.startsWith('VL') ? browseId.substring(2) : null),
         browseId: browseId,
@@ -629,8 +486,6 @@ class YtMusicApi {
     }
   }
 
-  /// `musicResponsiveListItemRenderer`: la fila de lista de la búsqueda, de
-  /// los estantes y del contenido de una playlist.
   YtItem? _parseListItem(dynamic item) {
     if (item is! Map) return null;
     try {
@@ -667,7 +522,6 @@ class YtMusicApi {
     }
   }
 
-  /// La fila del `next`: otra forma más para lo mismo, esta vez plana.
   YtTrack? _parsePanelVideo(dynamic item) {
     if (item is! Map) return null;
     try {
@@ -723,7 +577,6 @@ class YtMusicApi {
     }
   }
 
-  /// "3:41" o "1:02:15" → `Duration`.
   Duration? _parseDuracion(String? texto) {
     if (texto == null) return null;
     final partes = texto.trim().split(':').map(int.tryParse).toList();
@@ -736,8 +589,6 @@ class YtMusicApi {
     };
   }
 
-  /// La URL de la miniatura más grande que ofrezca el nodo, mire donde mire:
-  /// la API la envuelve de cuatro formas distintas según el renderer.
   String? _urlDeMiniatura(dynamic nodo) {
     if (nodo == null) return null;
     List? miniaturas;
@@ -756,7 +607,6 @@ class YtMusicApi {
       } catch (_) {}
     }
     if (miniaturas == null) return null;
-    // Llegan de menor a mayor: la última es la más grande.
     return miniaturas.last['url'] as String?;
   }
 }

@@ -7,18 +7,13 @@
 
 namespace {
 
-// Identificadores de los tres botones. Solo tienen que ser únicos dentro de la
-// ventana, y llegan de vuelta en el LOWORD del WM_COMMAND.
 constexpr int kBotonAnterior = 601;
 constexpr int kBotonPlayPause = 602;
 constexpr int kBotonSiguiente = 603;
 
-// Cada icono es un triángulo, una barra, o las dos cosas, en coordenadas de 0 a
-// 1 sobre el lado del icono. Definirlos así en vez de con un `.ico` permite
-// dibujarlos al tamaño y del color que pida el sistema.
 struct Figura {
-  const float* triangulo;  // 6 valores: x1,y1,x2,y2,x3,y3
-  const float* barra_a;    // 4 valores: izquierda,arriba,derecha,abajo
+  const float* triangulo;
+  const float* barra_a;
   const float* barra_b;
 };
 
@@ -35,8 +30,6 @@ constexpr Figura kFiguraPausa = {nullptr, kBarraPausaIzq, kBarraPausaDer};
 constexpr Figura kFiguraSiguiente = {kTriSiguiente, kBarraSiguiente, nullptr};
 constexpr Figura kFiguraAnterior = {kTriAnterior, kBarraAnterior, nullptr};
 
-// Muestras por lado dentro de cada píxel. A 4x4 los bordes en diagonal del
-// triángulo salen suaves, que a 16 píxeles se nota bastante.
 constexpr int kMuestras = 4;
 
 float Cruz(float ax, float ay, float bx, float by, float cx, float cy) {
@@ -49,8 +42,6 @@ bool EnTriangulo(float px, float py, const float* t) {
   const float d3 = Cruz(t[4], t[5], t[0], t[1], px, py);
   const bool negativo = d1 < 0.0f || d2 < 0.0f || d3 < 0.0f;
   const bool positivo = d1 > 0.0f || d2 > 0.0f || d3 > 0.0f;
-  // Dentro es estar del mismo lado de los tres bordes; el punto justo encima de
-  // un borde da cero y cuenta como dentro.
   return !(negativo && positivo);
 }
 
@@ -68,9 +59,6 @@ bool EnFigura(float px, float py, const Figura& figura) {
   return figura.barra_b != nullptr && EnBarra(px, py, figura.barra_b);
 }
 
-// ¿Está Windows en tema claro? De eso depende el fondo de la barra de
-// miniatura, y por tanto de qué color hay que dibujar los iconos: unos blancos
-// sobre fondo claro no se ven, que es como si no estuvieran.
 bool TemaClaro() {
   DWORD valor = 0;
   DWORD tam = sizeof(valor);
@@ -78,10 +66,6 @@ bool TemaClaro() {
       HKEY_CURRENT_USER,
       L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
       L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &valor, &tam);
-  // Sin la clave (Windows 10 anterior a la actualización de octubre de 2018) la
-  // barra es oscura, que es además el caso menos malo si nos equivocamos: un
-  // icono oscuro sobre fondo oscuro desaparece del todo, uno claro sobre fondo
-  // claro todavía se intuye.
   if (r != ERROR_SUCCESS) {
     return false;
   }
@@ -93,16 +77,10 @@ int LadoDelIcono() {
   return lado < 16 ? 16 : lado;
 }
 
-// Dibuja la figura como icono de 32 bits con canal alfa.
-//
-// Se rellena el mapa de bits a mano en vez de con GDI porque GDI no sabe pintar
-// con alfa: dejaría los bordes del triángulo dentados o con un halo del color
-// de fondo, según el sitio.
 HICON DibujarIcono(int lado, const Figura& figura, COLORREF tinta) {
   BITMAPINFO info = {};
   info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
   info.bmiHeader.biWidth = lado;
-  // Negativo: de arriba abajo, que es como se recorre más abajo.
   info.bmiHeader.biHeight = -lado;
   info.bmiHeader.biPlanes = 1;
   info.bmiHeader.biBitCount = 32;
@@ -142,9 +120,6 @@ HICON DibujarIcono(int lado, const Figura& figura, COLORREF tinta) {
         }
       }
       const int alfa = dentro * 255 / (kMuestras * kMuestras);
-      // BGRA y **premultiplicado**, que es lo que espera CreateIconIndirect de
-      // un mapa de 32 bits. Sin premultiplicar, los bordes suavizados salen con
-      // un halo blanco.
       punto[0] = static_cast<BYTE>(azul * alfa / 255);
       punto[1] = static_cast<BYTE>(verde * alfa / 255);
       punto[2] = static_cast<BYTE>(rojo * alfa / 255);
@@ -153,9 +128,6 @@ HICON DibujarIcono(int lado, const Figura& figura, COLORREF tinta) {
     }
   }
 
-  // La máscara la ignora el sistema cuando hay canal alfa, pero ICONINFO la
-  // exige. A ceros (todo opaco) para que un Windows que decidiera mirarla no
-  // recorte nada.
   const size_t bytes_por_fila = ((static_cast<size_t>(lado) + 15) / 16) * 2;
   const std::vector<BYTE> ceros(bytes_por_fila * static_cast<size_t>(lado), 0);
   HBITMAP mascara = ::CreateBitmap(lado, lado, 1, 1, ceros.data());
@@ -166,7 +138,6 @@ HICON DibujarIcono(int lado, const Figura& figura, COLORREF tinta) {
   icono.hbmColor = color;
   HICON resultado = ::CreateIconIndirect(&icono);
 
-  // CreateIconIndirect se queda con una copia; los mapas de bits son nuestros.
   if (mascara != nullptr) {
     ::DeleteObject(mascara);
   }
@@ -174,7 +145,7 @@ HICON DibujarIcono(int lado, const Figura& figura, COLORREF tinta) {
   return resultado;
 }
 
-}  // namespace
+}
 
 ThumbBar::~ThumbBar() {
   Stop();
@@ -187,10 +158,6 @@ void ThumbBar::Start(HWND window, Callback al_pulsar) {
     return;
   }
   mensaje_creada_ = ::RegisterWindowMessageW(L"TaskbarButtonCreated");
-  // Si alguien lanza NeoFy elevada, el filtro de mensajes de integridad tira
-  // los mensajes que le manda la barra de tareas, que corre sin elevar. La app
-  // no necesita administrador, pero elevarla a mano no debería costarle la
-  // miniatura.
   if (mensaje_creada_ != 0) {
     ::ChangeWindowMessageFilterEx(window_, mensaje_creada_, MSGFLT_ALLOW,
                                   nullptr);
@@ -238,9 +205,6 @@ bool ThumbBar::MessageHandler(UINT message, WPARAM wparam, LPARAM lparam) {
     }
   }
 
-  // El tema puede cambiar con la app abierta, y los iconos se quedarían del
-  // color de antes: invisibles sobre el fondo nuevo. Se devuelve false a
-  // propósito, que este aviso lo quiere más gente.
   if (message == WM_SETTINGCHANGE && lparam != 0 &&
       ::CompareStringOrdinal(reinterpret_cast<LPCWSTR>(lparam), -1,
                              L"ImmersiveColorSet", -1, TRUE) == CSTR_EQUAL) {
@@ -248,8 +212,6 @@ bool ThumbBar::MessageHandler(UINT message, WPARAM wparam, LPARAM lparam) {
     return false;
   }
 
-  // Mover la ventana a una pantalla con otro escalado cambia el tamaño de icono
-  // que pide el sistema.
   if (message == WM_DPICHANGED) {
     RehacerIconos();
     return false;
@@ -262,16 +224,12 @@ void ThumbBar::Colocar() {
   if (window_ == nullptr) {
     return;
   }
-  // Si Explorer se reinició, el objeto de la barra anterior se fue con él.
   if (taskbar_ != nullptr) {
     taskbar_->Release();
     taskbar_ = nullptr;
   }
   colocados_ = false;
 
-  // El GUID por __uuidof y no por la constante CLSID_TaskbarList, igual que en
-  // el vigilante de audio: la constante solo está declarada en la cabecera y
-  // arrastraría uuid.lib al enlazado.
   HRESULT hr = ::CoCreateInstance(__uuidof(TaskbarList), nullptr,
                                   CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&taskbar_));
   if (FAILED(hr) || taskbar_ == nullptr) {
@@ -288,13 +246,6 @@ void ThumbBar::Colocar() {
 
   THUMBBUTTON botones[3] = {};
   RellenarBotones(botones);
-  // ⚠️ `ThumbBarAddButtons` es de una sola vez por ventana, y este aviso llega
-  // más de una vez: la barra de tareas lo manda también al volver a enseñar una
-  // ventana que se había escondido en la bandeja, que en un reproductor pasa
-  // constantemente. Ahí el añadir falla y hay que limitarse a actualizar; si
-  // quien se reinició fue Explorer, la barra nueva no sabe nada de nuestros
-  // botones y entonces el que vale es el de añadir. Probando los dos, los dos
-  // casos quedan cubiertos sin tener que adivinar cuál es cuál.
   if (SUCCEEDED(taskbar_->ThumbBarAddButtons(window_, 3, botones)) ||
       SUCCEEDED(taskbar_->ThumbBarUpdateButtons(window_, 3, botones))) {
     colocados_ = true;
@@ -309,9 +260,6 @@ void ThumbBar::Refrescar() {
   RellenarBotones(botones);
   taskbar_->ThumbBarUpdateButtons(window_, 3, botones);
 
-  // El texto que sale al pasar el ratón por encima del icono de la barra de
-  // tareas. Por defecto es el título de la ventana, que es siempre "NeoFy" y no
-  // dice nada; con esto la miniatura ya cuenta qué está sonando.
   if (estado_.hay_cancion) {
     std::wstring texto = estado_.titulo;
     if (!estado_.artista.empty()) {
@@ -320,7 +268,6 @@ void ThumbBar::Refrescar() {
     }
     taskbar_->SetThumbnailTooltip(window_, texto.c_str());
   } else {
-    // nullptr devuelve el título de la ventana, que es lo correcto sin canción.
     taskbar_->SetThumbnailTooltip(window_, nullptr);
   }
 }
@@ -354,9 +301,6 @@ void ThumbBar::RehacerIconos() {
     return;
   }
 
-  // ⚠️ Los de antes se destruyen **después** de que la barra tenga los nuevos.
-  // La barra de tareas se queda con los HICON que le damos, así que destruirlos
-  // primero le deja un rato con punteros muertos y los botones salen en blanco.
   HICON viejos[4] = {anterior_, reproducir_, pausar_, siguiente_};
 
   lado_ = lado;

@@ -259,7 +259,7 @@ void main() {
       expect(bytes.length, 8 + utf8.encode(jsonStr).length);
 
       final data = ByteData.sublistView(bytes);
-      expect(data.getUint32(0, Endian.little), 0); // Opcode HANDSHAKE
+      expect(data.getUint32(0, Endian.little), 0);
       expect(data.getUint32(4, Endian.little), utf8.encode(jsonStr).length);
 
       final payloadDecoded = utf8.decode(bytes.sublist(8));
@@ -284,15 +284,11 @@ void main() {
       final tras1a = transporte.envios;
       expect(tras1a, greaterThan(0));
 
-      // Misma pista, solo se desvía el progreso: antes esto reenviaba y se
-      // comía la ventana de 15 s de Discord justo cuando hacía falta de
-      // verdad. Ahora no debe mandar nada.
       rpc.actualizarActividad(
           track: pista, sonando: true, progresoMs: 9000, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, tras1a);
 
-      // Cambio de pista de verdad: sí tiene que mandar, sin esperar a nada.
       final otraPista = _track(id: 'otra-cancion', name: 'Otra canción');
       rpc.actualizarActividad(
           track: otraPista, sonando: true, progresoMs: 0, obtenerCola: colaVacia);
@@ -317,28 +313,23 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       final pista = _track();
-      // Empieza reproduciendo
       rpc.actualizarActividad(
           track: pista, sonando: true, progresoMs: 10000, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // Se pausa la reproducción
       rpc.actualizarActividad(
           track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 2);
 
-      // Comprobar que en pausa mandó large_image: logo
       final payloadPausa = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
       final activityPausa = (payloadPausa['args'] as Map<String, dynamic>)['activity'] as Map<String, dynamic>;
       expect((activityPausa['assets'] as Map<String, dynamic>)['large_image'], 'logo');
 
-      // Aún no ha pasado el timeout (30 ms)
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(transporte.envios, 2);
 
-      // Se cumple el timeout: se apaga enviando activity: null
       await Future<void>.delayed(const Duration(milliseconds: 35));
       expect(transporte.envios, 3);
       final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
@@ -365,20 +356,17 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // Se pausa
       rpc.actualizarActividad(
           track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 2);
 
-      // Antes del timeout (40 ms), se reanuda a los 15 ms
       await Future<void>.delayed(const Duration(milliseconds: 15));
       rpc.actualizarActividad(
           track: pista, sonando: true, progresoMs: 10000, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 3);
 
-      // Esperamos otros 50 ms (más de los 40 ms de la pausa inicial): NO debe apagarse
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(transporte.envios, 3);
       final payloadActual = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
@@ -405,7 +393,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // A los 20 ms y 35 ms llegan actualizaciones de sondeo mientras sigue en pausa
       await Future<void>.delayed(const Duration(milliseconds: 20));
       rpc.actualizarActividad(
           track: pista, sonando: false, progresoMs: 10000, obtenerCola: colaVacia);
@@ -418,7 +405,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // A los 55 ms totales desde la primera pausa (20 ms más tarde), debe haberse apagado
       await Future<void>.delayed(const Duration(milliseconds: 25));
       expect(transporte.envios, 2);
       final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
@@ -445,7 +431,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // Track pasa a null de inmediato
       rpc.actualizarActividad(
           track: null, sonando: false, progresoMs: 0, obtenerCola: colaVacia);
       await Future<void>.delayed(Duration.zero);
@@ -453,7 +438,6 @@ void main() {
       final payloadLimpio = jsonDecode(transporte.payloads.last) as Map<String, dynamic>;
       expect((payloadLimpio['args'] as Map<String, dynamic>)['activity'], isNull);
 
-      // Esperar más allá del timeout para asegurar que ningún timer residual intente hacer nada
       await Future<void>.delayed(const Duration(milliseconds: 60));
       expect(transporte.envios, 2);
 
@@ -478,11 +462,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(transporte.envios, 1);
 
-      // Se detiene el RPC
       await rpc.stop();
       final enviosTrasStop = transporte.envios;
 
-      // Esperar a que pase el timeout: no debe haber más envíos
       await Future<void>.delayed(const Duration(milliseconds: 60));
       expect(transporte.envios, enviosTrasStop);
     });

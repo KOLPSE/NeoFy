@@ -2,22 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../core/yt_auth.dart';
 
-/// Conectar YouTube Music: lo que hace falta para **la vía libre**, o sea para
-/// que NeoFy suene con una cuenta de Spotify sin Premium.
-///
-/// Con Premium no pinta nada: la música la pone librespot. Sin Premium, la Web
-/// API de Spotify no deja controlar la reproducción, así que los metadatos
-/// siguen viniendo de Spotify y el audio lo pone YouTube Music — y para eso
-/// hace falta una sesión de Google.
-///
-/// Por dentro abre una ventana de WebView de verdad (`YtAuth.login()`) donde
-/// Google pinta su propia pantalla de inicio de sesión: nada dibujado a mano,
-/// nada de cookies pegadas por el usuario. Es la única pantalla de toda la app
-/// que usa un motor de navegador.
-///
-/// Se enseña en dos sitios y por eso es un bloque y no una pantalla: en el
-/// setup (`LoginScreen`, antes incluso de entrar en Spotify) y en Ajustes, para
-/// quien se entere después de que su cuenta no es Premium.
 class ConectarYouTubeMusic extends StatefulWidget {
   const ConectarYouTubeMusic({
     super.key,
@@ -27,7 +11,6 @@ class ConectarYouTubeMusic extends StatefulWidget {
 
   final YtAuth auth;
 
-  /// Opcional: en el setup no hay nada que refrescar todavía.
   final Future<void> Function()? onLoggedIn;
 
   @override

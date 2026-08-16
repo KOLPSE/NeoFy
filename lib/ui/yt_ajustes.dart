@@ -4,18 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../core/yt_player.dart';
 
-/// El estado del descodificador de la vía libre, para Ajustes.
-///
-/// Es el equivalente de "Reiniciar audio" en NeoFy — los dos contestan a la
-/// misma pregunta ("¿por qué no suena nada?") — pero por motivos distintos:
-/// allí el audio lo saca librespot, un proceso aparte que se puede quedar
-/// mudo; aquí lo saca `media_kit` en este mismo proceso y lo único que puede
-/// faltar es **yt-dlp**, que es quien resuelve la URL del stream de cada pista.
-///
-/// Merece un sitio en Ajustes porque sin él la vía libre no reproduce **nada** y el
-/// error solo se ve al pulsar una canción, una por una. Y porque un binario
-/// presente pero roto se ve igual que uno bueno hasta que lo ejecutas: de ahí
-/// que se compruebe la versión de verdad y no solo que el fichero exista.
 class EstadoDeYtDlp extends StatefulWidget {
   const EstadoDeYtDlp({super.key});
 

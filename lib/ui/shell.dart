@@ -28,17 +28,6 @@ import 'search_screen.dart';
 
 enum _View { home, search, queue, liked, playlist, artist }
 
-/// ¿Hace falta pedir la siguiente página de playlists sin esperar a que haya
-/// scroll?
-///
-/// La paginación la dispara `_onScroll`, que solo entra cuando la lista
-/// desborda el panel. Con una carpeta plegada la lista puede quedarse en una
-/// fila: `maxScrollExtent` es cero, no llega ningún evento y `_loadMore` no
-/// volvería a llamarse nunca. Si quedan páginas y el contenido no llena el
-/// viewport, la siguiente se pide igualmente justo después de pintar.
-///
-/// Está separada del widget para poder probarla sin red: es la decisión pura,
-/// sin compañeros de `ScrollController` ni de la API.
 bool hayQuePedirMas({
   required bool quedanPaginas,
   required bool cargando,
@@ -46,19 +35,8 @@ bool hayQuePedirMas({
   required bool desborda,
   required bool seccionAbierta,
 }) {
-  // Nunca: sin páginas no hay nada que pedir; mientras una petición vuela, el
-  // aviso siguiente ya está programado (el setState del final re-dispara esta
-  // comprobación); y un error no se reintenta en bucle — ya se enseña en el
-  // panel, y el scroll o una visita nueva lo volverán a intentar.
   if (!quedanPaginas || cargando || hayError) return false;
-  // ⚠️ Con la sección plegada tampoco. No es un detalle: plegada no hay lista,
-  // así que no hay scroll y `desborda` es false para siempre — sin esta línea,
-  // plegar "TUS PLAYLISTS" se descargaría la biblioteca entera de una tacada,
-  // que es justo lo que la paginación existe para no hacer. Al desplegarla, el
-  // build siguiente vuelve a preguntar y se retoma donde estaba.
   if (!seccionAbierta) return false;
-  // Con scroll, la página siguiente la dispara el desplazamiento: pedirla aquí
-  // además rompería el scroll infinito (cargaría de golpe todo lo que queda).
   return !desborda;
 }
 
@@ -93,19 +71,14 @@ class AppShell extends StatefulWidget {
   final Settings settings;
   final Updater updater;
 
-  /// Cerrar NeoFy para que el instalador pueda sobrescribir el ejecutable.
   final Future<void> Function() onSalirParaActualizar;
 
-  /// Reabre la salida de audio sin cerrar la app. Ver `_reiniciarAudio` en
-  /// `main.dart`.
   final Future<void> Function() onReiniciarAudio;
   final LibrespotManager librespot;
   final MetadataSidecar sidecar;
   final Future<void> Function() onLogout;
   final Future<void> Function() onReauth;
 
-  /// La sesión de YouTube Music, para poder conectarla desde Ajustes. Es lo
-  /// que hace sonar a las cuentas sin Premium (ver `core/reproduccion_libre.dart`).
   final YtAuth ytAuth;
 
   @override
@@ -119,20 +92,14 @@ class _AppShellState extends State<AppShell> {
   _View _view = _View.home;
   Playlist? _selected;
 
-  /// El artista abierto desde la portada. No hay entrada en el panel lateral
-  /// para esto: se llega pulsando su foto y se sale volviendo a Inicio.
   Artist? _artista;
   bool _loading = false;
   bool _hasMore = true;
   bool _playlistsExpanded = true;
   String? _error;
 
-  /// Carpetas del panel ya plegadas por el usuario. Está en el estado en vez de
-  /// dentro del sidebar porque la sección entera se puede plegar y desplegar, y
-  /// el detalle de cada carpeta tiene que sobrevivir igual a la navegación.
   final Set<String> _carpetasPlegadas = {};
 
-  /// Offset en elementos **crudos**, no en los que sobreviven al filtro.
   int _offset = 0;
 
   @override
@@ -154,15 +121,6 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
-  /// Tras pintar, ve si hay que seguir trayendo playlists sin scroll de por
-  /// medio (p. ej. con todo lo descargado dentro de una carpeta plegada, la
-  /// lista no desborda y `_onScroll` ya no tiene forma de dispararse).
-  ///
-  /// Se ejecuta después del frame para que el `ScrollController` ya tenga
-  /// clientes y dimensiones medibles; desde build, si no, `hasClients` aún es
-  /// false y no se sabría si hay o no scroll. Un solo aviso por frame: `_loadMore`
-  /// se protege con `_loading`/`_hasMore`, y cada página que llega re-dispara la
-  /// comprobación con su setState, así que no hay que encadenar nada a mano.
   void _revisarSiCargarMas() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -180,8 +138,6 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  /// Las playlists se traen de 50 en 50 conforme se hace scroll, no todas de
-  /// golpe: una cuenta con cientos de listas no tiene por qué caber en memoria.
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
@@ -201,7 +157,6 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
-  /// Crea una playlist y te lleva a ella.
   Future<void> _crearPlaylist() async {
     final nombre = await _pedirNombre(context);
     if (nombre == null || nombre.trim().isEmpty) return;
@@ -209,10 +164,7 @@ class _AppShellState extends State<AppShell> {
       final pl = await widget.api.createPlaylist(nombre.trim());
       if (!mounted) return;
       setState(() {
-        // Arriba del todo: Spotify devuelve las playlists por fecha de adición
-        // y la recién creada es la más reciente.
         _playlists.insert(0, pl);
-        // El offset avanza también: si no, la siguiente página repetiría una.
         _offset++;
         _view = _View.playlist;
         _selected = pl;
@@ -222,10 +174,6 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
-  /// Quita una playlist de tu biblioteca.
-  ///
-  /// En Spotify no existe "borrar": es dejar de seguirla. Para las tuyas el
-  /// efecto es el mismo, y por eso se avisa antes.
   Future<void> _borrarPlaylist(Playlist pl) async {
     final mia = pl.ownerId.isNotEmpty && pl.ownerId == widget.player.currentUserId;
     final ok = await showDialog<bool>(
@@ -256,24 +204,17 @@ class _AppShellState extends State<AppShell> {
       setState(() {
         _playlists.removeWhere((p) => p.id == pl.id);
         if (_offset > 0) _offset--;
-        // Si estabas dentro de la que acabas de quitar, no puedes quedarte ahí.
         if (_selected?.id == pl.id) {
           _selected = null;
           _view = _View.home;
         }
       });
-      // La id muerta no debe seguir apuntada en ninguna carpeta: si algún día la
-      // vuelves a seguir, no tiene por qué reaparecer ordenada dentro.
       await widget.carpetas.quitarPlaylist(pl.id);
     } catch (e) {
       _avisar('No se pudo quitar: $e');
     }
   }
 
-  /// Pide un nombre para una playlist o una carpeta.
-  ///
-  /// Las dos comparten el diálogo: es "un nombre y un botón", y duplicarlo solo
-  /// serviría para que los dos acabaran por desincronizarse.
   Future<String?> _pedirNombre(
     BuildContext context, {
     String titulo = 'Nueva playlist',
@@ -308,14 +249,10 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
     ).whenComplete(() {
-      // Cuerpo con llaves a propósito: `whenComplete` espera al futuro que le
-      // devuelva el callback, y aquí no debe devolver ninguno.
       controlador.dispose();
     });
   }
 
-  /// Crea una carpeta de playlists. Es un cambio local: la Web API de Spotify
-  /// no tiene nada parecido (ver `carpetas_store.dart`).
   Future<void> _crearCarpeta() async {
     final nombre = await _pedirNombre(
       context,
@@ -340,9 +277,6 @@ class _AppShellState extends State<AppShell> {
     await widget.carpetas.renombrarCarpeta(carpeta.id, nombre.trim());
   }
 
-  /// Borrar la carpeta no borra las playlists: solo desaparece la estructura y
-  /// sus listas vuelven a la sección sueltas. Se pregunta antes porque pierdes
-  /// la organización, que no se puede deshacer.
   Future<void> _borrarCarpeta(Carpeta carpeta) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -367,8 +301,6 @@ class _AppShellState extends State<AppShell> {
     await widget.carpetas.borrarCarpeta(carpeta.id);
   }
 
-  /// Pregunta en qué carpeta dejar una playlist; la última opción la saca de
-  /// todas y la deja suelta.
   Future<void> _moverPlaylist(Playlist pl) async {
     const fuera = '__fuera__';
     final elegida = await showDialog<String>(
@@ -417,14 +349,8 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// El teclado no se escucha aquí: lo hace [AtajosDeReproduccion], por encima
-  /// del shell. Ver el comentario de `ui/atajos.dart`.
   @override
   Widget build(BuildContext context) {
-    // Tras este frame se comprueba si hace falta seguir trayendo playlists sin
-    // scroll que lo dispare (ver `_revisarSiCargarMas`). Cada setState recién
-    // pintado es la oportunidad: una página que llega, una carpeta que se
-    // pliega y encoge la lista, una sección que vuelve a abrirse...
     _revisarSiCargarMas();
     return _scaffold(context);
   }
@@ -436,10 +362,6 @@ class _AppShellState extends State<AppShell> {
           Expanded(
             child: Row(
               children: [
-                // El panel se repinta con el estado del reproductor (necesita
-                // saber qué playlist suena para dejarla a la vista cuando la
-                // sección está plegada) y con el del store de carpetas, que es
-                // quien avisa cuando cambian la estructura o el orden.
                 AnimatedBuilder(
                   animation: Listenable.merge([widget.player, widget.carpetas]),
                   builder: (context, _) => _Sidebar(
@@ -502,8 +424,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  /// Se construye solo la vista activa en vez de un IndexedStack: mantener las
-  /// cuatro vivas a la vez significaría mantener vivas sus listas y sus imágenes.
   Widget _content() {
     switch (_view) {
       case _View.home:
@@ -554,8 +474,6 @@ class _AppShellState extends State<AppShell> {
         final a = _artista;
         if (a == null) return const SizedBox.shrink();
         return ArtistScreen(
-          // La clave obliga a reconstruir el State al cambiar de artista: sin
-          // ella, abrir otro dejaría la lista del anterior en pantalla.
           key: ValueKey(a.id),
           api: widget.api,
           player: widget.player,
@@ -626,13 +544,8 @@ class _Sidebar extends StatelessWidget {
   final Future<void> Function() onReiniciarAudio;
   final YtAuth ytAuth;
 
-  /// Si la cuenta no es Premium, Ajustes ofrece conectar YouTube Music: es de
-  /// donde saldrá el audio. Con Premium no se enseña, que sería ofrecer algo
-  /// que no hace nada.
   final bool sinPremium;
 
-  /// La playlist que está sonando, si es una de las del panel. Es la que se
-  /// deja a la vista cuando la sección está plegada.
   Playlist? get _playing {
     final uri = playingContextUri;
     if (uri == null) return null;
@@ -715,8 +628,6 @@ class _Sidebar extends StatelessWidget {
                   : _listaDePlaylists(context),
             )
           else ...[
-            // Plegada, pero la que suena se queda siempre a la vista: es el
-            // único motivo por el que plegar no te hace perder el hilo.
             if (playing != null)
               _PlaylistTile(
                 playlist: playing,
@@ -743,9 +654,6 @@ class _Sidebar extends StatelessWidget {
                         settings: settings,
                         updater: updater,
                         onSalirParaActualizar: onSalirParaActualizar,
-                        // Reiniciar la salida es reiniciar librespot, así que
-                        // no lo pinta el diálogo por su cuenta: solo tiene
-                        // sentido con el sidecar de por medio.
                         bloquesExtra: [
                           if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
                           ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
@@ -772,15 +680,6 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  /// La lista se aplana a entradas para poder meter las carpetas en el mismo
-  /// `ListView.builder` que las playlists sueltas: una vista única, con scroll
-  /// compartido y la paginación intacta.
-  ///
-  /// ⚠️ El orden importa. Una carpeta puede referirse a una playlist que
-  /// todavía no se ha descargado (está en una página posterior); cuando llegue,
-  /// tiene que salir **dentro de su carpeta**, no duplicada en la lista. Por
-  /// eso las playlists que están en alguna carpeta se filtran de la segunda
-  /// pasada con `enCarpeta`, independientemente de si la carpeta está plegada.
   ListView _listaDePlaylists(BuildContext context) {
     final porId = {for (final pl in playlists) pl.id: pl};
     final enCarpeta = <String>{
@@ -788,10 +687,6 @@ class _Sidebar extends StatelessWidget {
     };
     final entradas = <_EntradaSidebar>[];
     for (final c in carpetas) {
-      // Cuántas de las playlists de la carpeta están ya descargadas: es lo que
-      // se verá al desplegarla. Con la paginación por páginas puede haber huecos
-      // (una carpeta apunta a ids de páginas que aún no han llegado), y el
-      // subtítulo tiene que cuadrar con lo que se enseña, no mentir.
       var cargadas = 0;
       for (final plId in c.playlistIds) {
         if (porId.containsKey(plId)) cargadas++;
@@ -811,7 +706,6 @@ class _Sidebar extends StatelessWidget {
     }
     return ListView.builder(
       controller: scroll,
-      // +1 para el indicador de "cargando más" al final.
       itemCount: entradas.length + (loading ? 1 : 0),
       itemBuilder: (context, i) {
         if (i >= entradas.length) {
@@ -841,8 +735,6 @@ class _Sidebar extends StatelessWidget {
               selected: view == _View.playlist && selected?.id == playlist.id,
               playing: playlist.uri == playingContextUri,
               hayCarpetas: carpetas.isNotEmpty,
-              // Solo el margen extra: lo que delimita la pertenencia a la
-              // carpeta es la indentación, no el relleno del icono.
               indentada: indentada,
               onTap: () => onSelectPlaylist(playlist),
               onDelete: () => onDeletePlaylist(playlist),
@@ -854,17 +746,12 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-/// Una fila del panel de playlists: o bien una carpeta con sus playlists
-/// plegadas debajo, o bien una playlist (suelta, o indentada dentro de una
-/// carpeta no plegada).
 sealed class _EntradaSidebar {}
 
 class _EntradaCarpeta extends _EntradaSidebar {
   _EntradaCarpeta(this.carpeta, {required this.cargadas});
   final Carpeta carpeta;
 
-  /// Cuántas playlists de la carpeta están ya descargadas. Menos que el total
-  /// cuando algunas han quedado en páginas que aún no han llegado.
   final int cargadas;
 }
 
@@ -872,7 +759,6 @@ class _EntradaPlaylist extends _EntradaSidebar {
   _EntradaPlaylist(this.playlist, {this.indentada = false});
   final Playlist playlist;
 
-  /// Va dentro de una carpeta (y no plegada), por lo que se indentará.
   final bool indentada;
 }
 
@@ -905,16 +791,6 @@ class _SectionHeader extends StatelessWidget {
                   style: theme.textTheme.labelSmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             ),
-            // El "+" va fuera del InkWell de la cabecera: pulsarlo no debe
-            // plegar la sección de paso. Ahora ofrece las dos creaciones.
-            // ⚠️ Aquí NO va `color:`. Esto era un IconButton, donde `color` es
-            // el color del icono; en un PopupMenuButton es **el fondo del menú
-            // desplegable**. Al convertirlo se arrastró la propiedad tal cual y
-            // el menú acababa pintado de `onSurfaceVariant` —un color pensado
-            // para texto— con las letras en `onSurface` encima: oscuro sobre
-            // oscuro, ilegible. Sin `color`, el menú usa la superficie del tema
-            // y el texto su contraste, que es lo correcto en claro y en oscuro.
-            // El tinte que se quería va en el icono, que es lo que se veía.
             PopupMenuButton<String>(
               tooltip: 'Nueva playlist o carpeta',
               icon: Icon(Icons.add, size: 18, color: theme.colorScheme.onSurfaceVariant),
@@ -996,8 +872,6 @@ class _PlaylistTile extends StatelessWidget {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, size: 16),
             tooltip: 'Opciones',
-            // ⚠️ `onSelected` mira el valor de verdad: con dos entradas, un
-            // `(_) => onDelete()` borraría la playlist al elegir "mover".
             onSelected: (v) {
               if (v == 'mover') {
                 onMover();
@@ -1006,8 +880,6 @@ class _PlaylistTile extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
-              // "Mover a carpeta" solo tiene sentido si hay algo que elegir;
-              // sin carpetas, no hay ningún sitio al que moverla.
               if (hayCarpetas)
                 const PopupMenuItem(
                   value: 'mover',
@@ -1040,12 +912,6 @@ class _CarpetaTile extends StatelessWidget {
 
   final Carpeta carpeta;
 
-  /// Cuántas de las playlists que apunta la carpeta están ya cargadas. El
-  /// subtítulo "x de y" existe porque Spotify pagina las playlists de 50 en 50:
-  /// una carpeta puede referirse a ids de páginas que todavía no se han pedido,
-  /// y enseñar el número de `carpeta.playlistIds` entero sería mentir sobre lo
-  /// que se combina al desplegarla. Cuando todo llegue, se queda en "x
-  /// playlists" y el "de y" desaparece solo.
   final int cargadas;
   final bool plegada;
   final VoidCallback onTap;

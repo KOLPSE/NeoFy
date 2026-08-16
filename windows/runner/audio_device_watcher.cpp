@@ -4,13 +4,10 @@
 
 namespace {
 
-// Implementación mínima de IMMNotificationClient: de los seis avisos que trae
-// la interfaz solo interesa uno, pero hay que declararlos todos.
 class Notificador : public IMMNotificationClient {
  public:
   Notificador(HWND window, UINT message) : window_(window), message_(message) {}
 
-  // ------------------------------------------------------------- IUnknown
   ULONG STDMETHODCALLTYPE AddRef() override {
     return InterlockedIncrement(&ref_);
   }
@@ -36,13 +33,6 @@ class Notificador : public IMMNotificationClient {
     return E_NOINTERFACE;
   }
 
-  // -------------------------------------------------- IMMNotificationClient
-
-  // El único que importa. eRender es la salida (lo contrario, eCapture, es el
-  // micrófono) y eConsole es el rol que elige cpal —la capa que hay debajo del
-  // backend rodio de librespot— cuando pide "el dispositivo por defecto". Los
-  // otros roles cambian sin que la música se mueva de sitio, así que dejarlos
-  // pasar evita reinicios de audio que no arreglarían nada.
   HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role,
                                                    LPCWSTR) override {
     if (flow == eRender && role == eConsole) {
@@ -62,8 +52,6 @@ class Notificador : public IMMNotificationClient {
   }
 
  private:
-  // Solo se destruye por Release(); el destructor va privado para que nadie lo
-  // borre con delete.
   ~Notificador() = default;
 
   LONG ref_ = 1;
@@ -71,7 +59,7 @@ class Notificador : public IMMNotificationClient {
   UINT message_;
 };
 
-}  // namespace
+}
 
 AudioDeviceWatcher::~AudioDeviceWatcher() {
   Stop();
@@ -85,8 +73,6 @@ bool AudioDeviceWatcher::Start(HWND window, UINT message) {
     return false;
   }
 
-  // Los GUID se sacan con __uuidof y no de las constantes CLSID_/IID_: esas
-  // solo están declaradas en la cabecera y arrastrarían uuid.lib al enlazado.
   HRESULT hr = ::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
                                   CLSCTX_INPROC_SERVER,
                                   IID_PPV_ARGS(&enumerator_));

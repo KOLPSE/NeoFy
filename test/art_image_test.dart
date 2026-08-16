@@ -9,15 +9,11 @@ import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/settings.dart';
 import 'package:neofy/ui/art_image.dart';
 
-/// Un PNG de 1x1 válido. Hace falta que decodifique de verdad para que el
-/// widget llegue a construir el `Image`.
 final _png = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE'
     'hQGAhKmMIQAAAABJRU5ErkJggg==');
 
 void main() {
-  // La caché nombra los ficheros por el sha1 de la URL. Se planta uno a mano
-  // para que no haga falta red: `flutter test` la tiene mockeada a 400.
   const url = 'https://ejemplo.invalido/neofy-test/portada.png';
   final fichero = File(p.join(
       cacheDir().path, 'art', '${sha1.convert(url.codeUnits)}.img'));
@@ -33,8 +29,6 @@ void main() {
 
   testWidgets('pinta desde fichero, nunca desde bytes en memoria',
       (tester) async {
-    // `runAsync` hace falta porque la caché toca disco de verdad: fuera de él,
-    // el reloj falso de `flutter_test` no deja completar la E/S.
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(body: ArtImage(url: url, size: 40)),
@@ -45,21 +39,13 @@ void main() {
 
     final imagen = tester.widget<Image>(find.byType(Image));
 
-    // `cacheWidth` envuelve al proveedor en un ResizeImage: es lo que evita
-    // guardar el bitmap a resolución completa.
     final resize = imagen.image as ResizeImage;
 
-    // ⚠️ El fondo del asunto: con `MemoryImage` el `Uint8List` con el JPEG
-    // entero se queda vivo como clave dentro del imageCache de Flutter, así
-    // que por cada carátula se guardaban el bitmap decodificado **y** el
-    // fichero comprimido. Con `FileImage` la clave es una ruta.
     expect(resize.imageProvider, isA<FileImage>());
     expect(resize.imageProvider, isNot(isA<MemoryImage>()));
   });
 
   group('elige la variante por píxeles reales, no por tamaño lógico', () {
-    // Solo existe en disco la variante pequeña; si el widget se bajara la
-    // grande, el fichero no estaría y saldría el hueco. Eso es lo que se mide.
     Future<void> montar(WidgetTester tester, double dpr, double size) async {
       await tester.runAsync(() async {
         await tester.pumpWidget(MaterialApp(
@@ -82,16 +68,12 @@ void main() {
     testWidgets('56 px al 100 % caben en la de 64: usa la pequeña',
         (tester) async {
       await montar(tester, 1.0, 56);
-      // La barra de reproducción es este caso: antes se bajaba la de 300
-      // (hasta 78 KB) para pintar 56 píxeles.
       expect(find.byType(Image), findsOneWidget);
     });
 
     testWidgets('los mismos 56 px al 200 % ya no caben: pide la grande',
         (tester) async {
       await montar(tester, 2.0, 56);
-      // Pide la grande, que en este test no existe en disco: sale el hueco.
-      // Lo que importa es que NO se conforme con la pequeña y se vea blanda.
       expect(find.byType(Image), findsNothing);
     });
 
@@ -115,8 +97,6 @@ void main() {
         await tester.pump();
       });
 
-      // El fichero SI existe en disco, asi que sin modo rendimiento saldria la
-      // imagen. Que no salga es justo la prueba de que no se pide nada.
       expect(find.byType(Image), findsNothing);
       expect(find.byType(DecoratedBox), findsWidgets);
     });
@@ -131,8 +111,6 @@ void main() {
       });
       expect(find.byType(Image), findsOneWidget);
 
-      // Sin este repintado, las filas que ya estuvieran en pantalla seguirian
-      // con su bitmap en memoria hasta que el usuario hiciera scroll.
       modoRendimiento.value = true;
       await tester.pump();
       expect(find.byType(Image), findsNothing);

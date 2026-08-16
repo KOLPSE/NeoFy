@@ -33,8 +33,6 @@ class _QueueScreenState extends State<QueueScreen> {
   void initState() {
     super.initState();
     unawaited(_load());
-    // La cola cambia cuando cambia la canción, así que se refresca al vuelo en
-    // vez de sondearla aparte: el sondeo del reproductor ya nos avisa.
     widget.player.addListener(_onPlayerChanged);
   }
 

@@ -46,8 +46,6 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  /// Se espera a que el usuario deje de teclear: sin esto, escribir "beatles"
-  /// dispararía siete búsquedas y comería cuota de la API para nada.
   void _onChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
@@ -63,8 +61,6 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_loading || _query.isEmpty) return;
     setState(() => _loading = true);
     try {
-      // ⚠️ En Modo Desarrollo Spotify capa `limit` a 10 (antes 50), así que
-      // "ver más" pagina con offset en vez de pedir una página más grande.
       final page = await widget.api.searchTracks(_query, limit: 10, offset: _offset);
       if (!mounted) return;
       setState(() {
@@ -149,8 +145,6 @@ class _SearchScreenState extends State<SearchScreen> {
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
-              // Igual que en las playlists: sin escuchar esto, el título
-              // verde se queda en la canción que sonaba al abrir la pantalla.
               : ValueListenableBuilder<String?>(
                   valueListenable: widget.player.currentUri,
                   builder: (context, currentUri, _) => ListView.builder(

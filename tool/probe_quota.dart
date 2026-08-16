@@ -1,12 +1,4 @@
-// ¿Hasta dónde llega el 429 de cuota? ¿Solo a unos endpoints o a todo?
-//
-//   dart run tool/probe_quota.dart      (con la app CERRADA)
-//
-// Hace las **mínimas** peticiones posibles: cada una de más cuenta para
-// mantener viva la penalización. Guarda el refresh token rotado, como todas las
-// sondas de esta carpeta.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -52,7 +44,6 @@ Future<void> main() async {
     print('$etiqueta → ${r.statusCode}${ra == null ? "" : "  [Retry-After: $ra s]"}  $cuerpo');
   }
 
-  // Los cuatro que hacen falta para que la app sea usable.
   await mirar('GET /me                 ', '/me');
   await mirar('GET /me/player          ', '/me/player');
   await mirar('GET /me/player/devices  ', '/me/player/devices');

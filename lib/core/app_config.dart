@@ -3,72 +3,22 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-/// Client ID de la app registrada en el Spotify Developer Dashboard.
-///
-/// En un flujo PKCE el Client ID **no es secreto**: está diseñado para vivir
-/// dentro de clientes públicos, así que va compilado. Se puede sobrescribir
-/// desde `config.json` sin recompilar.
-///
-/// Va **vacío en el repositorio a propósito**. En Modo Desarrollo, una app de
-/// Spotify solo funciona para los 25 usuarios que su dueño da de alta a mano,
-/// así que un Client ID publicado no le sirve a nadie más que a su dueño — y en
-/// cambio deja que cualquiera le agote la cuota. Cada usuario crea el suyo y lo
-/// pone en `config.json`; la pantalla de inicio explica cómo.
 const String kDefaultClientId = '';
 
-/// ¿Hay Client ID configurado? Sin él no se puede ni empezar el login.
 bool get hayClientId => kDefaultClientId.isNotEmpty;
 
-/// Client ID de la aplicación de NeoFy en Discord, para el Rich Presence.
-///
-/// A diferencia de [kDefaultClientId], **este sí va compilado con un valor
-/// real**: no es un caso equivalente. El Client ID de Spotify abre un flujo de
-/// autorización con un tope real de 25 usuarios en Modo Desarrollo, así que
-/// publicarlo le agotaría la cuota a su dueño. El de Discord no autoriza nada
-/// ni tiene límite de usuarios: es solo la etiqueta (nombre e icono) que
-/// Discord IPC usa para identificar de qué app viene la presencia, y cada
-/// usuario sigue viendo únicamente su propia canción en su propia cuenta,
-/// hablando con su propio Discord local. Se puede sobrescribir desde Ajustes
-/// por si alguien prefiere su propia app.
 const String kDiscordClientId = '1537557680024199198';
 
-/// Versión de NeoFy.
-///
-/// ⚠️ **Esta constante es la única fuente de la verdad.** `build_installer.ps1`
-/// la lee de aquí y se la pasa a Inno Setup, así que el instalador y el
-/// actualizador no pueden desincronizarse: subir la versión es tocar esta línea
-/// y nada más.
 const String kVersion = '0.3.4';
 
-/// Repositorio de donde salen las actualizaciones.
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
-/// Puerto del servidor de loopback que recibe el callback de OAuth.
-///
-/// Tiene que coincidir **carácter por carácter** con el Redirect URI dado de
-/// alta en el Dashboard: `http://127.0.0.1:8898/callback`. Ojo: Spotify ya no
-/// acepta `localhost`, solo la IP de loopback literal.
 const int kRedirectPort = 8898;
 
-/// Puerto para el login OAuth *de librespot*, que es un flujo aparte del
-/// nuestro (usa el client_id del cliente de escritorio de Spotify, no el
-/// nuestro, y por eso los tokens no son intercambiables).
 const int kLibrespotOAuthPort = 8899;
 
-/// Nombre con el que aparece este equipo en la lista de dispositivos de
-/// Spotify Connect. Es también la clave para localizar nuestro `device_id`.
 const String kDeviceName = 'NeoFy';
 
-/// Permisos que pedimos en el consentimiento.
-///
-/// `user-library-read` hace falta para "Canciones que te gustan", que no es una
-/// playlist y no sale en `/me/playlists`; `user-library-modify`, para el botón
-/// del corazón de cada fila.
-///
-/// ⚠️ Añadir un scope a esta lista obliga a **volver a pasar por el
-/// consentimiento**: renovar un refresh token no le añade permisos nuevos. Cada
-/// pantalla comprueba con `auth.hasScope` el permiso que necesita, para que un
-/// scope nuevo no bloquee de golpe lo que ya funcionaba.
 const List<String> kScopes = [
   'user-read-private',
   'user-read-playback-state',
@@ -84,30 +34,13 @@ const List<String> kScopes = [
   'user-read-recently-played',
 ];
 
-/// Permiso para guardar y quitar favoritos. Se nombra aparte porque hay que
-/// comprobarlo por su cuenta: es el último en llegar y las sesiones anteriores
-/// no lo tienen.
 const String kScopeLibraryModify = 'user-library-modify';
 
-/// Permiso para leer la biblioteca guardada.
 const String kScopeLibraryRead = 'user-library-read';
 
-/// Permisos de la portada. Comprobado con `tool/probe_home.dart`: los endpoints
-/// de "hecho para ti" de Spotify (`/browse/*`) dan 403 en Modo Desarrollo y
-/// `/recommendations` está retirado, pero estos dos siguen vivos y solo piden
-/// su permiso.
 const String kScopeTopRead = 'user-top-read';
 const String kScopeRecentlyPlayed = 'user-read-recently-played';
 
-/// Dónde viven los datos que **no se pueden perder**: `config.json`, el refresh
-/// token y las credenciales de librespot.
-///
-/// - Windows: `%APPDATA%\neofy`.
-/// - Linux: `$XDG_CONFIG_HOME/neofy`, o `~/.config/neofy` si no está definida.
-///
-/// Se lee del entorno en vez de usar `path_provider` para ahorrarnos un plugin
-/// nativo entero — en Windows `APPDATA` siempre está definido, y en Linux la
-/// especificación XDG obliga a que `HOME` lo esté.
 Directory appDataDir() {
   final base = Platform.isWindows
       ? Platform.environment['APPDATA']
@@ -120,15 +53,6 @@ Directory appDataDir() {
   return dir;
 }
 
-/// Dónde va lo que se puede tirar sin consecuencias: las carátulas y la caché
-/// de audio de librespot.
-///
-/// - Windows: la misma carpeta que [appDataDir], **a propósito**. Separarlas
-///   obligaría a migrar la caché de quien ya tiene la app instalada, y a cambio
-///   de nada: Windows no distingue entre datos y caché.
-/// - Linux: `$XDG_CACHE_HOME/neofy`, o `~/.cache/neofy`. Ahí sí importa —
-///   meter cientos de megas de carátulas en `~/.config` está mal, y hay
-///   herramientas que dan por hecho que `~/.cache` se puede borrar entero.
 Directory cacheDir() {
   if (Platform.isWindows) return appDataDir();
   final base = _xdg('XDG_CACHE_HOME', '.cache') ?? Directory.systemTemp.path;
@@ -137,11 +61,6 @@ Directory cacheDir() {
   return dir;
 }
 
-/// Una ruta base de XDG: la variable si está definida y es absoluta, y si no el
-/// respaldo bajo `$HOME`.
-///
-/// La especificación es explícita en que un valor relativo hay que ignorarlo,
-/// no interpretarlo desde el directorio actual.
 String? _xdg(String variable, String respaldo) {
   final valor = Platform.environment[variable];
   if (valor != null && valor.isNotEmpty && p.isAbsolute(valor)) return valor;
@@ -149,15 +68,6 @@ String? _xdg(String variable, String respaldo) {
   return home == null || home.isEmpty ? null : p.join(home, respaldo);
 }
 
-/// La app se llamaba "spotify-native" y sus datos vivían en otra carpeta.
-///
-/// Ahí están el refresh token, las credenciales de librespot y la caché de
-/// carátulas: perderlos significaría **dos logins otra vez** por un simple
-/// cambio de nombre. Se mueve la carpeta entera la primera vez y no se vuelve a
-/// tocar el asunto.
-///
-/// Solo aplica a Windows: es historia de una instalación que en Linux no ha
-/// existido nunca, porque el port es posterior al cambio de nombre.
 void _migrarDesdeElNombreViejo(Directory nueva) {
   if (!Platform.isWindows) return;
   try {
@@ -165,40 +75,20 @@ void _migrarDesdeElNombreViejo(Directory nueva) {
     if (!vieja.existsSync()) return;
     vieja.renameSync(nueva.path);
   } catch (_) {
-    // Si el renombrado falla (carpeta en uso, permisos), no se rompe nada: se
-    // empieza de cero y como mucho toca volver a iniciar sesión.
   }
 }
 
-/// Preferencias persistidas en `config.json`, dentro de [appDataDir].
 class AppConfig {
   String clientId;
   int initialVolume;
   int bitrate;
 
-  /// Modo rendimiento: sacrifica las carátulas para bajar la memoria. Ver
-  /// `core/settings.dart`.
   bool performanceMode;
 
-  /// Volumen de la reproducción por YouTube (la vía libre), 0..100.
-  ///
-  /// Aparte de [initialVolume] porque son dos reproductores distintos: aquel
-  /// se le pasa a librespot al arrancar y lo acaba mandando Spotify Connect;
-  /// este lo aplica `media_kit` en este mismo proceso.
-  ///
-  /// La clave sigue llamándose `volumenNeoTube` en el `config.json` aunque el
-  /// modo NeoTube ya no exista: renombrarla le borraría el volumen guardado a
-  /// todo el que venga de una versión anterior, y no se gana nada.
   int volumenNeoTube;
 
-  /// Rich Presence de Discord. El interruptor va apagado por defecto: mostrar
-  /// lo que escuchas es una decisión del usuario, aunque el Client ID ya
-  /// venga listo de fábrica.
   bool discordRpcEnabled;
 
-  /// Client ID de la aplicación de Discord para Rich Presence. Por defecto
-  /// [kDiscordClientId], pero editable desde Ajustes por si alguien prefiere
-  /// su propia app.
   String discordClientId;
 
   AppConfig({
@@ -228,8 +118,6 @@ class AppConfig {
         discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
       );
     } catch (_) {
-      // Un config corrupto no debe impedir arrancar: se vuelve a los valores
-      // por defecto y se reescribirá en el próximo save().
       return AppConfig();
     }
   }
@@ -246,4 +134,3 @@ class AppConfig {
     }));
   }
 }
-

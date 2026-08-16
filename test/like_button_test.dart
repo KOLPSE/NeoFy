@@ -30,8 +30,6 @@ class _FakeConfig extends AppConfig {
   Future<void> save() async {}
 }
 
-/// Los scopes de verdad solo se rellenan al canjear un token, así que se
-/// sobrescribe la consulta: es justo lo que distingue una sesión antigua.
 class _FakeAuth extends SpotifyAuth {
   _FakeAuth({this.concede = true}) : super(AppConfig());
   final bool concede;
@@ -66,7 +64,6 @@ class _FakeApi extends SpotifyApi {
   }
 }
 
-/// El corazón relleno: el `Icon` rojo que va bajo el recorte del líquido.
 final _corazonRojo = find.byWidgetPredicate(
   (w) => w is Icon && w.icon == Icons.favorite && w.color == kColorFavorito,
 );
@@ -83,7 +80,6 @@ void main() {
     final auth = _FakeAuth(concede: concede);
     api = _FakeApi(auth);
     store = LikedStore(api: api, auth: auth);
-    // Cancela el agrupador pendiente: si no, el test acaba con un Timer vivo.
     addTearDown(store.dispose);
     return store;
   }
@@ -101,17 +97,11 @@ void main() {
     ));
   }
 
-  // El invariante de siempre: `liked_screen.dart` deduce por aritmética qué
-  // fila está mirando el usuario y para eso el alto tiene que ser exacto. Un
-  // botón nuevo en la fila es justo lo que podría romperlo.
   testWidgets('la fila con corazón sigue midiendo 64 px', (tester) async {
     await montar(tester, crear());
-    // Hasta que no vence el agrupador de consultas queda un Timer vivo, y el
-    // framework de test lo considera una fuga.
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.getSize(find.byType(TrackTile)).height, 64);
 
-    // Y lleno tampoco crece: el corazón relleno es del mismo tamaño.
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(TrackTile)).height, 64);
   });
@@ -129,16 +119,13 @@ void main() {
     api.respuestaContains = const [true];
     await montar(tester, likes);
 
-    // Antes de la respuesta no se sabe: corazón vacío, sin rojo.
     expect(_corazonRojo, findsNothing);
 
-    // Las consultas se agrupan 120 ms para no mandar una por fila.
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
     expect(api.llamadas, ['contains spotify:track:1']);
     expect(_corazonRojo, findsOneWidget);
-    // El contorno sigue debajo: es lo que da el borde al corazón medio lleno.
     expect(_corazonVacio, findsOneWidget);
   });
 
@@ -151,10 +138,8 @@ void main() {
     await tester.tap(find.byType(LikeButton));
     await tester.pump();
 
-    // ⚠️ La API pide la uri completa: un id suelto da 400 "Invalid Spotify URI".
     expect(api.llamadas, ['save spotify:track:1']);
 
-    // A mitad de la animación el corazón está pintándose, pero aún no lleno.
     await tester.pump(const Duration(milliseconds: 300));
     expect(_corazonRojo, findsOneWidget);
 
@@ -187,8 +172,6 @@ void main() {
     await tester.tap(find.byType(LikeButton));
     await tester.pumpAndSettle();
 
-    // El pintado optimista se revierte: no se queda diciendo que está guardada
-    // una canción que Spotify no guardó.
     expect(likes.isSaved(_pista.uri), isFalse);
     expect(_corazonRojo, findsNothing);
     expect(find.textContaining('Spotify no dejó cambiar'), findsOneWidget);
@@ -216,7 +199,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pumpAndSettle();
 
-      // Ni una consulta: la biblioteca ya dijo que estaban todas guardadas.
       expect(api.llamadas, isEmpty);
       expect(_corazonRojo, findsOneWidget);
     });

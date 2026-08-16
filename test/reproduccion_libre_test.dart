@@ -247,7 +247,7 @@ void main() {
     test('una canción no encontrada en YouTube se salta y reporta lastError', () async {
       final pistas = [_track('t1'), _track('t_no_existe'), _track('t3')];
       await libre.ponerLista(pistas, desde: 0);
-      await libre.siguiente(); // Intenta t_no_existe, no la encuentra y salta a t3
+      await libre.siguiente();
 
       expect(controller.lastError, contains('No se encontró'));
       expect(controller.state.track?.id, 't3');

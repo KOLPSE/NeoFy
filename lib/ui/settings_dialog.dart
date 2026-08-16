@@ -6,16 +6,6 @@ import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/updater.dart';
 
-/// Ajustes: lo que gasta la app, el modo rendimiento y las actualizaciones.
-///
-/// El consumo se enseña aquí y no en una barra permanente porque es un dato de
-/// diagnóstico, no algo que haga falta mirar mientras escuchas música.
-///
-/// Casi todo lo que hay dentro es de la app entera: la memoria y la CPU las
-/// gasta un único proceso, el modo rendimiento toca la caché de imágenes y la
-/// actualización trae un solo binario. Lo que depende de cómo esté sonando la
-/// música entra por [bloquesExtra]: reiniciar la salida de librespot siempre,
-/// y el estado de yt-dlp solo cuando la cuenta va por la vía libre.
 Future<void> mostrarAjustes(
   BuildContext context, {
   required ResourceMonitor monitor,
@@ -49,11 +39,8 @@ class _DialogoAjustes extends StatelessWidget {
   final Settings settings;
   final Updater updater;
 
-  /// Cerrar la app en cuanto arranque el instalador: no puede sobrescribir un
-  /// ejecutable en uso.
   final Future<void> Function() onSalirParaActualizar;
 
-  /// Bloques que el llamador añade según cómo esté reproduciendo la app.
   final List<Widget> bloquesExtra;
 
   @override
@@ -68,8 +55,6 @@ class _DialogoAjustes extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Se repinta con cada muestra del monitor (cada 3 s); es lo único
-              // vivo del diálogo.
               AnimatedBuilder(
                 animation: monitor,
                 builder: (context, _) {
@@ -155,15 +140,6 @@ class _DialogoAjustes extends StatelessWidget {
   }
 }
 
-/// Salida de emergencia para cuando la música se queda muda. Reinicia
-/// librespot, así que **no sirve en la vía libre**, que reproduce en este mismo
-/// proceso. Se pasa por `mostrarAjustes(bloquesExtra:)`.
-///
-/// La app ya reinicia el audio sola al cambiar la salida del sistema o al ver
-/// un error del backend en el log, pero no todo se detecta: un driver que se
-/// atasca o una aplicación que se queda el dispositivo en modo exclusivo no
-/// avisan a nadie. Esto es lo mismo que hacía el usuario cerrando y abriendo la
-/// app, pero sin perder la sesión ni la canción.
 class ReiniciarAudioDeNeoFy extends StatefulWidget {
   const ReiniciarAudioDeNeoFy({super.key, required this.onReiniciar});
 
@@ -218,7 +194,6 @@ class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
   }
 }
 
-/// Versión instalada y actualización en un clic.
 class _Actualizaciones extends StatelessWidget {
   const _Actualizaciones({
     required this.updater,
@@ -232,7 +207,6 @@ class _Actualizaciones extends StatelessWidget {
     await updater.descargar();
     if (updater.estado != EstadoActualizacion.listaParaInstalar) return;
     if (await updater.instalar()) {
-      // El instalador ya está corriendo; la app tiene que quitarse de en medio.
       await onSalirParaActualizar();
     }
   }
@@ -260,9 +234,6 @@ class _Actualizaciones extends StatelessWidget {
                     switch (estado) {
                       EstadoActualizacion.buscando => 'Buscando…',
                       EstadoActualizacion.alDia => 'Estás al día',
-                      // Donde no se instala sola (Linux), el aviso tiene que
-                      // decir qué hacer: si no, informa de una novedad y deja
-                      // al usuario sin ninguna forma de cogerla.
                       EstadoActualizacion.disponible => Updater.seInstalaSolo
                           ? 'Hay una versión nueva: ${updater.versionDisponible}'
                           : 'Hay una versión nueva (${updater.versionDisponible}). '
@@ -359,10 +330,6 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.settings.discordClientId);
-    // Guardar (y reconectar a Discord) al vuelo en cada letra escribiría en
-    // disco y reintentaría el handshake decenas de veces mientras se pega o
-    // se teclea el id: se guarda solo al terminar, con Intro o al salir del
-    // campo.
     _foco = FocusNode()..addListener(_alPerderElFoco);
   }
 
@@ -409,4 +376,3 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
     );
   }
 }
-

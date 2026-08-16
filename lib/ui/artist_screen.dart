@@ -9,17 +9,6 @@ import '../core/spotify_api.dart';
 import 'art_image.dart';
 import 'track_tile.dart';
 
-/// Lo que se va a reproducir de un artista, **antes** de darle a reproducir.
-///
-/// Pulsar un artista en la portada ponía su música directamente, sin enseñar
-/// qué. Aquí se ve la lista, cuántas canciones son y cuánto duran en total.
-///
-/// ⚠️ **Lo que se pinta es exactamente lo que suena**, y por eso el botón usa
-/// [PlayerController.playLista] con estas mismas canciones y no
-/// `playContext(artista.uri)`. El contexto de un artista lo decide Spotify y no
-/// tiene por qué coincidir con esta lista: prometer un recuento y una duración
-/// y luego reproducir otra cosa sería mentir en la propia pantalla que existe
-/// para no hacerlo.
 class ArtistScreen extends StatefulWidget {
   const ArtistScreen({
     super.key,
@@ -86,7 +75,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
           padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              // Radio la mitad del lado = círculo, igual que en la portada.
               ArtImage(url: widget.artist.art, size: 96, radius: 48),
               const SizedBox(width: 16),
               Expanded(
@@ -106,8 +94,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
                     ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      // Deshabilitado mientras no haya lista: reproducir algo
-                      // que aún no se sabe cuál es no tiene sentido.
                       onPressed: _tracks.isEmpty
                           ? null
                           : () => widget.player.playLista(_uris),
@@ -153,8 +139,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
       );
     }
 
-    // Escuchar aquí la uri que suena es lo que mueve el título verde de una
-    // canción a la siguiente sin repintar la pantalla entera.
     return ValueListenableBuilder<String?>(
       valueListenable: widget.player.currentUri,
       builder: (context, currentUri, _) => ListView.builder(
@@ -167,8 +151,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
             leadingNumber: i + 1,
             isCurrent: currentUri != null && currentUri == t.uri,
             actions: TrackActions(
-              // Desde la lista entera y por su posición, para que "siguiente"
-              // siga por donde toca en vez de dejar la canción repitiéndose.
               onPlay: () => widget.player.playLista(_uris, desde: i),
               onQueue: () async {
                 await widget.player.addToQueue(t.uri);
@@ -182,10 +164,6 @@ class _ArtistScreenState extends State<ArtistScreen> {
   }
 }
 
-/// `10 canciones · 32 min`, o con horas cuando pasa de sesenta minutos.
-///
-/// Se redondea al minuto porque los segundos no le dicen nada a nadie en un
-/// total, y se escribe en singular cuando toca: "1 canción · 3 min".
 String _resumen(List<Track> tracks) {
   final ms = tracks.fold<int>(0, (suma, t) => suma + t.durationMs);
   final minutos = (ms / 60000).round();
@@ -199,6 +177,5 @@ String _resumen(List<Track> tracks) {
   return resto == 0 ? '$canciones · $enHoras' : '$canciones · $enHoras $resto min';
 }
 
-/// Solo para los tests: el resumen que se pinta bajo el nombre del artista.
 @visibleForTesting
 String resumenDeArtista(List<Track> tracks) => _resumen(tracks);

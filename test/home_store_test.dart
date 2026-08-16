@@ -31,8 +31,6 @@ const _artista = Artist(
   art: null,
 );
 
-/// [novedadesFalla] simula lo que se vio en Linux: `/browse/new-releases`
-/// contestando 403 para ese Client ID.
 class _FakeApi extends SpotifyApi {
   _FakeApi(super.auth, {this.novedadesFalla = false});
 
@@ -60,10 +58,6 @@ class _FakeApi extends SpotifyApi {
 }
 
 void main() {
-  // Regresión: un 403 de /browse/new-releases (visto en Linux con un Client ID
-  // sin acceso a esa ruta) no debe tirar el resto de la portada. Antes estaba
-  // en el mismo Future.wait que el historial y lo más escuchado, así que un
-  // fallo ahí dejaba toda la pantalla de Inicio en "Forbidden".
   test('si /browse/new-releases falla, el resto de la portada carga igual', () async {
     final api = _FakeApi(_FakeAuth(), novedadesFalla: true);
     final home = HomeStore(api: api, auth: _FakeAuth());

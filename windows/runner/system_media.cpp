@@ -19,23 +19,12 @@ using ABI::Windows::Foundation::TimeSpan;
 
 namespace {
 
-// WinRT cuenta el tiempo en unidades de 100 ns; la Web API, en milisegundos.
 TimeSpan DesdeMs(int64_t ms) {
   TimeSpan t = {};
   t.Duration = ms * 10000;
   return t;
 }
 
-// La carátula, como fuente que el panel del sistema pueda leer.
-//
-// Se le da un `IStream` sobre el fichero que la app ya tiene en disco, envuelto
-// para WinRT. La alternativa de manual —`StorageFile::GetFileFromPathAsync`—
-// es asíncrona, y esperarla aquí bloquearía el hilo de la ventana; ir por
-// `IStream` sale síncrono y sin hilos de por medio.
-//
-// ⚠️ Se abre con `STGM_SHARE_DENY_NONE`. Con el modo exclusivo, la poda de la
-// caché de carátulas no podría borrar el fichero de la canción que esté
-// sonando: fallaría con un error de uso compartido que no explicaría nada.
 ComPtr<streams::IRandomAccessStreamReference> ReferenciaDeFichero(
     const std::wstring& ruta) {
   ComPtr<streams::IRandomAccessStreamReference> vacio;
@@ -72,7 +61,7 @@ ComPtr<streams::IRandomAccessStreamReference> ReferenciaDeFichero(
   return referencia;
 }
 
-}  // namespace
+}
 
 SystemMediaControls::~SystemMediaControls() {
   Stop();
@@ -85,9 +74,6 @@ bool SystemMediaControls::Start(HWND window, UINT mensaje) {
   window_ = window;
   mensaje_ = mensaje;
 
-  // Una app de escritorio no tiene "vista actual", así que los controles se
-  // piden por ventana con la interfaz de interoperabilidad. La ruta de las apps
-  // de la Store (`GetForCurrentView`) devuelve error aquí.
   ComPtr<ISystemMediaTransportControlsInterop> interop;
   if (FAILED(::RoGetActivationFactory(
           HStringReference(RuntimeClass_Windows_Media_SystemMediaTransportControls)
@@ -106,9 +92,7 @@ bool SystemMediaControls::Start(HWND window, UINT mensaje) {
   smtc_->put_IsPauseEnabled(TRUE);
   smtc_->put_IsNextEnabled(TRUE);
   smtc_->put_IsPreviousEnabled(TRUE);
-  // No hay "parar" en esta app; el panel no debe enseñar un botón muerto.
   smtc_->put_IsStopEnabled(FALSE);
-  // Hasta que Dart mande el primer estado no hay nada sonando.
   smtc_->put_PlaybackStatus(media::MediaPlaybackStatus_Closed);
 
   auto botones =
@@ -139,8 +123,6 @@ bool SystemMediaControls::Start(HWND window, UINT mensaje) {
                 comando = ComandoMultimedia::kPrevious;
                 break;
               default:
-                // Grabar, cambiar de canal, avanzar rápido: nada de eso existe
-                // aquí, y tratarlos como un play/pausa sería peor que ignorarlos.
                 return S_OK;
             }
             ::PostMessage(window_, mensaje_, static_cast<WPARAM>(comando), 0);
@@ -150,9 +132,6 @@ bool SystemMediaControls::Start(HWND window, UINT mensaje) {
     smtc_->add_ButtonPressed(botones.Get(), &token_boton_);
   }
 
-  // La barra de progreso del panel y el poder arrastrarla son de la segunda
-  // versión de la interfaz. En un Windows que no la tenga se pierde la barra y
-  // el resto sigue funcionando, así que el fallo no se propaga.
   ComPtr<media::ISystemMediaTransportControls2> smtc2;
   if (SUCCEEDED(smtc_.As(&smtc2)) && smtc2 != nullptr) {
     auto salto =
@@ -183,8 +162,6 @@ void SystemMediaControls::Stop() {
   if (smtc_ == nullptr) {
     return;
   }
-  // Primero se quitan los avisos: los manejadores se quedaron con `this` y uno
-  // que llegara tarde escribiría sobre un objeto ya destruido.
   if (token_boton_.value != 0) {
     smtc_->remove_ButtonPressed(token_boton_);
     token_boton_ = {};
@@ -196,8 +173,6 @@ void SystemMediaControls::Stop() {
     }
     token_salto_ = {};
   }
-  // Dejar de anunciarse: si no, el panel del sistema se queda con NeoFy y su
-  // última canción después de cerrar la app.
   smtc_->put_PlaybackStatus(media::MediaPlaybackStatus_Closed);
   smtc_->put_IsEnabled(FALSE);
   smtc_ = nullptr;
@@ -209,8 +184,6 @@ void SystemMediaControls::Update(const EstadoMultimedia& estado) {
     return;
   }
 
-  // ⚠️ Sin canción es `Stopped`, no `Paused`. Con `Paused` el panel se queda
-  // enseñando un reproductor parado que no tiene nada que reanudar.
   smtc_->put_PlaybackStatus(
       !estado.hay_cancion
           ? media::MediaPlaybackStatus_Stopped
@@ -236,17 +209,12 @@ void SystemMediaControls::Update(const EstadoMultimedia& estado) {
 
   ComPtr<media::IMusicDisplayProperties> musica;
   if (SUCCEEDED(panel->get_MusicProperties(&musica)) && musica != nullptr) {
-    // ⚠️ Las variables no sobran. `HStringReference` no copia la cadena: se
-    // queda apuntando a la que le pasan **y a su propia cabecera**, así que
-    // devolverla desde una función auxiliar es justo lo que no hay que hacer.
     const HStringReference titulo(estado.titulo.c_str(),
                                   static_cast<UINT32>(estado.titulo.size()));
     const HStringReference artista(estado.artista.c_str(),
                                    static_cast<UINT32>(estado.artista.size()));
     musica->put_Title(titulo.Get());
     musica->put_Artist(artista.Get());
-    // El álbum llegó en la segunda versión de la interfaz; sin ella se queda
-    // sin álbum y ya está.
     ComPtr<media::IMusicDisplayProperties2> musica2;
     if (SUCCEEDED(musica.As(&musica2)) && musica2 != nullptr) {
       const HStringReference album(estado.album.c_str(),
@@ -255,12 +223,8 @@ void SystemMediaControls::Update(const EstadoMultimedia& estado) {
     }
   }
 
-  // Sin carátula se manda nullptr, que borra la anterior. Dejarla puesta haría
-  // que el panel enseñara el disco de la canción de antes.
   panel->put_Thumbnail(ReferenciaDeFichero(estado.caratula).Get());
 
-  // ⚠️ `Update()` es lo que publica todo lo anterior de golpe. Sin esta línea
-  // se pueden poner título, artista y carátula y no cambia nada en pantalla.
   panel->Update();
 
   ActualizarLinea(estado);

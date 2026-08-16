@@ -130,14 +130,12 @@ void main() {
     });
 
     test('ciclo de 3 estados: apagado -> estándar -> inteligente -> apagado', () async {
-      // 1. Apagado -> Estándar
       await reproductor.ciclarModoAleatorio();
       expect(reproductor.modoAleatorio, ModoAleatorio.estandar);
       expect(reproductor.state.shuffle, isTrue);
       expect(reproductor.esAleatorioInteligente, isFalse);
       expect(api.llamadas.contains('setShuffle true'), isTrue);
 
-      // 2. Estándar -> Inteligente
       api.llamadas.clear();
       await reproductor.ciclarModoAleatorio();
       expect(reproductor.modoAleatorio, ModoAleatorio.inteligente);
@@ -145,7 +143,6 @@ void main() {
       expect(api.llamadas.contains('setShuffle false'), isTrue);
       expect(api.llamadas.any((l) => l.startsWith('play uris=')), isTrue);
 
-      // 3. Inteligente -> Apagado
       api.llamadas.clear();
       await reproductor.ciclarModoAleatorio();
       expect(reproductor.modoAleatorio, ModoAleatorio.apagado);
@@ -154,15 +151,15 @@ void main() {
     });
 
     test('reproducir un contexto o pista apaga el aleatorio inteligente', () async {
-      await reproductor.ciclarModoAleatorio(); // estándar
-      await reproductor.ciclarModoAleatorio(); // inteligente
+      await reproductor.ciclarModoAleatorio();
+      await reproductor.ciclarModoAleatorio();
       expect(reproductor.modoAleatorio, ModoAleatorio.inteligente);
 
       await reproductor.playContext('spotify:playlist:123');
       expect(reproductor.esAleatorioInteligente, isFalse);
 
-      await reproductor.ciclarModoAleatorio(); // estándar
-      await reproductor.ciclarModoAleatorio(); // inteligente
+      await reproductor.ciclarModoAleatorio();
+      await reproductor.ciclarModoAleatorio();
       expect(reproductor.modoAleatorio, ModoAleatorio.inteligente);
 
       await reproductor.playTrack('spotify:track:999');
@@ -186,7 +183,6 @@ void main() {
       await reproductor.activarAleatorioInteligente();
 
       final llamadaPlay = api.llamadas.firstWhere((l) => l.startsWith('play uris='));
-      // No debe contener la pista recplayed1 porque fue excluida por estar en recientes
       expect(llamadaPlay.contains('spotify:track:recplayed1'), isFalse);
       expect(llamadaPlay.contains('spotify:track:top_valida'), isTrue);
     });
@@ -195,16 +191,14 @@ void main() {
       api.llamadas.clear();
       await reproductor.activarAleatorioInteligente();
 
-      // Debe haber llamado a savedTracks al menos una vez para consultar total y muestrear
       expect(api.llamadas.any((l) => l.contains('savedTracks')), isTrue);
     });
 
     test('si ocurre un error al armar la cola, la interfaz desactiva el aleatorio inteligente', () async {
       api.lanzarErrorGlobal = true;
-      await reproductor.ciclarModoAleatorio(); // estándar
-      await reproductor.ciclarModoAleatorio(); // intenta activar inteligente y falla
+      await reproductor.ciclarModoAleatorio();
+      await reproductor.ciclarModoAleatorio();
 
-      // La interfaz no debe mentir: debe regresar a apagado
       expect(reproductor.esAleatorioInteligente, isFalse);
       expect(reproductor.modoAleatorio, ModoAleatorio.apagado);
     });
@@ -259,7 +253,6 @@ void main() {
         }
       }
 
-      // Con total = 100, el offset 75 (que alcanza el índice 99) debe ser alcanzable en la 3ª banda
       var alcanzadoOffset75 = false;
       for (var i = 0; i < 200; i++) {
         final offsets = PlayerController.calcularOffsetsEstratificados(100, tamanoVentana: 25);
@@ -270,7 +263,6 @@ void main() {
       }
       expect(alcanzadoOffset75, isTrue, reason: 'En total=100 la última canción (índice 99, offset 75) debe ser alcanzable');
 
-      // Los offsets no deben ser siempre 0 ni fijos en ejecuciones sucesivas con biblioteca grande
       final muestra0 = PlayerController.calcularOffsetsEstratificados(1000, tamanoVentana: 25);
       final muestra1 = PlayerController.calcularOffsetsEstratificados(1000, tamanoVentana: 25);
       expect(muestra0[0] != 0 || muestra1[0] != 0 || muestra0[1] != muestra1[1], isTrue);
@@ -300,23 +292,19 @@ void main() {
         ),
       );
 
-      // Estado 1: Apagado
       expect(find.byTooltip('Aleatorio: Apagado'), findsOneWidget);
       expect(find.byIcon(Icons.shuffle), findsOneWidget);
 
-      // Pulsar -> Estado 2: Estándar
       await tester.tap(find.byTooltip('Aleatorio: Apagado'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Aleatorio'), findsOneWidget);
       expect(find.byIcon(Icons.shuffle), findsOneWidget);
 
-      // Pulsar -> Estado 3: Inteligente
       await tester.tap(find.byTooltip('Aleatorio'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Aleatorio inteligente'), findsOneWidget);
       expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
 
-      // Pulsar -> Estado 1: Apagado
       await tester.tap(find.byTooltip('Aleatorio inteligente'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Aleatorio: Apagado'), findsOneWidget);

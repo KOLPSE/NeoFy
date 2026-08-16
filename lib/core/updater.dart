@@ -17,28 +17,11 @@ enum EstadoActualizacion {
   fallo,
 }
 
-/// Busca versiones nuevas en las releases de GitHub y, en Windows, las instala.
-///
-/// El instalador ya sabe actualizar sobre una instalación existente: mata los
-/// tres procesos, sobrescribe los ficheros y conserva `%APPDATA%\neofy` entera,
-/// así que **no se pierde ni la sesión ni los ajustes**. Aquí solo hay que
-/// bajarlo y lanzarlo.
-///
-/// ⚠️ **En Linux avisa pero no instala**, y no es una carencia sino lo
-/// correcto: allí NeoFy se distribuye como paquete (`neofy-bin`, en su propio
-/// repositorio) y es pacman quien lleva la cuenta de qué ficheros son de quién.
-/// Una app que se
-/// sobrescribe a sí misma por su cuenta deja la base de datos del gestor
-/// mintiendo, y a la primera actualización del paquete se pisan los dos. Se
-/// enseña que hay versión nueva y el comando con el que actualizarla.
 class Updater extends ChangeNotifier {
   Updater({http.Client? cliente}) : _http = cliente ?? http.Client();
 
   final http.Client _http;
 
-  /// De dónde se baja. Se comprueba el host antes de ejecutar nada: esto acaba
-  /// lanzando un ejecutable, así que el origen no puede darse por bueno solo
-  /// porque lo diga una respuesta JSON.
   static const _hostFiable = 'github.com';
 
   EstadoActualizacion estado = EstadoActualizacion.reposo;
@@ -52,15 +35,8 @@ class Updater extends ChangeNotifier {
 
   String get versionActual => kVersion;
 
-  /// ¿Puede esta plataforma instalarse la actualización ella sola?
-  ///
-  /// Solo Windows, donde la app se distribuye como instalador suelto. Ver el
-  /// aviso de la clase.
   static bool get seInstalaSolo => Platform.isWindows;
 
-  /// Qué hacer cuando no se instala sola. En Linux NeoFy se reparte por el
-  /// repositorio pacman propio (ver el README), así que se actualiza con
-  /// pacman a secas: nada de ayudantes del AUR, que ya no se usa.
   static const String comandoDeActualizacion = 'sudo pacman -Syu neofy-bin';
 
   Future<void> buscar() async {
@@ -76,7 +52,6 @@ class Updater extends ChangeNotifier {
       ).timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 404) {
-        // Un repositorio sin releases todavía no es un error que enseñar.
         _cambiar(EstadoActualizacion.alDia);
         return;
       }
@@ -97,15 +72,11 @@ class Updater extends ChangeNotifier {
       versionDisponible = version;
       notas = j['body'] as String?;
 
-      // En Linux se para aquí: hay novedad, se anuncia, y quien instala es el
-      // gestor de paquetes. Buscar un asset sería además absurdo, porque el que
-      // hay es el instalador de Windows.
       if (!seInstalaSolo) {
         _cambiar(EstadoActualizacion.disponible);
         return;
       }
 
-      // El instalador es el único .exe de la release.
       final assets = (j['assets'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>();
       final exe = assets.where((a) => (a['name'] as String? ?? '').endsWith('.exe'));
@@ -124,7 +95,6 @@ class Updater extends ChangeNotifier {
     }
   }
 
-  /// Descarga el instalador enseñando el progreso.
   Future<void> descargar() async {
     final url = _urlDescarga;
     if (url == null) return;
@@ -156,11 +126,6 @@ class Updater extends ChangeNotifier {
     }
   }
 
-  /// Lanza el instalador y devuelve `true` si arrancó.
-  ///
-  /// Quien llame **debe cerrar la app justo después**: el instalador no puede
-  /// sobrescribir un ejecutable en uso. Se lanza con `/SILENT` (barra de
-  /// progreso, sin preguntas) y `/NOCANCEL` para que nadie lo deje a medias.
   Future<bool> instalar() async {
     final exe = _instalador;
     if (exe == null || !exe.existsSync()) return false;
@@ -178,10 +143,6 @@ class Updater extends ChangeNotifier {
     }
   }
 
-  /// Compara dos versiones tipo `1.2.3`.
-  ///
-  /// Se comparan los números por tramos y no como texto: `"0.10.0"` es más
-  /// nueva que `"0.9.0"`, cosa que una comparación de cadenas diría al revés.
   static bool esMasNueva(String candidata, String actual) {
     List<int> tramos(String v) => v
         .split(RegExp(r'[.+-]'))

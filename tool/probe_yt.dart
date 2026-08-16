@@ -1,26 +1,4 @@
-// Sonda de la API interna de YouTube Music (la via libre de NeoFy).
-//
-//   dart run tool/probe_yt.dart              # resumen de portada y biblioteca
-//   dart run tool/probe_yt.dart FEmusic_liked_playlists   # un browseId suelto
-//   dart run tool/probe_yt.dart VLPLxxxxx --volcar        # y deja el JSON crudo
-//
-// Existe por lo mismo que las demás sondas: `flutter test` no puede hacer red
-// (está mockeada a 400), y esta API no tiene documentación oficial — la forma
-// del JSON solo se puede comprobar contra la cuenta de verdad.
-//
-// Lo que se vino a comprobar aquí: **dónde guarda cada renderer sus
-// elementos**. La biblioteca llega en un `gridRenderer`, que los guarda en
-// `items` y no en `contents`, y leer solo `contents` dejaba la pantalla de
-// playlists vacía sin ningún error de por medio.
-//
-// SEGURIDAD: solo hace lecturas (`browse`). No toca la sesión: las cookies se
-// leen y no se reescriben, así que —a diferencia de las sondas de Spotify, que
-// rotan el refresh token— esta se puede ejecutar con la app abierta.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
-// No importa `yt_auth.dart` ni `yt_music_api.dart` a propósito: el primero
-// arrastra `desktop_webview_window` y el segundo `package:flutter/foundation`,
-// y con un plugin de Flutter en el árbol de imports `dart run` no compila.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -43,9 +21,6 @@ Future<void> main(List<String> args) async {
   }
 
   final crudas = (jsonDecode(await f.readAsString()) as List).cast<Map<String, dynamic>>();
-  // Mismo saneado que `YtAuth._paraYoutube`: la WebView de Windows devuelve
-  // nombre y valor con un `\0` pegado al final, y con él la cabecera `Cookie:`
-  // la rechaza el propio paquete `http`.
   final basura = RegExp(r'[^\x21-\x7E]');
   final cookies = <String, String>{};
   for (final c in crudas) {
@@ -54,9 +29,6 @@ Future<void> main(List<String> args) async {
     if (nombre.isEmpty) continue;
     cookies.putIfAbsent(nombre, () => valor);
   }
-  // ⚠️ Por orden de preferencia, y **nunca** `APISID` a secas: es una cookie
-  // distinta de `SAPISID`, con otro valor, y firmar con ella da un hash que
-  // Google acepta sin quejarse pero trata como sesión anónima.
   final nombreSapisid = const ['SAPISID', '__Secure-3PAPISID', '__Secure-1PAPISID']
       .firstWhere((n) => (cookies[n] ?? '').isNotEmpty, orElse: () => '');
   final sapisid = cookies[nombreSapisid] ?? '';
@@ -127,8 +99,6 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// Enseña qué renderers trae la respuesta y **de qué clave cuelgan sus
-/// elementos**, que es justo el dato que no se puede adivinar.
 void _describir(Map<String, dynamic> j) {
   final contenido = j['contents'] as Map<String, dynamic>?;
   if (contenido == null) {
@@ -137,10 +107,6 @@ void _describir(Map<String, dynamic> j) {
   }
   print('  contents → ${contenido.keys.toList()}');
 
-  // Los dos lados por separado. En `twoColumnBrowseResultsRenderer` (las
-  // listas y los álbumes desde 2024) la pestaña trae solo la **cabecera** y las
-  // pistas viven en `secondaryContents`: mirar solo el primero y dar la lista
-  // por vacía es un error fácil de cometer, así que aquí se ven los dos.
   var encontrado = false;
   for (final raiz in ['singleColumnBrowseResultsRenderer', 'twoColumnBrowseResultsRenderer']) {
     final r = contenido[raiz];
@@ -187,15 +153,11 @@ void _describirBloque(dynamic bloque, String sangria) {
     print('$sangria$clave (sin cuerpo)');
     return;
   }
-  // Un `messageRenderer` no es una sección vacía: es YouTube diciendo algo
-  // ("inicia sesión", "aún no has guardado nada"). Sin leerlo, un fallo de
-  // sesión se confunde con una biblioteca vacía.
   if (clave == 'messageRenderer') {
     print('$sangria$clave → «${_texto(valor['text']) ?? '?'}»'
         '${valor['subtext'] == null ? '' : ' / «${_texto(valor['subtext']?['messageSubtextRenderer']?['text']) ?? '?'}»'}');
     return;
   }
-  // ⚠️ Lo que se vino a ver: `contents` o `items`.
   final desde = valor.containsKey('contents')
       ? 'contents'
       : valor.containsKey('items')

@@ -1,13 +1,4 @@
-// Sonda del actualizador: ¿ve la app la última release, y trae instalador?
-//
-//   dart run tool/probe_update.dart [version-instalada]
-//
-// Replica exactamente lo que hace `core/updater.dart` contra la API de verdad.
-// Existe porque `flutter test` no puede hacer red —sustituye HttpClient por un
-// mock que devuelve 400—, así que la parte que habla con GitHub no se puede
-// ejercitar desde un test. La comparación de versiones sí tiene tests.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico.
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,9 +6,6 @@ import 'package:http/http.dart' as http;
 
 const _repo = 'KOLPSE/NeoFy';
 
-/// La misma regla que `Updater.esMasNueva`: por tramos numéricos, nunca como
-/// texto. "0.10.0" es posterior a "0.9.0" aunque alfabéticamente diga lo
-/// contrario.
 bool esMasNueva(String candidata, String actual) {
   List<int> tramos(String v) =>
       v.split(RegExp(r'[.+-]')).map((t) => int.tryParse(t) ?? 0).toList();
@@ -69,8 +57,6 @@ Future<void> main(List<String> args) async {
   print('\nVeredicto para $instalada: '
       '${esMasNueva(version, instalada) ? "SE OFRECE actualizar a $version" : "al día"}');
 
-  // Que el fichero se pueda bajar de verdad sin autenticación es la mitad del
-  // asunto: una release privada o un asset a medio subir daría 404 aquí.
   final cabeza = await http.head(Uri.parse(url));
   print('HEAD del instalador → HTTP ${cabeza.statusCode}'
       '  ${cabeza.headers['content-length'] ?? ''} bytes');

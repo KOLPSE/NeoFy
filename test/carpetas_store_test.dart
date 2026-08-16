@@ -5,8 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/carpetas_store.dart';
 
 void main() {
-  // Un directorio temporal único: el CI corre los tests en paralelo y dos
-  // stores sobre el mismo `carpetas.json` pisarían sus ficheros.
   String dirTemporal() {
     final raiz = Directory('${Directory.systemTemp.path}'
         '/neofy_carpetas_${DateTime.now().microsecondsSinceEpoch}');
@@ -23,7 +21,6 @@ void main() {
 
     await store.crearCarpeta('Favoritas');
     await store.crearCarpeta('Para el gimnasio');
-    // El orden dentro de la carpeta importa: se conserva tal cual se movió.
     await store.moverPlaylist('pl-1', store.carpetas[0].id);
     await store.moverPlaylist('pl-2', store.carpetas[0].id);
     await store.moverPlaylist('pl-3', store.carpetas[1].id);
@@ -33,8 +30,6 @@ void main() {
     expect(store.carpetaDe('pl-1')?.id, store.carpetas[0].id);
     expect(store.carpetaDe('pl-9'), isNull);
 
-    // Un store nuevo sobre el mismo directorio tiene que ver lo mismo:
-    // es la única garantía de que no se pierde nada al cerrar la app.
     final recargado = CarpetasStore(directorio: dir);
     await recargado.cargar();
     expect(recargado.carpetas, hasLength(2));
@@ -57,8 +52,6 @@ void main() {
 
     expect(store.carpetas[0].playlistIds, isEmpty);
 
-    // Sacarla de la carpeta la deja suelta: la id desaparece del fichero y el
-    // siguiente arranque no la vuelve a meter.
     await store.moverPlaylist('pl-y', store.carpetas[0].id);
     await store.moverPlaylist('pl-y', null);
     final recargado = CarpetasStore(directorio: dir);
@@ -132,7 +125,6 @@ void main() {
     await store.cargar();
     expect(store.carpetas, isEmpty);
 
-    // Y sigue sirviendo para crear carpetas después del lío.
     await store.crearCarpeta('Nueva');
     expect(store.carpetas, hasLength(1));
   });

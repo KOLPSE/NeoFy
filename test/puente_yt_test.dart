@@ -63,7 +63,7 @@ void main() {
     test('dos títulos normalizados a cadena vacía no puntúan como coincidencia', () {
       final track = crearTrack(name: '[...]', artists: 'Artista');
       final cand = crearCandidato(videoId: 'v_vacio', titulo: '(...)', subtitulo: 'Artista');
-      expect(PuenteYt.puntuar(track, cand), 35); // solo puntua el artista (35), similitud de titulo es 0
+      expect(PuenteYt.puntuar(track, cand), 35);
     });
   });
 
@@ -118,13 +118,13 @@ void main() {
     });
 
     test('un candidato con duración muy distinta (p. ej. 2 min de diferencia) -> la descarta', () {
-      final track = crearTrack(name: 'Take On Me', artists: 'a-ha', durationMs: 227000); // 3:47
+      final track = crearTrack(name: 'Take On Me', artists: 'a-ha', durationMs: 227000);
       final candidatos = [
         crearCandidato(
           videoId: 'v_largo',
           titulo: 'Take On Me',
           subtitulo: 'a-ha',
-          duracion: const Duration(minutes: 5, seconds: 47), // +2 min
+          duracion: const Duration(minutes: 5, seconds: 47),
         ),
       ];
 

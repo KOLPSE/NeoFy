@@ -34,11 +34,8 @@ class NowPlayingBar extends StatefulWidget {
 }
 
 class _NowPlayingBarState extends State<NowPlayingBar> {
-  /// Posición mientras se arrastra el slider. Sin esto, el sondeo devolvería
-  /// la posición vieja y el pulgar daría saltos bajo el dedo.
   double? _dragMs;
 
-  /// Lo mismo para el volumen.
   double? _dragVolume;
 
   @override
@@ -61,9 +58,6 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
                   children: [
-                    // Se le dan las dos y que elija por píxeles reales: en una
-                    // pantalla al 100 % estos 56 px caben en la de 64 (4 KB),
-                    // y en una HiDPI al 200 % pasa sola a la de 300.
                     ArtImage(
                       url: track?.artSmall,
                       urlGrande: track?.artMedium,
@@ -186,8 +180,6 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
             ),
           ],
         ),
-        // Solo esta parte se repinta con el tick de 250 ms; el resto de la
-        // barra se queda quieto hasta que cambie el estado de verdad.
         ValueListenableBuilder<int>(
           valueListenable: player.progressMs,
           builder: (context, progress, _) {
@@ -243,11 +235,6 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
             child: Slider(
               value: shown,
               max: 100,
-              // ⚠️ El cambio se manda al soltar, no en cada píxel. Antes esto
-              // era `onChanged: setVolume(...)`, o sea una petición a la Web
-              // API por cada paso del arrastre: se saturaba, Spotify empezaba
-              // a devolver 429 y el volumen acababa quedándose en un valor
-              // intermedio al azar. De ahí que "se bugeara".
               onChanged: (v) => setState(() => _dragVolume = v),
               onChangeEnd: (v) {
                 setState(() => _dragVolume = null);
@@ -271,11 +258,7 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     return Icons.volume_up;
   }
 
-  /// Un único sitio donde se decide qué problema merece ocupar la franja de
-  /// aviso, en orden de gravedad.
   String? _statusMessage() {
-    // Lo primero de todo: con la cuota agotada no funciona nada más, y saber
-    // cuándo vuelve importa más que cualquier otro aviso.
     final cuota = widget.player.api.avisoDeCuota;
     if (cuota != null) return cuota;
     if (widget.player.premiumChecked && !widget.player.isPremium) {

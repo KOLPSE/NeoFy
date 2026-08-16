@@ -20,9 +20,6 @@ class LoginScreen extends StatefulWidget {
   final AppConfig config;
   final Future<void> Function() onLoggedIn;
 
-  /// Para ofrecer aquí mismo la vía libre: sin Premium la API de Spotify no
-  /// deja controlar la reproducción, y quien lo descubra al entrar se queda
-  /// mirando una app muda. Mejor decirlo antes.
   final YtAuth ytAuth;
 
   @override
@@ -43,12 +40,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// Guarda el Client ID y deja la app lista para el login.
-  ///
-  /// Se valida la forma antes de guardar: un Client ID de Spotify son 32
-  /// caracteres hexadecimales. Sin esta comprobación, pegar mal el valor —o
-  /// pegar el Client *Secret* por error, que es igual de largo pero no vale—
-  /// se manifestaría como un error críptico de Spotify a mitad del login.
   Future<void> _guardarClientId() async {
     final valor = _clientIdCtrl.text.trim();
     if (!RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(valor)) {
@@ -81,14 +72,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Redirect URI que hay que dar de alta, palabra por palabra.
   static const _redirect = 'http://127.0.0.1:$kRedirectPort/callback';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Sin Client ID no hay nada que intentar: primero hay que crear una app en
-    // el panel de Spotify. Le pasa a todo el que clona el repositorio.
     if (widget.config.clientId.isEmpty) return _primerosPasos(theme);
 
     return Scaffold(
@@ -113,9 +101,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 24),
-                // Conviene decirlo antes y no que parezca un fallo: el primer
-                // arranque abre el navegador dos veces porque son dos flujos
-                // OAuth distintos y sus tokens no son intercambiables.
                 Card(
                   color: theme.colorScheme.surfaceContainerHighest,
                   elevation: 0,
@@ -164,10 +149,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ?.copyWith(color: theme.colorScheme.error),
                   ),
                 ],
-                // La vía libre se ofrece **aquí**, en el setup, y no solo
-                // cuando ya has entrado y descubres que la música no arranca.
-                // Se puede conectar antes o después del login de Spotify: son
-                // dos sesiones independientes y esto solo pone el audio.
                 const SizedBox(height: 24),
                 const Divider(),
                 const SizedBox(height: 16),
@@ -180,9 +161,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Qué hacer la primera vez. No se puede evitar este paso: en Modo Desarrollo
-  /// una app de Spotify solo vale para los 25 usuarios que su dueño da de alta,
-  /// así que **cada uno necesita la suya**.
   Widget _primerosPasos(ThemeData theme) {
     Widget paso(int n, String titulo, Widget contenido) => Padding(
           padding: const EdgeInsets.only(bottom: 16),
@@ -275,8 +253,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               isDense: true,
                               border: const OutlineInputBorder(),
                               errorText: _errorClientId,
-                              // Pegar es lo que hará todo el mundo; el botón
-                              // ahorra el atajo de teclado.
                               suffixIcon: IconButton(
                                 tooltip: 'Pegar',
                                 icon: const Icon(Icons.content_paste, size: 18),

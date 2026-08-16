@@ -38,12 +38,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   bool _hasMore = true;
   String? _error;
 
-  /// Offset en elementos **crudos**: una página de 50 puede dejarnos menos
-  /// pistas tras descartar las no reproducibles, y avanzar por las que quedan
-  /// se saltaría canciones.
   int _offset = 0;
 
-  /// Esta playlist se está leyendo por el sidecar porque la Web API la deniega.
   bool _viaSidecar = false;
 
   @override
@@ -63,8 +59,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     super.dispose();
   }
 
-  /// Scroll infinito de 50 en 50. Una playlist de miles de canciones nunca
-  /// llega entera a memoria; solo el trozo que se ha mirado.
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
@@ -79,11 +73,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      // Spotify capó el Modo Desarrollo en febrero de 2026: solo deja leer las
-      // canciones de playlists propias o colaborativas. Las ajenas dan 403 sin
-      // más explicación, y "Forbidden" a secas no le dice nada a nadie.
-      // Con el sidecar en marcha este 403 ya no debería llegar hasta aquí:
-      // solo queda como mensaje para cuando el sidecar no está disponible.
       setState(() => _error = e.isForbidden
           ? 'Spotify no deja ver las canciones de esta playlist.\n\n'
               'Es de ${widget.playlist.owner.isEmpty ? "otra persona" : widget.playlist.owner}, '
@@ -99,12 +88,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
   }
 
-  /// Vía oficial primero; el sidecar solo cuando Spotify se niegue.
-  ///
-  /// El 403 llega en playlists que no son tuyas, que es exactamente el caso que
-  /// el sidecar resuelve leyendo por el protocolo interno de librespot. Una vez
-  /// que una playlist ha caído por esa vía, las siguientes páginas van directas
-  /// al sidecar en lugar de volver a comerse el 403.
   Future<ApiPage<Track>> _pedirPagina() async {
     if (_viaSidecar) {
       return widget.sidecar
@@ -164,7 +147,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     const SizedBox(height: 4),
                     Text(
                       '${widget.playlist.owner} · ${widget.playlist.trackCount} canciones'
-                      // Merece decirlo: esta lista no viene de la API oficial.
                       '${_viaSidecar ? " · leída vía librespot" : ""}',
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -198,10 +180,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ),
                   ),
                 )
-              // Escuchar aquí la uri que suena es lo que mueve el título
-              // verde de una canción a la siguiente. Antes se leía del estado
-              // en `build` sin escuchar nada, así que se quedaba clavado en la
-              // canción con la que se abrió la pantalla.
               : ValueListenableBuilder<String?>(
                   valueListenable: widget.player.currentUri,
                   builder: (context, currentUri, _) => ListView.builder(
@@ -227,8 +205,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       leadingNumber: i + 1,
                       isCurrent: currentUri != null && currentUri == t.uri,
                       actions: TrackActions(
-                        // Reproducir desde el contexto de la playlist (y no la
-                        // canción suelta) para que "siguiente" siga la lista.
                         onPlay: () => widget.player
                             .playContext(widget.playlist.uri, offset: i),
                         onQueue: () async {

@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/ui/tira_horizontal.dart';
 
-/// Una tira estrecha con tarjetas anchas: con más de dos, sobra contenido por
-/// la derecha, que es justo el caso que se quedaba inalcanzable.
 Widget _conTira({required int tarjetas, double ancho = 300}) {
   return MaterialApp(
     home: Scaffold(
@@ -43,14 +41,12 @@ void main() {
       (tester) async {
     await tester.pumpWidget(_conTira(tarjetas: 20));
     await tester.pumpAndSettle();
-    // Al principio solo se puede ir hacia un lado.
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
     expect(find.byIcon(Icons.chevron_left), findsNothing);
 
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
 
-    // Haberse movido es exactamente lo que hace aparecer la flecha contraria.
     expect(find.byIcon(Icons.chevron_left), findsOneWidget);
   });
 
@@ -58,8 +54,6 @@ void main() {
     await tester.pumpWidget(_conTira(tarjetas: 20));
     await tester.pumpAndSettle();
 
-    // La rueda manda el desplazamiento en `dy`, que una lista horizontal
-    // ignora: sin el mapeo, esto no movería nada.
     await _rueda(tester, find.byType(TiraHorizontal), 200);
 
     expect(find.byIcon(Icons.chevron_left), findsOneWidget);
@@ -67,8 +61,6 @@ void main() {
 
   testWidgets('tocando el extremo, la rueda sigue bajando por la página',
       (tester) async {
-    // La tira no se puede quedar con la rueda cuando ya no tiene adónde ir, o
-    // recorrer la portada con el ratón encima de una tira sería imposible.
     final scroll = ScrollController();
     addTearDown(scroll.dispose);
     await tester.pumpWidget(MaterialApp(

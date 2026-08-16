@@ -1,15 +1,4 @@
-// Sonda del camino de descarga y cacheo de carátulas.
-//
-//   dart run tool/probe_art.dart [url]
-//
-// Existe porque `flutter test` sustituye HttpClient por un mock que devuelve
-// 400: la descarga real no se puede ejercitar desde un test. Este script sí,
-// y compara `package:http` a pelo contra ArtCache para localizar en cuál de
-// los dos está el problema. Encontró el interbloqueo de `whenComplete` que
-// dejaba todas las carátulas en blanco.
-//
-// ignore_for_file: avoid_print  — es una herramienta de diagnóstico; imprimir
-// por consola es exactamente lo que tiene que hacer.
+// ignore_for_file: avoid_print
 import 'dart:io';
 
 import 'package:http/http.dart' as http;

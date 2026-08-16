@@ -4,8 +4,6 @@ import 'package:neofy/ui/now_playing_bar.dart' show formatMs;
 
 void main() {
   group('pickImage', () {
-    // Spotify devuelve las carátulas de mayor a menor. Elegir mal aquí es lo
-    // que dispara la RAM, así que conviene tenerlo clavado.
     final images = [
       {'url': 'big', 'width': 640, 'height': 640},
       {'url': 'medium', 'width': 300, 'height': 300},
@@ -74,8 +72,6 @@ void main() {
   });
 
   group('Playlist.fromJson', () {
-    // El objeto playlist trae el recuento en `items` desde febrero de 2026.
-    // Leerlo de `tracks` daba "0 canciones" en todas.
     test('lee el recuento de la clave items', () {
       final pl = Playlist.fromJson({
         'id': 'abc',
@@ -91,10 +87,7 @@ void main() {
       expect(pl.trackCount, 209);
       expect(pl.name, 'Synthwave');
       expect(pl.owner, 'Kurate Music');
-      // El id del dueño distingue "eliminar la mía" de "quitar la de otro".
       expect(pl.ownerId, 'kurate');
-      // Las carátulas de playlist vienen sin dimensiones: hay que quedarse con
-      // la única que hay en vez de descartarla por no llegar al tamaño pedido.
       expect(pl.art, 'https://cdn/x.webp');
     });
 
@@ -127,7 +120,6 @@ void main() {
       expect(a, isNotNull);
       expect(a!.name, 'Alguien');
       expect(a.uri, 'spotify:artist:a1');
-      // La tarjeta mide 108 px: bajarse la de 640 es el error caro de siempre.
       expect(a.art, 'medium');
     });
 
@@ -173,8 +165,6 @@ void main() {
     test('cambia solo lo indicado y conserva el resto', () {
       final r = base.copyWith(volumePercent: 90);
       expect(r.volumePercent, 90);
-      // El dispositivo y el contexto tienen que sobrevivir: se pintan de forma
-      // optimista al tocar el volumen y perderlos vaciaría la barra.
       expect(r.deviceId, 'dev');
       expect(r.deviceName, 'NeoFy');
       expect(r.contextUri, 'spotify:playlist:1');

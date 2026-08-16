@@ -8,10 +8,6 @@ import 'puente_yt.dart';
 import 'spotify_api.dart';
 import 'yt_player.dart';
 
-/// Maneja la reproducción de audio para cuentas de Spotify sin suscripción Premium.
-///
-/// Obtiene los metadatos de las canciones desde Spotify y busca y reproduce
-/// el flujo de audio equivalente en YouTube Music a través de [PuenteYt] y [YtPlayer].
 class ReproduccionLibre {
   ReproduccionLibre({
     required this.puente,
@@ -33,10 +29,8 @@ class ReproduccionLibre {
   StreamSubscription<bool>? _subSonando;
   StreamSubscription<Duration>? _subPosicion;
 
-  /// ¿Existe una sesión activa de YouTube Music para resolver canciones?
   bool get tieneSesionYt => puente.api.auth.isLoggedIn;
 
-  /// La pista actual de Spotify que está sonando o seleccionada.
   Track? get actual => (_indice >= 0 && _indice < _colaSpotify.length) ? _colaSpotify[_indice] : null;
 
   void _suscribirYtPlayer() {
@@ -70,7 +64,6 @@ class ReproduccionLibre {
     controller.notificar();
   }
 
-  /// Establece una lista de pistas de Spotify y comienza la reproducción desde [desde].
   Future<void> ponerLista(List<Track> pistas, {int desde = 0, String? contextUri}) async {
     if (pistas.isEmpty) return;
     _colaSpotify = List.unmodifiable(pistas);
@@ -87,7 +80,6 @@ class ReproduccionLibre {
     if (ytTrack == null) {
       controller.lastError = 'No se encontró "${trackTarget.name}" en YouTube.';
       controller.notificar();
-      // Si la pista actual no se encontró, pasar a la siguiente de la cola
       if (_indice + 1 < _colaSpotify.length) {
         _indice++;
         await _reproducirActual();
@@ -95,11 +87,9 @@ class ReproduccionLibre {
       return;
     }
 
-    // Poner a sonar la pista encontrada
     await ytPlayer.reproducirPista(ytTrack);
     _actualizarEstadoController();
 
-    // Pre-resolver la siguiente canción de la cola en segundo plano
     if (_indice + 1 < _colaSpotify.length) {
       final proxima = _colaSpotify[_indice + 1];
       unawaited(puente.equivalenteDe(proxima));
@@ -146,8 +136,6 @@ class ReproduccionLibre {
     await ytPlayer.setVolumen(v);
     _actualizarEstadoController();
   }
-
-  // -------------------------------------------------------- Resolución de URIs
 
   Future<void> playTrack(String uri) async {
     final lista = await api.tracks([uri]);

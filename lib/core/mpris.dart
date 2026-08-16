@@ -9,24 +9,6 @@ import 'reproductor_del_sistema.dart';
 
 export 'reproductor_del_sistema.dart' show EstadoDelSistema, caratulaEnDisco;
 
-/// Integración con el escritorio de Linux por MPRIS.
-///
-/// Es el equivalente de las teclas multimedia de Windows, y de paso bastante
-/// más: en Windows hubo que escribir C++ (`RegisterHotKey` en
-/// `windows/runner/flutter_window.cpp`) porque desde Dart no hay forma de ver un
-/// `WM_HOTKEY`. En Linux el escritorio ya escucha esas teclas, y lo que busca es
-/// un reproductor que hable MPRIS por D-Bus para mandárselas. Anunciarse aquí
-/// consigue tres cosas de una vez:
-///
-/// - Las teclas multimedia y el botón de los cascos llegan **con la ventana
-///   escondida**, sin registrar nada a mano.
-/// - NeoFy sale en el widget de reproducción de KDE y GNOME, con carátula,
-///   título y botones.
-/// - `playerctl` y compañía funcionan sin plugin ninguno, igual que el Stream
-///   Deck funciona en Windows porque el control va por la Web API.
-///
-/// Todo esto con `package:dbus`, que es Dart puro: no hay una línea de código
-/// nativo en el runner de Linux.
 class MprisService {
   MprisService({
     required this.onPlayPause,
@@ -45,18 +27,10 @@ class MprisService {
   final Future<void> Function() onNext;
   final Future<void> Function() onPrevious;
 
-  /// Salto absoluto, en microsegundos desde el principio de la canción. MPRIS
-  /// trabaja siempre en µs; la Web API, en ms.
   final Future<void> Function(int microsegundos) onSeek;
 
-  /// Sacar la ventana al frente. Es lo que hace el escritorio al pulsar el
-  /// nombre del reproductor en su widget, y con la app escondida en la bandeja
-  /// es la única forma de recuperarla sin tocar el icono.
   final void Function() onRaise;
 
-  /// De dónde se lee lo que hay que publicar. Se pide como función y no como
-  /// valor porque el estado cambia cada pocos segundos y el objeto de D-Bus
-  /// vive todo lo que dure la app.
   final EstadoDelSistema Function() estado;
 
   DBusClient? _cliente;
@@ -64,21 +38,12 @@ class MprisService {
 
   bool get activo => _objeto != null;
 
-  /// Se anuncia en el bus de sesión.
-  ///
-  /// No lanza: quedarse sin MPRIS significa perder las teclas multimedia y el
-  /// widget del escritorio, que es una lástima pero no impide reproducir nada.
-  /// Un contenedor sin bus de sesión, o un segundo NeoFy que llegue tarde al
-  /// nombre, no pueden tumbar el arranque de la app.
   Future<void> start() async {
     if (!Platform.isLinux || _objeto != null) return;
     try {
       final cliente = DBusClient.session();
       final objeto = _ObjetoMpris(this);
       await cliente.registerObject(objeto);
-      // El nombre lleva sufijo por especificación: org.mpris.MediaPlayer2.<lo
-      // que sea>. Sin `replaceExisting` a propósito — si ya hay un NeoFy en el
-      // bus, el que manda es el primero, que es el que tiene la ventana.
       await cliente.requestName('org.mpris.MediaPlayer2.neofy');
       _cliente = cliente;
       _objeto = objeto;
@@ -88,31 +53,14 @@ class MprisService {
     }
   }
 
-  /// Firma de lo último que se publicó, para no repetirse.
   String? _ultimaFirma;
 
-  /// Avisa al escritorio de que ha cambiado la canción o el estado.
-  ///
-  /// ⚠️ **Se puede llamar en cada sondeo, y de hecho así se llama.** El
-  /// `ChangeNotifier` de `PlayerController` salta cada 3 segundos aunque no
-  /// haya cambiado nada, y emitir por el bus cada vez haría trabajar al
-  /// escritorio para nada. Por eso aquí se compara una firma de lo que MPRIS
-  /// publica de verdad y se sale sin emitir si es la misma.
-  ///
-  /// No basta con mirar la canción: pausar no la cambia, y sin esto el widget
-  /// del escritorio se quedaría diciendo "reproduciendo" con la música parada.
-  /// La posición queda fuera a propósito — avanza sola y es justo lo que la
-  /// especificación dice que **no** hay que anunciar (ver [notificarSalto]).
   void notificarCambio() {
     final objeto = _objeto;
     if (objeto == null) return;
     final e = estado();
     final track = e.track;
     final caratula = track == null ? null : caratulaEnDisco(track);
-    // La carátula entra en la firma a propósito: cuando termina de bajarse, la
-    // firma cambia sola y se vuelve a anunciar con ella. Sin eso, el anuncio
-    // del cambio de canción llega **antes** que la descarga y el escritorio se
-    // queda con el hueco para siempre.
     final firma = '${track?.uri}|${e.estadoDeReproduccion}|${e.volumen}|'
         '${e.puedeSaltar}|${e.puedeVolver}|$caratula';
     if (firma != _ultimaFirma) {
@@ -127,12 +75,6 @@ class MprisService {
   late final DescargadorDeCaratula _caratulas =
       DescargadorDeCaratula(() => estado().track?.uri);
 
-  /// Anuncia un salto de posición.
-  ///
-  /// Va por su propia señal y no por `PropertiesChanged`: la especificación dice
-  /// expresamente que `Position` **no** se anuncia como propiedad cambiada,
-  /// porque avanza sola y llenaría el bus de mensajes. Quien quiera el valor
-  /// exacto lo pregunta; lo que hay que avisar es cuando *da un salto*.
   void notificarSalto(int microsegundos) {
     final objeto = _objeto;
     if (objeto == null) return;
@@ -152,10 +94,6 @@ class MprisService {
   }
 }
 
-/// Convierte un id de pista en una ruta de objeto D-Bus válida.
-///
-/// Solo `[A-Za-z0-9_]` sobrevive; el resto se sustituye por `_`. Un id vacío
-/// (las pistas locales de Spotify) cae en una ruta fija.
 String _rutaDeTrack(String id) {
   final limpio = id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
   return limpio.isEmpty
@@ -163,34 +101,14 @@ String _rutaDeTrack(String id) {
       : '/xyz/neogex/neofy/track/$limpio';
 }
 
-/// Los metadatos de la canción, con los nombres del vocabulario xesam que
-/// espera la especificación.
-///
-/// Devuelve tipos de Dart y no de D-Bus para poder probarlo sin bus: la
-/// codificación es un paso aparte. Las tres trampas están en el cuerpo.
 Map<String, Object> metadatosMpris(Track? track) {
   if (track == null) return const {};
   final datos = <String, Object>{
-    // ⚠️ El trackid es una **ruta de objeto**, no una cadena cualquiera: tiene
-    // que empezar por `/`, no puede acabar en `/` y solo admite letras,
-    // dígitos y `_`. Los ids de Spotify son alfanuméricos y valen, pero las
-    // pistas locales llegan con el id vacío y dejarían
-    // `/xyz/neogex/neofy/track/`, que es inválida: D-Bus rechazaría el
-    // diccionario entero y se perdería hasta el título por no tener id.
-    //
-    // Los de YouTube (`videoId`, en la vía libre) traen además `-` con frecuencia,
-    // que **tampoco** vale en una ruta de objeto: de ahí el saneado, o media
-    // biblioteca de YouTube desaparecería del widget del escritorio.
     'mpris:trackid': _rutaDeTrack(track.id),
-    // MPRIS trabaja en microsegundos y la Web API en milisegundos. Sin
-    // convertir, una canción de tres minutos se anuncia como de 0,2 segundos.
     'mpris:length': track.durationMs * 1000,
     'xesam:title': track.name,
     'xesam:album': track.album,
     'xesam:url': track.uri,
-    // `Track.artists` viene ya unido con ", " para pintarlo de un tirón en una
-    // fila; MPRIS lo quiere troceado o el escritorio enseña los nombres pegados
-    // como si fueran un solo artista.
     'xesam:artist':
         track.artists.isEmpty ? const <String>[] : track.artists.split(', '),
   };
@@ -200,7 +118,6 @@ Map<String, Object> metadatosMpris(Track? track) {
   return datos;
 }
 
-/// El objeto que se cuelga de `/org/mpris/MediaPlayer2`.
 class _ObjetoMpris extends DBusObject {
   _ObjetoMpris(this.servicio)
       : super(DBusObjectPath('/org/mpris/MediaPlayer2'));
@@ -213,17 +130,11 @@ class _ObjetoMpris extends DBusObject {
   Future<void> emitirCambios() =>
       emitPropertiesChanged(_player, changedProperties: _propiedadesDelPlayer());
 
-  // ------------------------------------------------------------- propiedades
-
   Map<String, DBusValue> _propiedadesDeLaRaiz() => {
-        // Lo que el escritorio hace al pulsar el nombre del reproductor. Se
-        // puede: la app sabe salir de la bandeja.
         'CanRaise': const DBusBoolean(true),
         'CanQuit': const DBusBoolean(false),
         'HasTrackList': const DBusBoolean(false),
         'Identity': const DBusString('NeoFy'),
-        // Tiene que ser el nombre del .desktop sin extension, o el escritorio no
-        // encuentra el icono del reproductor en su widget.
         'DesktopEntry': const DBusString('xyz.neogex.neofy'),
         'SupportedUriSchemes': DBusArray.string([]),
         'SupportedMimeTypes': DBusArray.string([]),
@@ -242,20 +153,14 @@ class _ObjetoMpris extends DBusObject {
       'CanPause': DBusBoolean(e.track != null),
       'CanSeek': DBusBoolean(e.track != null),
       'CanControl': const DBusBoolean(true),
-      // Se anuncia 1.0 fijo: no ofrecemos cambiar la velocidad, y decir otra
-      // cosa haria que el escritorio calculara mal la posicion entre consultas.
       'Rate': const DBusDouble(1),
       'MinimumRate': const DBusDouble(1),
       'MaximumRate': const DBusDouble(1),
     };
   }
 
-  /// Los metadatos ya codificados para el bus.
   Map<String, DBusValue> _metadatos(Track? track) =>
       metadatosMpris(track).map((clave, valor) => MapEntry(clave, switch (valor) {
-            // El trackid es lo unico que no es una cadena normal: D-Bus lo
-            // quiere tipado como ruta de objeto, y mandarlo como texto hace que
-            // el escritorio descarte los metadatos enteros.
             _ when clave == 'mpris:trackid' =>
               DBusObjectPath(valor as String),
             final int n => DBusInt64(n),
@@ -287,22 +192,12 @@ class _ObjetoMpris extends DBusObject {
   @override
   Future<DBusMethodResponse> setProperty(
       String interface, String name, DBusValue value) async {
-    // El volumen se deja de solo lectura a proposito. La Web API lo aplica con
-    // un par de segundos de retraso y el escritorio, al no ver el cambio,
-    // reenviaria el valor: acabaria en el tira y afloja que ya obligo a que los
-    // sliders manden en `onChangeEnd` y no en `onChanged`.
     return DBusMethodErrorResponse.propertyReadOnly();
   }
-
-  // ----------------------------------------------------------------- metodos
 
   @override
   Future<DBusMethodResponse> handleMethodCall(DBusMethodCall call) async {
     if (call.interface == _raiz) {
-      // Quien la llama es el widget del escritorio al pulsar el nombre del
-      // reproductor. Anunciar `CanRaise` y no hacer nada dejaba ese clic sin
-      // efecto, que con la ventana escondida en la bandeja es lo mismo que no
-      // poder recuperarla desde ahí.
       if (call.name == 'Raise') {
         servicio.onRaise();
         return DBusMethodSuccessResponse();
@@ -313,10 +208,6 @@ class _ObjetoMpris extends DBusObject {
       return DBusMethodErrorResponse.unknownInterface();
     }
 
-    // Se deja rastro de quién pide qué. En Linux, MPRIS es **la única vía** por
-    // la que algo de fuera puede pausar la música (las teclas multimedia van por
-    // aquí), así que cuando alguien reporta que se pausa sola, esta línea dice
-    // si vino de fuera y de qué programa.
     debugPrint('MPRIS: ${call.name} <- ${call.sender}');
 
     switch (call.name) {
@@ -327,22 +218,16 @@ class _ObjetoMpris extends DBusObject {
       case 'Pause':
         await servicio.onPause();
       case 'Stop':
-        // No hay "parar" en esta app: lo mas cercano es pausar.
         await servicio.onPause();
       case 'Next':
         await servicio.onNext();
       case 'Previous':
         await servicio.onPrevious();
       case 'Seek':
-        // Seek es RELATIVO y puede venir en negativo; SetPosition es absoluto.
-        // Confundirlos manda la cancion al principio en cada pulsacion de la
-        // flecha de adelantar del escritorio.
         final delta = (call.values.first as DBusInt64).value;
         final destino = servicio.estado().posicionMs * 1000 + delta;
         await servicio.onSeek(destino < 0 ? 0 : destino);
       case 'SetPosition':
-        // El primer argumento es el trackid; se ignora porque solo hay una
-        // cancion sonando y no llevamos lista de reproduccion en el bus.
         final us = (call.values[1] as DBusInt64).value;
         await servicio.onSeek(us < 0 ? 0 : us);
       case 'OpenUri':
@@ -352,8 +237,6 @@ class _ObjetoMpris extends DBusObject {
     }
     return DBusMethodSuccessResponse();
   }
-
-  // --------------------------------------------------------------- introspec
 
   @override
   List<DBusIntrospectInterface> introspect() => [
