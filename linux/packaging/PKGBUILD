@@ -26,7 +26,7 @@ options=('!strip')
 
 _tarball="NeoFy-$pkgver-linux-x86_64"
 source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('ab75842072ee6a6529549332cf7dc4429231ab69964be8164a45bc4af58c482b')
 
 package() {
   cd "$srcdir/$_tarball"
