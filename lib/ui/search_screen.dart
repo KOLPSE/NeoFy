@@ -173,7 +173,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       likes: widget.likes,
                       isCurrent: currentUri != null && currentUri == t.uri,
                       actions: TrackActions(
-                        onPlay: () => widget.player.playTrack(t.uri),
+                        onPlay: () => widget.player.playLista(
+                          [for (final r in _results) r.uri],
+                          desde: i,
+                        ),
                         onQueue: () async {
                           await widget.player.addToQueue(t.uri);
                           _toast('Añadida a la cola');
