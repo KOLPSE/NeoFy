@@ -419,27 +419,62 @@ class SpotifyApi {
     return out;
   }
 
+  Future<SearchResults> search(
+    String query, {
+    List<String> types = const ['track', 'playlist'],
+    int limit = 10,
+    int offset = 0,
+  }) async {
+    if (query.trim().isEmpty || types.isEmpty) return const SearchResults.empty();
+    final j = await _request('GET', '/search', query: {
+      'q': query,
+      'type': types.join(','),
+      'limit': '${limit.clamp(1, 10)}',
+      'offset': '$offset',
+    }) as Map<String, dynamic>;
+
+    ApiPage<Track> trackPage = const ApiPage.empty();
+    if (j.containsKey('tracks') && j['tracks'] is Map<String, dynamic>) {
+      final tracks = j['tracks'] as Map<String, dynamic>;
+      final raw = (tracks['items'] as List<dynamic>?) ?? const [];
+      trackPage = ApiPage(
+        items: raw
+            .map((t) => Track.fromJson(t as Map<String, dynamic>?))
+            .whereType<Track>()
+            .toList(),
+        hasMore: tracks['next'] != null,
+        rawCount: raw.length,
+        total: (tracks['total'] as num?)?.toInt(),
+      );
+    }
+
+    ApiPage<Playlist> playlistPage = const ApiPage.empty();
+    if (j.containsKey('playlists') && j['playlists'] is Map<String, dynamic>) {
+      final playlists = j['playlists'] as Map<String, dynamic>;
+      final raw = (playlists['items'] as List<dynamic>?) ?? const [];
+      playlistPage = ApiPage(
+        items: raw
+            .whereType<Map<String, dynamic>>()
+            .map(Playlist.fromJson)
+            .toList(),
+        hasMore: playlists['next'] != null,
+        rawCount: raw.length,
+        total: (playlists['total'] as num?)?.toInt(),
+      );
+    }
+
+    return SearchResults(
+      tracks: trackPage,
+      playlists: playlistPage,
+    );
+  }
+
   Future<ApiPage<Track>> searchTracks(
     String query, {
     int limit = 10,
     int offset = 0,
   }) async {
-    if (query.trim().isEmpty) return ApiPage<Track>.empty();
-    final j = await _request('GET', '/search', query: {
-      'q': query,
-      'type': 'track',
-      'limit': '${limit.clamp(1, 10)}',
-      'offset': '$offset',
-    }) as Map<String, dynamic>;
-    final tracks = j['tracks'] as Map<String, dynamic>?;
-    final raw = (tracks?['items'] as List<dynamic>?) ?? const [];
-    return ApiPage(
-      items: raw
-          .map((t) => Track.fromJson(t as Map<String, dynamic>?))
-          .whereType<Track>()
-          .toList(),
-      hasMore: tracks?['next'] != null,
-      rawCount: raw.length,
-    );
+    final res = await search(query, types: const ['track'], limit: limit, offset: offset);
+    return res.tracks;
   }
 }

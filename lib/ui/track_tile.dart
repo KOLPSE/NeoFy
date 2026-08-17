@@ -144,3 +144,56 @@ Future<Playlist?> pickPlaylist(BuildContext context, List<Playlist> playlists) {
     ),
   );
 }
+
+class PlaylistSearchTile extends StatelessWidget {
+  const PlaylistSearchTile({
+    super.key,
+    required this.playlist,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Playlist playlist;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final subtitulo = playlist.owner.isNotEmpty
+        ? 'Playlist • ${playlist.owner}'
+        : (playlist.trackCount > 0 ? '${playlist.trackCount} canciones' : 'Playlist');
+
+    return ListTile(
+      dense: true,
+      onTap: onTap,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 8),
+          ArtImage(url: playlist.art, size: 40),
+        ],
+      ),
+      title: Text(
+        playlist.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        subtitulo,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: trailing ??
+          Icon(
+            Icons.chevron_right,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+    );
+  }
+}

@@ -31,13 +31,22 @@ void main() {
     });
   });
 
+  group('SearchResults', () {
+    test('SearchResults vacío inicializa páginas vacías', () {
+      const sr = SearchResults.empty();
+      expect(sr.tracks.items, isEmpty);
+      expect(sr.playlists.items, isEmpty);
+    });
+  });
+
   group('Track.fromJson', () {
-    test('junta los artistas y coge los dos tamaños de carátula', () {
+    test('junta los artistas y coge los dos tamaños de carátula y popularidad', () {
       final t = Track.fromJson({
         'id': '1',
         'uri': 'spotify:track:1',
         'name': 'Canción',
         'duration_ms': 185000,
+        'popularity': 85,
         'artists': [
           {'name': 'Uno'},
           {'name': 'Dos'},
@@ -56,6 +65,7 @@ void main() {
       expect(t.album, 'Álbum');
       expect(t.artSmall, 'small');
       expect(t.durationMs, 185000);
+      expect(t.popularity, 85);
     });
 
     test('sobrevive a una respuesta incompleta', () {
@@ -64,6 +74,7 @@ void main() {
       expect(t!.name, 'Desconocido');
       expect(t.artists, '');
       expect(t.artSmall, isNull);
+      expect(t.popularity, 0);
     });
 
     test('devuelve null si no hay objeto', () {

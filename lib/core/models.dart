@@ -35,6 +35,20 @@ class ApiPage<T> {
         total = 0;
 }
 
+class SearchResults {
+  final ApiPage<Track> tracks;
+  final ApiPage<Playlist> playlists;
+
+  const SearchResults({
+    this.tracks = const ApiPage.empty(),
+    this.playlists = const ApiPage.empty(),
+  });
+
+  const SearchResults.empty()
+      : tracks = const ApiPage.empty(),
+        playlists = const ApiPage.empty();
+}
+
 class Track {
   final String id;
   final String uri;
@@ -45,6 +59,7 @@ class Track {
   final String? artMedium;
   final int durationMs;
   final bool isLocal;
+  final int popularity;
 
   const Track({
     required this.id,
@@ -56,6 +71,7 @@ class Track {
     required this.artMedium,
     required this.durationMs,
     required this.isLocal,
+    this.popularity = 0,
   });
 
   Track copyWith({
@@ -68,6 +84,7 @@ class Track {
     String? artMedium,
     int? durationMs,
     bool? isLocal,
+    int? popularity,
   }) =>
       Track(
         id: id ?? this.id,
@@ -79,6 +96,7 @@ class Track {
         artMedium: artMedium ?? this.artMedium,
         durationMs: durationMs ?? this.durationMs,
         isLocal: isLocal ?? this.isLocal,
+        popularity: popularity ?? this.popularity,
       );
 
   static Track? fromJson(Map<String, dynamic>? j) {
@@ -98,6 +116,7 @@ class Track {
       artMedium: pickImage(images, 300),
       durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,
       isLocal: (j['is_local'] as bool?) ?? false,
+      popularity: (j['popularity'] as num?)?.toInt() ?? 0,
     );
   }
 }

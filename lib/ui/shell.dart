@@ -443,6 +443,10 @@ class _AppShellState extends State<AppShell> {
           player: widget.player,
           playlists: _playlists,
           likes: widget.likes,
+          onAbrirPlaylist: (pl) => setState(() {
+            _view = _View.playlist;
+            _selected = pl;
+          }),
         );
       case _View.queue:
         return QueueScreen(
