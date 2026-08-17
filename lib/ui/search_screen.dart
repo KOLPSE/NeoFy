@@ -3,10 +3,12 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../core/followed_playlists_store.dart';
 import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import 'playlist_follow_button.dart';
 import 'track_tile.dart';
 
 enum SearchFilter {
@@ -26,7 +28,9 @@ class SearchScreen extends StatefulWidget {
     required this.player,
     required this.playlists,
     required this.likes,
+    required this.followed,
     this.onAbrirPlaylist,
+    this.onCambioSeguimiento,
     this.autofocus = true,
   });
 
@@ -34,7 +38,9 @@ class SearchScreen extends StatefulWidget {
   final PlayerController player;
   final List<Playlist> playlists;
   final LikedStore likes;
+  final FollowedPlaylistsStore followed;
   final void Function(Playlist)? onAbrirPlaylist;
+  final void Function(Playlist, bool)? onCambioSeguimiento;
   final bool autofocus;
 
   @override
@@ -246,6 +252,23 @@ class _SearchScreenState extends State<SearchScreen> {
     return PlaylistSearchTile(
       playlist: pl,
       onTap: () => widget.onAbrirPlaylist?.call(pl),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PlaylistFollowButton(
+            followed: widget.followed,
+            playlist: pl,
+            esPropia: pl.ownerId.isNotEmpty && pl.ownerId == widget.player.currentUserId,
+            size: 18,
+            onCambio: widget.onCambioSeguimiento,
+          ),
+          Icon(
+            Icons.chevron_right,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
     );
   }
 

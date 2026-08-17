@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/followed_playlists_store.dart';
 import '../core/liked_store.dart';
 import '../core/metadata_sidecar.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
 import 'art_image.dart';
+import 'playlist_follow_button.dart';
 import 'track_tile.dart';
 
 class PlaylistScreen extends StatefulWidget {
@@ -18,6 +20,8 @@ class PlaylistScreen extends StatefulWidget {
     required this.sidecar,
     required this.playlist,
     required this.likes,
+    required this.followed,
+    this.onCambioSeguimiento,
   });
 
   final SpotifyApi api;
@@ -25,6 +29,8 @@ class PlaylistScreen extends StatefulWidget {
   final MetadataSidecar sidecar;
   final Playlist playlist;
   final LikedStore likes;
+  final FollowedPlaylistsStore followed;
+  final void Function(Playlist, bool)? onCambioSeguimiento;
 
   @override
   State<PlaylistScreen> createState() => _PlaylistScreenState();
@@ -152,10 +158,23 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: () => widget.player.playContext(widget.playlist.uri),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Reproducir'),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => widget.player.playContext(widget.playlist.uri),
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Reproducir'),
+                        ),
+                        const SizedBox(width: 8),
+                        PlaylistFollowButton(
+                          followed: widget.followed,
+                          playlist: widget.playlist,
+                          esPropia: widget.playlist.ownerId.isNotEmpty &&
+                              widget.playlist.ownerId == widget.player.currentUserId,
+                          onCambio: widget.onCambioSeguimiento,
+                        ),
+                      ],
                     ),
                   ],
                 ),

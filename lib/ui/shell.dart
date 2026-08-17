@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/auth.dart';
 import '../core/carpetas_store.dart';
+import '../core/followed_playlists_store.dart';
 import '../core/home_store.dart';
 import '../core/librespot.dart';
 import '../core/liked_store.dart';
@@ -49,6 +50,7 @@ class AppShell extends StatefulWidget {
     required this.librespot,
     required this.sidecar,
     required this.likes,
+    required this.followed,
     required this.home,
     required this.carpetas,
     required this.ram,
@@ -65,6 +67,7 @@ class AppShell extends StatefulWidget {
   final SpotifyAuth auth;
   final PlayerController player;
   final LikedStore likes;
+  final FollowedPlaylistsStore followed;
   final HomeStore home;
   final CarpetasStore carpetas;
   final ResourceMonitor ram;
@@ -150,6 +153,7 @@ class _AppShellState extends State<AppShell> {
         _hasMore = page.hasMore;
         _error = null;
       });
+      widget.followed.seedFollowed(page.items.map((p) => p.id));
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -213,6 +217,24 @@ class _AppShellState extends State<AppShell> {
     } catch (e) {
       _avisar('No se pudo quitar: $e');
     }
+  }
+
+  void _alCambiarSeguimiento(Playlist pl, bool ahoraSeguida) {
+    setState(() {
+      if (ahoraSeguida) {
+        if (!_playlists.any((p) => p.id == pl.id)) {
+          _playlists.insert(0, pl);
+          _offset++;
+        }
+      } else {
+        _playlists.removeWhere((p) => p.id == pl.id);
+        if (_offset > 0) _offset--;
+        if (_selected?.id == pl.id) {
+          _selected = null;
+          _view = _View.home;
+        }
+      }
+    });
   }
 
   Future<String?> _pedirNombre(
@@ -443,10 +465,12 @@ class _AppShellState extends State<AppShell> {
           player: widget.player,
           playlists: _playlists,
           likes: widget.likes,
+          followed: widget.followed,
           onAbrirPlaylist: (pl) => setState(() {
             _view = _View.playlist;
             _selected = pl;
           }),
+          onCambioSeguimiento: _alCambiarSeguimiento,
         );
       case _View.queue:
         return QueueScreen(
@@ -473,6 +497,8 @@ class _AppShellState extends State<AppShell> {
           sidecar: widget.sidecar,
           playlist: pl,
           likes: widget.likes,
+          followed: widget.followed,
+          onCambioSeguimiento: _alCambiarSeguimiento,
         );
       case _View.artist:
         final a = _artista;

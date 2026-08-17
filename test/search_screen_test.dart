@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/auth.dart';
+import 'package:neofy/core/followed_playlists_store.dart';
 import 'package:neofy/core/liked_store.dart';
 import 'package:neofy/core/models.dart';
 import 'package:neofy/core/player_state.dart';
@@ -97,20 +98,31 @@ void main() {
   late _FakeConfig config;
   late PlayerController player;
   late LikedStore likes;
+  late FollowedPlaylistsStore followed;
 
   setUp(() {
     api = _MockSpotifyApi();
     config = _FakeConfig();
     player = PlayerController(api, config);
     likes = LikedStore(api: api, auth: _FakeAuth());
+    followed = FollowedPlaylistsStore(
+      api: api,
+      auth: _FakeAuth(),
+      obtenerUserId: () => player.currentUserId,
+    );
   });
 
   tearDown(() {
     player.dispose();
     likes.dispose();
+    followed.dispose();
   });
 
-  Widget crearApp({void Function(Playlist)? onAbrirPlaylist, bool autofocus = false}) {
+  Widget crearApp({
+    void Function(Playlist)? onAbrirPlaylist,
+    void Function(Playlist, bool)? onCambioSeguimiento,
+    bool autofocus = false,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: SearchScreen(
@@ -118,7 +130,9 @@ void main() {
           player: player,
           playlists: const [],
           likes: likes,
+          followed: followed,
           onAbrirPlaylist: onAbrirPlaylist,
+          onCambioSeguimiento: onCambioSeguimiento,
           autofocus: autofocus,
         ),
       ),

@@ -9,7 +9,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '0.3.7';
+const String kVersion = '0.3.8';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
@@ -35,6 +35,8 @@ const List<String> kScopes = [
 ];
 
 const String kScopeLibraryModify = 'user-library-modify';
+
+const String kScopePlaylistModify = 'playlist-modify-private';
 
 const String kScopeLibraryRead = 'user-library-read';
 

@@ -312,6 +312,15 @@ class SpotifyApi {
   Future<void> unfollowPlaylist(String id) =>
       _request('DELETE', '/playlists/$id/followers');
 
+  Future<void> followPlaylist(String id) =>
+      _request('PUT', '/playlists/$id/followers');
+
+  Future<bool> isFollowingPlaylist(String id, String userId) async {
+    final j = await _request('GET', '/playlists/$id/followers/contains',
+        query: {'ids': userId}) as List<dynamic>;
+    return j.isNotEmpty && j.first == true;
+  }
+
   Future<Map<String, dynamic>> _listaConTope(
     String path,
     int limit, [
