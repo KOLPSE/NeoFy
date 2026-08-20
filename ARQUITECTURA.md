@@ -255,14 +255,20 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   la clave con las canciones**, `?fields=` no la recupera, las playlists editoriales de
   Spotify dan **404**, y `GET /v1/tracks?ids=` tambien da **403** (los albumes, en cambio,
   si traen sus pistas). No hay ninguna via oficial: de ahi el sidecar.
-- **Los endpoints de artista sí se dejan leer, al contrario que los de pista.** Verificado con
-  `dart run tool/probe_artist.dart` contra la cuenta real: `/artists/{id}/top-tracks` (200, 10
-  canciones con `duration_ms`), `/artists/{id}`, `/artists/{id}/albums` y
-  `/albums/{id}/tracks` responden todos **200** en Modo Desarrollo. Merece anotarse porque la
-  intuición aquí engaña en las dos direcciones: `/v1/tracks?ids=` da 403 y las canciones de
-  una playlist ajena también, así que **poder reproducir algo no implica poder leerlo** — y
-  había que comprobarlo antes de construir la pantalla de artista encima. `market=from_token`
-  devuelve las populares del país de la cuenta.
+- **De los endpoints de artista, `top-tracks` ha dejado de dejarse leer.** Cuando se escribió
+  la pantalla de artista contestaba 200; el **20-08-2026**, `dart run tool/probe_artist.dart`
+  contra la misma cuenta lo daba en **403 "Forbidden" a secas, con `market=from_token` y sin
+  `market`** — o sea, capado en Modo Desarrollo, no un problema de parámetros. Lo que sigue
+  vivo: `/artists/{id}` (200), `/artists/{id}/albums` (200) y `/albums/{id}` con sus pistas
+  (200). De ahí `pistasDeSusDiscos()`, que rearma la lista del artista desde sus discos y
+  quita los duplicados por nombre (los singles repiten canciones del álbum). Dos topes que
+  cuestan una tarde si no se saben, verificados con `tool/probe_artista_respaldo.dart`:
+  **`/artists/{id}/albums` con `limit=20` da 400 "Invalid limit"** (10 es el techo, y
+  `_listaConTope` ya reintenta solo), y **`/albums?ids=` en lote da 403**, igual que
+  `/v1/tracks?ids=`, así que los discos hay que pedirlos de uno en uno. Por eso el respaldo
+  lleva presupuesto (`discosDeRespaldo`): la pantalla de artista gasta 6 discos, y el
+  aleatorio inteligente **1 por artista**, que si no serían 64 peticiones de golpe y el 429
+  del Modo Desarrollo deja la app sin navegar durante horas.
 - **Las carátulas de playlist son WebP y vienen con `width`/`height` a `null`** (las de
   canción son JPEG con 640/300/64 bien puestos). Flutter decodifica WebP sin problema;
   lo que importa es que `pickImage` caiga en la única imagen disponible y no la descarte.
@@ -354,6 +360,17 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
 - **Abrir la app reanudaba la música sola.** Spotify guarda el estado de la **sesión**, no
   el del dispositivo: si la app se cerró sonando, `transfer(play:false)` sobre el librespot
   recién arrancado la reanuda igualmente. `ensurePausedAtStartup()` lo corta.
+- **Al cerrar la app, Spotify se olvida de lo que sonaba.** El dispositivo Connect muere con
+  el proceso, y a partir de ahí `GET /me/player` contesta 204: la barra queda en "Nada
+  sonando" y el play no tiene nada que reanudar, mientras que Spotify sí retoma la última
+  canción de tu lista. Se arregla en local: `ultima_reproduccion.json` (en `appDataDir()`)
+  guarda la pista, su posición y el contexto —o los primeros 300 URIs de la cola contando
+  desde ella, para no escribir un fichero de megas con la biblioteca entera—, y al arrancar
+  `PlayerController.restaurar()` lo pinta como pausado. Mientras esa reproducción esté
+  pendiente, el sondeo **ignora los 204** en vez de dejarlos vaciar el estado, y play,
+  siguiente y anterior mandan un `play` con contexto, `offset.uri` y `position_ms` en lugar
+  de un `play` sin cuerpo, que no reanudaría nada. Lo guarda `_recordarReproduccion()` al
+  cambiar de canción, cada 20 s y al salir por `_quit()`.
 - **El volumen no se puede dejar en un valor por defecto.** `GET /me/player` no informa de
   volumen cuando no hay reproducción activa, así que la barra caía a un 50 fijo aunque el
   usuario lo hubiera dejado en otro sitio. Se persiste en `config.json` (que es además el

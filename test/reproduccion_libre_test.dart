@@ -165,7 +165,7 @@ class _FakeSpotifyApi extends SpotifyApi {
   }
 
   @override
-  Future<List<Track>> artistTopTracks(String id) async {
+  Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async {
     llamadas.add('artistTopTracks $id');
     return [
       Track(id: 'art_1', uri: 'spotify:track:art_1', name: 'Art 1', artists: 'Artiste', album: 'Alb', artSmall: null, artMedium: null, durationMs: 210000, isLocal: false),

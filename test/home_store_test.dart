@@ -48,7 +48,7 @@ class _FakeApi extends SpotifyApi {
       const [_artista];
 
   @override
-  Future<List<Track>> artistTopTracks(String id) async => const [];
+  Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async => const [];
 
   @override
   Future<List<Album>> newReleases({int limit = 20}) async {

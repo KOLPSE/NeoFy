@@ -28,6 +28,7 @@ import 'core/resource_monitor.dart';
 import 'core/settings.dart';
 import 'core/smtc.dart';
 import 'core/spotify_api.dart';
+import 'core/ultima_reproduccion.dart';
 import 'core/updater.dart';
 import 'core/yt_auth.dart';
 import 'core/yt_music_api.dart';
@@ -145,6 +146,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   );
   late final HomeStore _home = HomeStore(api: _api, auth: _auth);
   late final CarpetasStore _carpetas = CarpetasStore()..cargar();
+  final UltimaReproduccionStore _memoria = UltimaReproduccionStore();
 
   late final ResourceMonitor _ram = ResourceMonitor(
     pidsDeSidecars: () => [_librespot.pid, _sidecar.pid],
@@ -301,7 +303,25 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     super.dispose();
   }
 
+  DateTime _ultimoRecuerdo = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _uriRecordada;
+
+  Future<void> _recordarReproduccion({bool forzar = false}) async {
+    final ultima = _player.paraRecordar();
+    if (ultima == null) return;
+    final ahora = DateTime.now();
+    if (!forzar &&
+        ultima.track.uri == _uriRecordada &&
+        ahora.difference(_ultimoRecuerdo) < const Duration(seconds: 20)) {
+      return;
+    }
+    _uriRecordada = ultima.track.uri;
+    _ultimoRecuerdo = ahora;
+    await _memoria.guardar(ultima);
+  }
+
   void _avisarAlSistema() {
+    unawaited(_recordarReproduccion());
     _mpris.notificarCambio();
     _smtc.notificarCambio();
     if (_player.libre == null) {
@@ -330,6 +350,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Future<void> _startSession() async {
     if (_sessionStarted) return;
     _sessionStarted = true;
+
+    final ultima = await _memoria.cargar();
+    if (!mounted) return;
+    if (ultima != null) _player.restaurar(ultima);
 
     await _librespot.start();
 
@@ -546,6 +570,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   }
 
   Future<void> _quit() async {
+    await _recordarReproduccion(forzar: true);
     await _sidecar.stop();
     await _librespot.stop();
     await _mpris.stop();

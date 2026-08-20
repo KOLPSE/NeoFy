@@ -9,6 +9,7 @@ import 'liked_store.dart';
 import 'models.dart';
 import 'reproduccion_libre.dart';
 import 'spotify_api.dart';
+import 'ultima_reproduccion.dart';
 
 class ReproduccionEnCurso {
   const ReproduccionEnCurso({
@@ -69,6 +70,86 @@ class PlayerController extends ChangeNotifier {
   int? _pendingSeekMs;
   DateTime _pendingSeekAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  UltimaReproduccion? _porRetomar;
+
+  bool get hayAlgoPorRetomar => _porRetomar != null;
+
+  void restaurar(UltimaReproduccion ultima) {
+    if (state.track != null) return;
+    _porRetomar = ultima;
+    _lastContextUri = ultima.contextUri;
+    _lastUris = ultima.uris;
+    state = Playback(
+      track: ultima.track,
+      isPlaying: false,
+      progressMs: ultima.posicionMs,
+      deviceId: null,
+      deviceName: null,
+      volumePercent: state.volumePercent,
+      shuffle: false,
+      repeat: 'off',
+      contextUri: ultima.contextUri,
+    );
+    currentUri.value = ultima.track.uri;
+    progressMs.value = ultima.posicionMs;
+    _lastSyncedProgress = ultima.posicionMs;
+    _lastSync = DateTime.now();
+    notifyListeners();
+  }
+
+  UltimaReproduccion? paraRecordar() {
+    final t = state.track;
+    if (t == null || t.uri.isEmpty) return _porRetomar;
+    return UltimaReproduccion(
+      track: t,
+      posicionMs: progressMs.value,
+      contextUri: contextUri,
+      uris: UltimaReproduccion.colaDesde(_lastUris, t.uri),
+    );
+  }
+
+  Future<void> _retomarGuardada(UltimaReproduccion ultima) async {
+    final enLibre = libre;
+    if (enLibre != null) {
+      _porRetomar = null;
+      final uris = ultima.uris;
+      if (uris != null && uris.isNotEmpty) {
+        await enLibre.playLista(uris);
+      } else {
+        await enLibre.playTrack(ultima.track.uri);
+      }
+      if (ultima.posicionMs > 0) await enLibre.saltar(ultima.posicionMs);
+      return;
+    }
+
+    if (ourDeviceId == null) await resolveDevice();
+
+    state = state.copyWith(isPlaying: true);
+    _lastSyncedProgress = ultima.posicionMs;
+    _lastSync = DateTime.now();
+    notifyListeners();
+
+    final conContexto = ultima.contextUri != null;
+    final ok = await _withDevice(() => api.play(
+          deviceId: ourDeviceId,
+          contextUri: ultima.contextUri,
+          uris: conContexto
+              ? null
+              : (ultima.uris?.isNotEmpty ?? false)
+                  ? ultima.uris
+                  : [ultima.track.uri],
+          offsetUri: conContexto ? ultima.track.uri : null,
+          positionMs: ultima.posicionMs,
+        ));
+
+    if (ok) {
+      _porRetomar = null;
+    } else {
+      state = state.copyWith(isPlaying: false);
+      notifyListeners();
+    }
+  }
+
   void start() {
     _tickTimer ??= Timer.periodic(const Duration(milliseconds: 250), (_) => _tick());
     _schedulePoll(const Duration(milliseconds: 200));
@@ -109,6 +190,14 @@ class PlayerController extends ChangeNotifier {
       final pb = await api.playbackState();
       if (_disposed) return;
       var next = pb ?? Playback.empty;
+
+      if (_porRetomar != null) {
+        if (next.track == null) {
+          lastError = null;
+          return;
+        }
+        _porRetomar = null;
+      }
 
       if (next.track?.uri != state.track?.uri) _pendingSeekMs = null;
 
@@ -243,8 +332,10 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _mandoDelUsuario = false;
+
   Future<void> ensurePausedAtStartup() async {
-    if (libre != null) return;
+    if (libre != null || _mandoDelUsuario) return;
     try {
       final pb = await api.playbackState();
       if (pb == null || !pb.isPlaying) return;
@@ -295,6 +386,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> togglePlay() async {
+    _mandoDelUsuario = true;
+    final guardada = _porRetomar;
+    if (guardada != null && !state.isPlaying) return _retomarGuardada(guardada);
     if (libre != null) return libre!.alternar();
     if (!state.isPlaying && state.track == null && await _volverAlPrincipio()) {
       return;
@@ -319,6 +413,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> next() async {
+    _mandoDelUsuario = true;
+    final guardada = _porRetomar;
+    if (guardada != null) return _retomarGuardada(guardada);
     if (libre != null) return libre!.siguiente();
     final sinSiguiente = !state.canSkipNext || state.track == null;
     if (sinSiguiente && await _volverAlPrincipio()) return;
@@ -330,6 +427,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> previous() async {
+    _mandoDelUsuario = true;
+    final guardada = _porRetomar;
+    if (guardada != null) return _retomarGuardada(guardada);
     if (libre != null) return libre!.anterior();
     if (progressMs.value > 3000 || !state.canSkipPrevious) {
       await seek(0);
@@ -372,6 +472,16 @@ class PlayerController extends ChangeNotifier {
   void Function(int ms)? onSalto;
 
   Future<void> seek(int ms) async {
+    final guardada = _porRetomar;
+    if (guardada != null) {
+      _porRetomar = guardada.conPosicion(ms);
+      state = state.copyWith(progressMs: ms);
+      progressMs.value = ms;
+      _lastSyncedProgress = ms;
+      _lastSync = DateTime.now();
+      notifyListeners();
+      return;
+    }
     if (libre != null) return libre!.saltar(ms);
     _pendingSeekMs = ms;
     _pendingSeekAt = DateTime.now();
@@ -564,7 +674,9 @@ class PlayerController extends ChangeNotifier {
         final artistasBase = artistasTop.take(8).toList();
         final listasPistasArtista = await Future.wait([
           for (final a in artistasBase)
-            api.artistTopTracks(a.id).catchError((_) => const <Track>[]),
+            api
+                .artistTopTracks(a.id, discosDeRespaldo: 1)
+                .catchError((_) => const <Track>[]),
         ]);
         final vistasNuevas = <String>{};
         for (final lista in listasPistasArtista) {
@@ -663,6 +775,8 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playContext(String contextUri, {int? offset}) {
+    _mandoDelUsuario = true;
+    _porRetomar = null;
     if (libre != null) return libre!.playContext(contextUri, offset: offset);
     _aleatorioInteligente = false;
     _lastContextUri = contextUri;
@@ -680,6 +794,8 @@ class PlayerController extends ChangeNotifier {
     bool esInteligente = false,
     int? posicionMs,
   }) {
+    _mandoDelUsuario = true;
+    _porRetomar = null;
     if (libre != null) return libre!.playLista(uris, desde: desde);
     if (!esInteligente) {
       _aleatorioInteligente = false;
@@ -695,6 +811,8 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playTrack(String uri) {
+    _mandoDelUsuario = true;
+    _porRetomar = null;
     if (libre != null) return libre!.playTrack(uri);
     _aleatorioInteligente = false;
     _lastContextUri = null;

@@ -49,7 +49,11 @@ class _ArtistScreenState extends State<ArtistScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'No se pudieron leer las canciones de este artista.\n\n$e';
+        _error = e is ApiException && e.isForbidden
+            ? 'Spotify no deja leer las canciones de este artista.\n\n'
+                'Ni sus más populares ni sus discos: es el tope del Modo '
+                'Desarrollo, no un problema de tu cuenta.'
+            : 'No se pudieron leer las canciones de este artista.\n\n$e';
         _cargando = false;
       });
     }

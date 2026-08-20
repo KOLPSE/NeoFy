@@ -9,7 +9,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '0.3.8';
+const String kVersion = '1.0.0';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 

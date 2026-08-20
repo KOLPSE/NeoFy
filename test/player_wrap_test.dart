@@ -4,6 +4,7 @@ import 'package:neofy/core/auth.dart';
 import 'package:neofy/core/models.dart';
 import 'package:neofy/core/player_state.dart';
 import 'package:neofy/core/spotify_api.dart';
+import 'package:neofy/core/ultima_reproduccion.dart';
 
 class _FakeConfig extends AppConfig {
   _FakeConfig() : super(initialVolume: 60);
@@ -281,6 +282,18 @@ void main() {
 
       expect(api.llamadas, ['playbackState']);
     });
+
+    test('lo que ha puesto el usuario no se pausa, aunque librespot tarde',
+        () async {
+      player.ourDeviceId = 'dev';
+      await player.playContext('spotify:playlist:abc');
+      api.llamadas.clear();
+
+      api.estadoRemoto = _sonando();
+      await player.ensurePausedAtStartup();
+
+      expect(api.llamadas, isEmpty);
+    });
   });
 
   group('reinicio del audio', () {
@@ -354,6 +367,131 @@ void main() {
         'transfer nuevo play=true',
         'play [spotify:track:1] offset=null pos=1000',
       ]);
+    });
+  });
+
+  group('lo último que sonó se recuerda entre sesiones', () {
+    UltimaReproduccion guardada({
+      String? contextUri = 'spotify:playlist:abc',
+      List<String>? uris,
+    }) =>
+        UltimaReproduccion(
+          track: _sonando().track!,
+          posicionMs: 56000,
+          contextUri: contextUri,
+          uris: uris,
+        );
+
+    void abrirCon(UltimaReproduccion ultima) {
+      player.restaurar(ultima);
+      player.ourDeviceId = 'dev';
+    }
+
+    test('al abrir, la barra enseña la canción parada donde se dejó', () {
+      abrirCon(guardada());
+
+      expect(player.state.track?.name, 'Última');
+      expect(player.state.isPlaying, isFalse);
+      expect(player.progressMs.value, 56000);
+      expect(player.contextUri, 'spotify:playlist:abc');
+      expect(api.llamadas, isEmpty);
+    });
+
+    test('el play la retoma donde iba, sin tener que buscarla', () async {
+      abrirCon(guardada());
+      await player.togglePlay();
+
+      expect(api.llamadas,
+          ['play spotify:playlist:abc offset=spotify:track:1 pos=56000']);
+      expect(player.state.isPlaying, isTrue);
+      expect(player.hayAlgoPorRetomar, isFalse);
+    });
+
+    test('una canción suelta se retoma sin contexto', () async {
+      abrirCon(guardada(contextUri: null));
+      await player.togglePlay();
+
+      expect(api.llamadas, ['play [spotify:track:1] offset=null pos=56000']);
+    });
+
+    test('una tira sin contexto se retoma con el resto de la cola', () async {
+      abrirCon(guardada(
+        contextUri: null,
+        uris: const ['spotify:track:1', 'spotify:track:2'],
+      ));
+      await player.togglePlay();
+
+      expect(api.llamadas,
+          ['play [spotify:track:1, spotify:track:2] offset=null pos=56000']);
+    });
+
+    test('siguiente no salta al vacío: arranca lo guardado', () async {
+      abrirCon(guardada());
+      await player.next();
+
+      expect(api.llamadas,
+          ['play spotify:playlist:abc offset=spotify:track:1 pos=56000']);
+    });
+
+    test('mover la barra antes de darle al play cambia por dónde empieza',
+        () async {
+      abrirCon(guardada());
+      await player.seek(90000);
+
+      expect(api.llamadas, isEmpty);
+      expect(player.progressMs.value, 90000);
+
+      await player.togglePlay();
+      expect(api.llamadas,
+          ['play spotify:playlist:abc offset=spotify:track:1 pos=90000']);
+    });
+
+    test('poner otra cosa olvida lo guardado', () async {
+      abrirCon(guardada());
+      await player.playContext('spotify:album:otro');
+      api.llamadas.clear();
+
+      expect(player.hayAlgoPorRetomar, isFalse);
+      await player.next();
+      expect(api.llamadas, ['next', 'play null offset=null']);
+    });
+
+    test('el 204 de /me/player no borra lo restaurado de la barra', () async {
+      abrirCon(guardada());
+      api.estadoRemoto = null;
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(api.llamadas, contains('playbackState'));
+      expect(player.state.track?.name, 'Última');
+      expect(player.progressMs.value, 56000);
+    });
+
+    test('si Spotify sí sabe qué suena, manda Spotify', () async {
+      abrirCon(guardada());
+      api.estadoRemoto = _sonando();
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(player.hayAlgoPorRetomar, isFalse);
+      expect(player.state.progressMs, 1000);
+    });
+
+    test('lo que se apunta para la próxima sesión es lo que suena ahora', () {
+      player.state = _sonando();
+      player.progressMs.value = 42000;
+
+      final apunte = player.paraRecordar();
+      expect(apunte, isNotNull);
+      expect(apunte!.track.uri, 'spotify:track:1');
+      expect(apunte.posicionMs, 42000);
+      expect(apunte.contextUri, 'spotify:playlist:abc');
+    });
+
+    test('sin nada sonando no se apunta nada', () {
+      expect(player.paraRecordar(), isNull);
     });
   });
 

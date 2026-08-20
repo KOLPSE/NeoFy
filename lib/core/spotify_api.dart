@@ -20,10 +20,10 @@ class ApiException implements Exception {
 }
 
 class SpotifyApi {
-  SpotifyApi(this.auth);
+  SpotifyApi(this.auth, {http.Client? cliente}) : _http = cliente ?? http.Client();
 
   final SpotifyAuth auth;
-  final http.Client _http = http.Client();
+  final http.Client _http;
 
   static const _base = 'api.spotify.com';
 
@@ -358,13 +358,54 @@ class SpotifyApi {
         .toList();
   }
 
-  Future<List<Track>> artistTopTracks(String id) async {
-    final j = await _request('GET', '/artists/$id/top-tracks',
-        query: {'market': 'from_token'}) as Map<String, dynamic>;
-    return ((j['tracks'] as List<dynamic>?) ?? const [])
-        .map((t) => Track.fromJson(t as Map<String, dynamic>?))
-        .whereType<Track>()
-        .toList();
+  Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async {
+    try {
+      final j = await _request('GET', '/artists/$id/top-tracks',
+          query: {'market': 'from_token'}) as Map<String, dynamic>;
+      final pistas = ((j['tracks'] as List<dynamic>?) ?? const [])
+          .map((t) => Track.fromJson(t as Map<String, dynamic>?))
+          .whereType<Track>()
+          .toList();
+      if (pistas.isNotEmpty || discosDeRespaldo <= 0) return pistas;
+    } on ApiException catch (e) {
+      if (!e.isForbidden || discosDeRespaldo <= 0) rethrow;
+    }
+    return pistasDeSusDiscos(id, maxDiscos: discosDeRespaldo);
+  }
+
+  Future<List<Track>> pistasDeSusDiscos(
+    String id, {
+    int maxDiscos = 6,
+    int maxPistas = 40,
+  }) async {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    final j = await _listaConTope('/artists/$artistId/albums', 10,
+        {'include_groups': 'album,single'});
+
+    final discos = <String>[];
+    for (final raw in (j['items'] as List<dynamic>?) ?? const []) {
+      final albumId = (raw as Map<String, dynamic>)['id'] as String?;
+      if (albumId == null || albumId.isEmpty || discos.contains(albumId)) continue;
+      discos.add(albumId);
+      if (discos.length >= maxDiscos) break;
+    }
+    if (discos.isEmpty) return const [];
+
+    final listas = await Future.wait([
+      for (final albumId in discos)
+        albumTracks(albumId).catchError((_) => const <Track>[]),
+    ]);
+
+    final vistas = <String>{};
+    final salida = <Track>[];
+    for (final lista in listas) {
+      for (final t in lista) {
+        if (t.uri.isEmpty || !vistas.add(t.name.trim().toLowerCase())) continue;
+        salida.add(t);
+        if (salida.length >= maxPistas) return salida;
+      }
+    }
+    return salida;
   }
 
   Future<List<Track>> tracks(List<String> ids) async {

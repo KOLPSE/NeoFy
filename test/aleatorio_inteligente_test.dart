@@ -77,7 +77,7 @@ class _ApiFalsaInteligente extends SpotifyApi {
   }
 
   @override
-  Future<List<Track>> artistTopTracks(String id) async {
+  Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async {
     llamadas.add('artistTopTracks $id');
     if (lanzarErrorGlobal) throw ApiException(500, 'Error de red');
     return pistasTopArtistaMock[id] ?? const [];

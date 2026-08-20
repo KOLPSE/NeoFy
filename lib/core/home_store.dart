@@ -68,7 +68,9 @@ class HomeStore extends ChangeNotifier {
     final base = artistas.take(8).toList();
     final listas = await Future.wait([
       for (final a in base)
-        api.artistTopTracks(a.id).catchError((_) => const <Track>[]),
+        api
+            .artistTopTracks(a.id, discosDeRespaldo: 1)
+            .catchError((_) => const <Track>[]),
     ]);
 
     final conocidas = {
