@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Name=NeoFy
+GenericName=Reproductor de musica
+Comment=Cliente ligero de Spotify
+Exec=/usr/bin/neofy
+Icon=neofy
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=spotify;music;musica;player;reproductor;audio;
+StartupNotify=true
+
+# El nombre del fichero (xyz.neogex.neofy.desktop) no es decorativo: tiene que
+# ser el APPLICATION_ID de linux/CMakeLists.txt, que es lo que el runner pasa a
+# g_set_prgname(), y el mismo valor que MPRIS publica como DesktopEntry en
+# core/mpris.dart. De esas tres cosas cuadrando dependen dos:
+#
+#   - que el escritorio asocie la ventana con este lanzador (si no, sale con
+#     icono generico y no se puede anclar a la barra);
+#   - que el widget de reproduccion del sistema tenga icono, porque lo busca
+#     por el DesktopEntry que anuncia el reproductor.
+StartupWMClass=xyz.neogex.neofy

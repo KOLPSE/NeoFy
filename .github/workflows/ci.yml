@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  comprobar:
+    runs-on: ${{ matrix.so }}
+    strategy:
+      fail-fast: false
+      matrix:
+        so: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+
+      - name: Que no se cuele ningún Client ID
+        if: matrix.so == 'windows-latest'
+        shell: pwsh
+        run: |
+          $fuente = Get-Content lib/core/app_config.dart -Raw
+          if ($fuente -notmatch "kDefaultClientId\s*=\s*''") {
+            Write-Error "kDefaultClientId no está vacío: no publiques un Client ID."
+            exit 1
+          }
+          Write-Host "kDefaultClientId vacío, correcto."

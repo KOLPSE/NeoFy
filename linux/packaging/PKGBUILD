@@ -1,0 +1,53 @@
+# Maintainer: KOLPSE <https://github.com/KOLPSE>
+
+pkgname=neofy-bin
+_pkgname=neofy
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Cliente de Spotify ligero y nativo (Flutter + librespot)"
+arch=('x86_64')
+url="https://github.com/KOLPSE/NeoFy"
+license=('MIT')
+
+depends=(
+  'gtk3'
+  'libayatana-appindicator'
+  'libpulse'
+  'openssl'
+  'webkit2gtk-4.1'
+  'mpv'
+)
+optdepends=(
+  'gnome-shell-extension-appindicator: icono de bandeja en GNOME'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip')
+
+_tarball="NeoFy-$pkgver-linux-x86_64"
+source=("$_tarball.tar.gz::$url/releases/download/v$pkgver/$_tarball.tar.gz")
+sha256sums=('bc8d5fb824a4a3016ddb3be9d8c87d6a0799e7769076011874ab041ccf0a0137')
+
+package() {
+  cd "$srcdir/$_tarball"
+
+  install -dm755 "$pkgdir/opt/$_pkgname"
+  cp -r data lib "$pkgdir/opt/$_pkgname/"
+  install -Dm755 neofy "$pkgdir/opt/$_pkgname/neofy"
+  install -Dm755 librespot "$pkgdir/opt/$_pkgname/librespot"
+  install -Dm755 metadata-sidecar "$pkgdir/opt/$_pkgname/metadata-sidecar"
+  install -Dm755 yt-dlp "$pkgdir/opt/$_pkgname/yt-dlp"
+
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/opt/$_pkgname/neofy" "$pkgdir/usr/bin/$_pkgname"
+
+  install -Dm644 xyz.neogex.neofy.desktop \
+    "$pkgdir/usr/share/applications/xyz.neogex.neofy.desktop"
+
+  for tamano in 16 24 32 48 64 128 256; do
+    install -Dm644 "icons/${tamano}x${tamano}/neofy.png" \
+      "$pkgdir/usr/share/icons/hicolor/${tamano}x${tamano}/apps/$_pkgname.png"
+  done
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -1,0 +1,264 @@
+name: Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Etiqueta de una release YA publicada a la que subir los paquetes
+          (por ejemplo v0.1.3). Vacio = solo compilar y dejar el artefacto.
+        required: false
+        default: ''
+  release:
+    types: [published]
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev \
+            libayatana-appindicator3-dev libpulse-dev libssl-dev \
+            libwebkit2gtk-4.1-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Cache de Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tool/metadata-sidecar/target
+          key: rust-${{ runner.os }}-${{ hashFiles('tool/metadata-sidecar/Cargo.lock', 'tool/build_sidecars.sh') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Sidecars
+        run: ./tool/build_sidecars.sh
+
+      - name: Bundle
+        run: ./tool/build_linux_bundle.sh
+
+      - name: Que el tarball este completo
+        run: |
+          tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
+          for f in neofy librespot metadata-sidecar yt-dlp \
+                   xyz.neogex.neofy.desktop LICENSE \
+                   data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
+            grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
+          done
+
+          tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz -C /tmp
+          /tmp/NeoFy-*-linux-x86_64/yt-dlp --version
+          echo "El tarball esta completo."
+
+      - name: Artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: neofy-linux
+          path: dist/NeoFy-*-linux-x86_64.tar.gz
+          retention-days: 30
+
+      - name: Subir a la release
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          echo "Subiendo a $tag"
+          gh release upload "$tag" \
+            dist/NeoFy-*-linux-x86_64.tar.gz \
+            --clobber
+          echo "sha256 para el sha256sums del PKGBUILD:"
+          sha256sum dist/NeoFy-*-linux-x86_64.tar.gz
+
+  arch:
+    needs: compilar
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    permissions:
+      contents: write
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Dependencias
+        run: |
+          pacman -Syu --noconfirm --needed \
+            gtk3 libayatana-appindicator libpulse openssl xdg-utils \
+            webkit2gtk-4.1 \
+            base-devel sudo github-cli xorg-server-xvfb xorg-xauth dbus
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: neofy-linux
+          path: dist
+
+      - name: Que los binarios resuelvan sus librerias en Arch
+        run: |
+          tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
+          cd NeoFy-*-linux-x86_64
+          fallo=0
+          for bin in neofy librespot metadata-sidecar; do
+            faltan="$(ldd "$bin" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$bin no encuentra:"; echo "$faltan"; fallo=1
+            else
+              echo "ok  $bin"
+            fi
+          done
+          for so in lib/*.so; do
+            faltan="$(LD_LIBRARY_PATH="$PWD/lib" ldd "$so" 2>&1 | grep 'not found' || true)"
+            if [ -n "$faltan" ]; then
+              echo "::error::$so no encuentra:"; echo "$faltan"; fallo=1
+            fi
+          done
+          [ "$fallo" = 0 ] || exit 1
+          echo "Todos los binarios resuelven sus dependencias en Arch."
+
+      - name: Que el PKGBUILD y kVersion no se hayan desincronizado
+        run: |
+          version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
+          pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
+          echo "kVersion=$version  pkgver=$pkgver"
+          [ "$version" = "$pkgver" ] || {
+            echo "::error::linux/packaging/PKGBUILD tiene pkgver=$pkgver pero kVersion es $version"
+            exit 1
+          }
+
+      - name: Montar el paquete con el PKGBUILD de verdad
+        run: |
+          useradd -m builder
+          mkdir -p /tmp/pkg
+          cp linux/packaging/PKGBUILD /tmp/pkg/
+          cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
+          sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
+          sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
+          chown -R builder /tmp/pkg
+          sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
+          ls -la /tmp/pkg/*.pkg.tar.zst
+
+      - name: Que el PKGBUILD de verdad sea valido
+        run: |
+          install -dm755 /tmp/srcinfo
+          cp linux/packaging/PKGBUILD /tmp/srcinfo/
+          chown -R builder /tmp/srcinfo
+          sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
+
+      - name: Instalarlo y comprobar donde queda todo
+        run: |
+          pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+          test -x /opt/neofy/neofy          || { echo "::error::falta /opt/neofy/neofy"; exit 1; }
+          test -x /opt/neofy/librespot      || { echo "::error::falta librespot"; exit 1; }
+          test -x /opt/neofy/metadata-sidecar || { echo "::error::falta metadata-sidecar"; exit 1; }
+          test -x /opt/neofy/yt-dlp         || { echo "::error::falta yt-dlp"; exit 1; }
+          /opt/neofy/yt-dlp --version       || { echo "::error::yt-dlp no arranca"; exit 1; }
+          test -d /opt/neofy/data           || { echo "::error::falta data/"; exit 1; }
+          test -L /usr/bin/neofy            || { echo "::error::/usr/bin/neofy no es un enlace"; exit 1; }
+          test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "::error::falta el .desktop"; exit 1; }
+          test -f /usr/share/icons/hicolor/256x256/apps/neofy.png  || { echo "::error::falta el icono"; exit 1; }
+          [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
+            echo "::error::el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
+          echo "Instalado correctamente."
+
+      - name: Que la app arranque de verdad
+        run: |
+          export HOME=/root
+          dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
+          pid=$!
+          sleep 25
+
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::neofy se ha caido durante el arranque"
+            cat /tmp/neofy.log
+            exit 1
+          fi
+          kill "$pid" 2>/dev/null || true
+          echo "Sigue viva pasados 25 s."
+
+          if grep -q 'sin libmpv' /tmp/neofy.log; then
+            echo "::error::la app ha arrancado sin la via libre: falta libmpv"
+            echo "::error::revisa que 'mpv' siga en depends= de linux/packaging/PKGBUILD"
+            cat /tmp/neofy.log
+            exit 1
+          fi
+          echo "Y con la via libre operativa."
+          cat /tmp/neofy.log
+
+      - name: Que desinstale limpio
+        run: |
+          pacman -R --noconfirm neofy-bin
+          test ! -e /opt/neofy || { echo "::error::quedan restos en /opt/neofy"; exit 1; }
+          echo "Desinstala limpio."
+
+      - name: El paquete de Arch, para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: neofy-arch
+          path: /tmp/pkg/*.pkg.tar.zst
+          retention-days: 30
+
+      - name: Publicar el paquete y el repositorio pacman
+        if: github.event_name == 'release' || inputs.tag != ''
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          pkg="$(ls /tmp/pkg/neofy-bin-*.pkg.tar.zst)"
+          nombre="$(basename "$pkg")"
+
+          gh release upload "$tag" "$pkg" --clobber
+          echo "  $nombre subido a $tag"
+
+          cd /tmp/pkg
+          repo-add neofy.db.tar.gz "$nombre"
+          rm -f neofy.db neofy.files
+          cp neofy.db.tar.gz neofy.db
+          cp neofy.files.tar.gz neofy.files
+
+          cat > /tmp/notas-repo.md <<'NOTAS'
+          Esta release **no contiene una version de NeoFy**: es el repositorio
+          pacman para Arch. Su etiqueta no cambia nunca, para que la url que se
+          pone en `pacman.conf` siga siendo valida version tras version. Las
+          versiones de verdad estan en la lista de releases.
+
+          En `/etc/pacman.conf`, al final:
+
+              [neofy]
+              SigLevel = Optional TrustAll
+              Server = https://github.com/KOLPSE/NeoFy/releases/download/repo
+
+          Y despues:
+
+              sudo pacman -Sy neofy-bin
+
+          A partir de ahi se actualiza con el resto del sistema en cada
+          `sudo pacman -Syu`.
+          NOTAS
+          sed -i 's/^          //' /tmp/notas-repo.md
+
+          if ! gh release view repo >/dev/null 2>&1; then
+            gh release create repo --latest=false \
+              --title 'Repositorio pacman para Arch (no es una version)' \
+              --notes-file /tmp/notas-repo.md
+          fi
+
+          gh release upload repo \
+            "$nombre" neofy.db neofy.files neofy.db.tar.gz neofy.files.tar.gz \
+            --clobber
+          echo "  repositorio pacman actualizado con $nombre"

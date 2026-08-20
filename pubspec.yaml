@@ -1,0 +1,46 @@
+name: neofy
+description: "Cliente de Spotify ligero y nativo para Windows (Flutter + librespot)"
+publish_to: 'none'
+version: 0.1.1+2
+
+environment:
+  sdk: ^3.12.2
+
+# Dependencias deliberadamente mínimas: cada paquete es RAM y superficie de fallo.
+# El estado se lleva con ChangeNotifier/ValueNotifier, sin gestor externo.
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  crypto: ^3.0.3
+  path: ^1.9.0
+  window_manager: ^0.4.2
+  tray_manager: ^0.2.3
+  url_launcher: ^6.3.0
+  ffi: ^2.2.0
+  # Solo se usa en Linux, para hablar MPRIS con el escritorio (core/mpris.dart).
+  # Es una excepcion consciente a la regla de arriba, y sale barata: es Dart
+  # puro, sin transitivas nativas, y sustituye a las ~60 lineas de C++ que en
+  # Windows hicieron falta para lo mismo (windows/runner/flutter_window.cpp).
+  dbus: ^0.7.10
+  # Tercera excepcion consciente: el audio de NeoTube no puede ir por
+  # librespot (es protocolo Spotify Connect puro, solo sirve para Spotify),
+  # asi que hace falta un reproductor de verdad en Dart. media_kit envuelve
+  # libmpv, ya soporta Windows y Linux sin trabajo aparte, y reproduce URLs de
+  # streaming directamente sin arrastrar nada de video.
+  media_kit: ^1.2.6
+  media_kit_libs_windows_audio: ^1.0.9
+  media_kit_libs_linux: ^1.2.1
+  desktop_webview_window: ^0.3.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # Windows quiere .ico y Linux .png: un .ico en Linux no lo pinta ni GTK ni
+    # el indicador de la bandeja. Los dos salen del mismo dibujo.
+    - assets/tray.ico
+    - assets/tray.png
