@@ -48,7 +48,8 @@ class _FakeApi extends SpotifyApi {
   Future<void> pause() async => llamadas.add('pause');
 
   @override
-  Future<void> setVolume(int percent) async => llamadas.add('volume $percent');
+  Future<void> setVolume(int percent, {String? deviceId}) async =>
+      llamadas.add('volume $percent');
 
   @override
   Future<void> next() async {
@@ -514,6 +515,34 @@ void main() {
     test('con reproducción manda lo que diga Spotify', () async {
       player.state = _sonando();
       expect(player.volumeShown, 50);
+    });
+
+    test('silenciar guarda el volumen y el slider no se va a cero', () async {
+      player.state = _sonando();
+      await player.alternarMute();
+
+      expect(player.muteado, isTrue);
+      expect(player.volumeShown, 50);
+      expect(api.llamadas, contains('volume 0'));
+    });
+
+    test('volver a pulsar restaura el volumen de antes', () async {
+      player.state = _sonando();
+      await player.alternarMute();
+      await player.alternarMute();
+
+      expect(player.muteado, isFalse);
+      expect(player.volumeShown, 50);
+      expect(api.llamadas, contains('volume 50'));
+    });
+
+    test('mover el volumen mientras está silenciado lo reactiva', () async {
+      player.state = _sonando();
+      await player.alternarMute();
+      await player.setVolume(80);
+
+      expect(player.muteado, isFalse);
+      expect(player.volumeShown, 80);
     });
   });
 }

@@ -139,7 +139,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              ArtImage(url: widget.playlist.art, size: 96, radius: 6),
+              ArtImage(url: widget.playlist.art, size: 96),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(

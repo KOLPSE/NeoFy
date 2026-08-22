@@ -9,7 +9,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.0.0';
+const String kVersion = '1.1.0';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
@@ -18,6 +18,8 @@ const int kRedirectPort = 8898;
 const int kLibrespotOAuthPort = 8899;
 
 const String kDeviceName = 'NeoFy';
+
+const String kTemaPorDefecto = 'sistema';
 
 const List<String> kScopes = [
   'user-read-private',
@@ -93,6 +95,8 @@ class AppConfig {
 
   String discordClientId;
 
+  String tema;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
@@ -101,6 +105,7 @@ class AppConfig {
     this.volumenNeoTube = 60,
     this.discordRpcEnabled = false,
     this.discordClientId = kDiscordClientId,
+    this.tema = kTemaPorDefecto,
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -118,6 +123,7 @@ class AppConfig {
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
         discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
         discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
+        tema: (map['tema'] as String?) ?? kTemaPorDefecto,
       );
     } catch (_) {
       return AppConfig();
@@ -133,6 +139,7 @@ class AppConfig {
       'volumenNeoTube': volumenNeoTube,
       'discordRpcEnabled': discordRpcEnabled,
       'discordClientId': discordClientId,
+      'tema': tema,
     }));
   }
 }

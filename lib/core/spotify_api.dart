@@ -214,8 +214,11 @@ class SpotifyApi {
   Future<void> seek(int positionMs) =>
       _request('PUT', '/me/player/seek', query: {'position_ms': '$positionMs'});
 
-  Future<void> setVolume(int percent) => _request('PUT', '/me/player/volume',
-      query: {'volume_percent': '${percent.clamp(0, 100)}'});
+  Future<void> setVolume(int percent, {String? deviceId}) =>
+      _request('PUT', '/me/player/volume', query: {
+        'volume_percent': '${percent.clamp(0, 100)}',
+        'device_id': ?deviceId,
+      });
 
   Future<void> setShuffle(bool on) =>
       _request('PUT', '/me/player/shuffle', query: {'state': '$on'});

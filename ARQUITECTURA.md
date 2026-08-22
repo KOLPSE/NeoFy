@@ -48,6 +48,11 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
     Windows. Ver "El audio que se queda mudo" más abajo.
   - `art_cache.dart` — Caché LRU de carátulas en disco (50 MB).
   - `models.dart` — Modelos mínimos. `pickImage()` es RAM-crítica.
+  - `temas.dart` — El formato de tema (`tema.json` → `Tema` → `ThemeData`), el parseo de
+    colores y el `ThemeExtension` que lleva el cristal hasta los widgets. Ver "Temas".
+  - `temas_incluidos.dart` — Los nueve temas de fábrica, escritos con las mismas claves
+    que usaría cualquiera. No hay nada que un tema de la comunidad no pueda hacer.
+  - `tema_store.dart` — Catálogo, selección y vigilancia de la carpeta de temas.
 - **`windows/runner/flutter_window.cpp`** — Además de hospedar Flutter, registra las teclas
   multimedia con `RegisterHotKey` y las manda a Dart por el canal
   `neofy/media_keys`. Ver "Teclas de los cascos" más abajo.
@@ -221,6 +226,9 @@ flutter test
 flutter build windows --release
 powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1   # solo la 1ª vez
 .\build\windows\x64\runner\Release\neofy.exe
+
+dart run tool\tema.dart nuevo "Mi tema"   # temas: ver TEMAS.md
+dart run tool\tema.dart validar
 ```
 
 ## Cuenta y credenciales
@@ -336,7 +344,8 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
 - **Los sliders mandan el cambio al soltar (`onChangeEnd`), nunca en `onChanged`.** Un
   `onChanged` que llame a la API dispara una petición por cada paso del arrastre: Spotify
   responde 429 y el valor acaba clavado en un punto intermedio al azar. `onChanged` solo
-  toca el estado local del arrastre (`_dragMs`, `_dragVolume`).
+  toca el estado local del arrastre (`_dragMs`, `_dragVolume`) y, en el volumen, la sesión
+  de audio de librespot.
 - **Tras un cambio del usuario, el sondeo no debe pisarlo.** Spotify tarda un par de
   segundos en reflejar un salto o un volumen, y hasta entonces sigue informando del valor
   anterior. `PlayerController` guarda el cambio como "pendiente" y descarta el dato del
@@ -373,8 +382,14 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   cambiar de canción, cada 20 s y al salir por `_quit()`.
 - **El volumen no se puede dejar en un valor por defecto.** `GET /me/player` no informa de
   volumen cuando no hay reproducción activa, así que la barra caía a un 50 fijo aunque el
-  usuario lo hubiera dejado en otro sitio. Se persiste en `config.json` (que es además el
-  `--initial-volume` con el que arranca librespot) y se usa como respaldo del slider.
+  usuario lo hubiera dejado en otro sitio. Se persiste en `config.json` y se usa como
+  respaldo del slider.
+- **El PUT de volumen de Connect tarda 1–2 s en oírse.** Va a los servidores de Spotify y
+  vuelve a librespot. Por eso librespot arranca con `--volume-ctrl fixed` y
+  `--initial-volume 100`: el mixer no se mueve, y NeoFy pone el volumen en la sesión de
+  audio del proceso (WASAPI en Windows, Pulse/PipeWire en Linux), que sí es al momento.
+  El PUT sigue saliendo al soltar, para que el sondeo y un Stream Deck vean el valor. Si
+  Connect también atenuara, se apilarían.
 - **El título verde necesita su propio notificador.** Las listas leían
   `player.state.track.uri` en `build` sin escuchar nada, así que se quedaba clavado en la
   canción con la que se abrió la pantalla. Escuchar el `ChangeNotifier` general repintaría
@@ -539,9 +554,63 @@ el de rendimiento se mantiene pegado al techo. Qué hace:
   Windows es `EmptyWorkingSet`; en Linux, `malloc_trim(0)` (ver "Lo que se pierde"). No se
   pierde nada en ninguna de las dos: lo recuperado vuelve solo en cuanto haga falta.
 - **El audio no se toca**: mismo bitrate, misma caché, mismo librespot.
+- **Apaga el cristal y el fondo de los temas.** Un `BackdropFilter` se recalcula en cada
+  fotograma; con el modo rendimiento encendido los paneles vuelven a ser opacos y el fondo,
+  liso. El tema elegido no cambia: solo se deja de pagar lo caro.
 
 ⚠️ **El working set depende de si la ventana está en primer plano**: Windows poda por su
 cuenta las de fondo. Comparar dos medidas tomadas en distinta situación no dice nada.
+
+## Temas
+
+La guía para quien escribe temas está en [`TEMAS.md`](TEMAS.md). Aquí va solo por qué el
+diseño es este y no el de Spicetify.
+
+**No hay CSS ni JS de tema, y no los va a haber.** Spicetify puede inyectar `user.css` porque
+Spotify es Electron y por debajo hay un DOM. NeoFy es Flutter compilado a nativo: no existe
+ese punto de entrada. Emularlo significaría inventar un lenguaje de estilos y un motor que lo
+aplique, y cada refactor de la interfaz rompería todos los temas de la gente. Lo que se
+declara son **colores y materiales**; la app decide dónde va cada uno.
+
+Eso solo funciona porque **la interfaz ya iba entera por `ColorScheme`**: al implementar esto
+había exactamente cuatro colores escritos a mano en todo `lib/ui/`. Esa es la invariante que
+sostiene el sistema de temas, y conviene no romperla: **si escribes un color literal en un
+widget, ese punto de la interfaz deja de ser tematizable** y nadie se entera hasta que un
+usuario se queja de que su tema no llega ahí.
+
+Cómo se conecta:
+
+- `Tema` (de `tema.json`) → `construirThemeData()` → `ThemeData` con su `ColorScheme`. El
+  mapeo interesante es `panel → surfaceContainer` (barra lateral y del reproductor),
+  `superficie → surfaceContainerHigh` y `textoTenue → onSurfaceVariant`.
+- Lo que no cabe en un `ColorScheme` —el cristal, el fondo, el radio— viaja en un
+  `ThemeExtension` (`EstiloNeoFy`), que se lee con `EstiloNeoFy.de(context)` desde cualquier
+  widget sin pasar nada por parámetro.
+- `FondoDelTema` se monta en el `builder:` del `MaterialApp`, así que queda **debajo del
+  Navigator y del Overlay**: pinta detrás de las pantallas y también de los diálogos. Por eso
+  `scaffoldBackgroundColor` pasa a `transparent` cuando el tema trae fondo o cristal — si no,
+  el `Scaffold` taparía justo lo que se quiere ver.
+- El cristal es un `BackdropFilter` con `ImageFilter.compose(saturación, desenfoque)` dentro
+  de un `ClipRRect`, más el reflejo especular y el filo. **El reflejo tiene que medir un
+  alto fijo en píxeles, no una fracción del panel**: la primera versión usaba un degradado
+  de esquina a esquina y eso hace que el efecto dependa de la proporción del panel — en la
+  barra del reproductor, ancha y baja, se leía como un barrido de luz, y en la barra
+  lateral, alta y estrecha, como un manchón vertical. Es la aproximación razonable al
+  Liquid Glass de Apple: el desenfoque, la saturación, el brillo y la sombra sí se pueden
+  hacer; la **refracción** de verdad (que el fondo se curve en el borde del panel) pediría un
+  shader propio y no compensa.
+
+Un tema que no se entiende **no tumba la app**: `Tema.desdeJson` distingue lo que es fatal
+(sin `nombre`, sin `colores.primario`, JSON roto) de lo que se puede deducir, y el resto sale
+como aviso en el selector. Un tema que se descarga de internet **no puede leer fuera de su
+carpeta**: `rutaDeRecurso()` normaliza y comprueba con `p.isWithin`, así que un
+`"imagen": "../../.."` no resuelve.
+
+`tool/tema.dart` es **Dart puro a propósito**: no importa nada de Flutter para que corra con
+`dart run` sin el SDK entero, y por eso duplica el parseo de colores. Esa duplicación es
+deliberada, pero está atada: `test/temas_test.dart` pasa el mismo corpus por las dos
+implementaciones y valida los temas incluidos con el validador de la herramienta, así que si
+una se separa de la otra, los tests se ponen rojos.
 
 ## RAM: las tres cosas que de verdad importan
 

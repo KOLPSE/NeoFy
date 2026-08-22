@@ -101,7 +101,10 @@ class LibrespotManager extends ChangeNotifier {
       '--system-cache', _credencialesDir.path,
       '--cache', p.join(cacheDir().path, 'audio'),
       '--cache-size-limit', '1G',
-      '--initial-volume', '${config.initialVolume}',
+      '--initial-volume', '100',
+      // El mixer se queda al 100 %: el volumen lo mueve la sesión de audio
+      // del proceso (instantáneo). Si Connect también atenuara, se apilarían.
+      '--volume-ctrl', 'fixed',
       '--disable-discovery',
       if (!hasCredentials) ...['--enable-oauth', '--oauth-port', '$kLibrespotOAuthPort'],
     ];

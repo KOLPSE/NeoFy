@@ -52,6 +52,11 @@ use la API de Spotify controla NeoFy sin plugin ninguno**.
   reproducción de KDE y GNOME con carátula, y `playerctl` lo controla sin plugin.
 - **Modo rendimiento**: sustituye las carátulas por mosaicos de color generados y baja el
   consumo por debajo de 100 MB, sin tocar el audio.
+- **Temas de la comunidad**: once incluidos (claro, oscuro, verde, azul y rojo en sus dos
+  versiones, un par *Material* que sigue la paleta y las formas de Material 3 Expressive, y
+  un *Liquid Glass* translúcido que refracta la portada de lo que suene), y
+  cualquiera puede hacer el suyo con un fichero de texto. Se recargan al guardar, sin cerrar
+  la app. Cómo se hacen: [`TEMAS.md`](TEMAS.md).
 - Bandeja del sistema: cerrar la ventana no corta la música.
 - **Se actualiza sola** (Windows): comprueba las releases de GitHub y se actualiza en un clic
   desde Ajustes, sin perder la sesión ni la configuración. En Linux avisa y lo actualiza

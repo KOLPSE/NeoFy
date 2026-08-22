@@ -37,6 +37,10 @@ class FlutterWindow : public Win32Window {
       const flutter::MethodCall<flutter::EncodableValue>& call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+  void OnVolumenSesionCall(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
   void EnviarComando(ComandoMultimedia comando, int64_t posicion_ms);
 
   flutter::DartProject project_;
@@ -55,6 +59,9 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       system_media_channel_;
+
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      volumen_sesion_channel_;
 
   SystemMediaControls system_media_;
   ThumbBar thumb_bar_;

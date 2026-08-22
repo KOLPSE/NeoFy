@@ -10,6 +10,7 @@ import 'models.dart';
 import 'reproduccion_libre.dart';
 import 'spotify_api.dart';
 import 'ultima_reproduccion.dart';
+import 'volumen_local.dart';
 
 class ReproduccionEnCurso {
   const ReproduccionEnCurso({
@@ -26,11 +27,14 @@ class ReproduccionEnCurso {
 }
 
 class PlayerController extends ChangeNotifier {
-  PlayerController(this.api, this.config);
+  PlayerController(this.api, this.config, {VolumenLocal? volumenLocal})
+      : _volumenLocal = volumenLocal ?? VolumenLocal();
 
   final SpotifyApi api;
 
   final AppConfig config;
+
+  final VolumenLocal _volumenLocal;
 
   Playback state = Playback.empty;
   String? ourDeviceId;
@@ -66,6 +70,8 @@ class PlayerController extends ChangeNotifier {
 
   int? _pendingVolume;
   DateTime _pendingVolumeAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int? _volumenAntesDeMutear;
+  Timer? _reintentoVolumen;
 
   int? _pendingSeekMs;
   DateTime _pendingSeekAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -153,6 +159,7 @@ class PlayerController extends ChangeNotifier {
   void start() {
     _tickTimer ??= Timer.periodic(const Duration(milliseconds: 250), (_) => _tick());
     _schedulePoll(const Duration(milliseconds: 200));
+    _aplicarVolumenAlAudio(volumeShown);
   }
 
   void setWindowVisible(bool visible) {
@@ -492,9 +499,59 @@ class PlayerController extends ChangeNotifier {
     await _withDevice(() => api.seek(ms));
   }
 
-  int get volumeShown => state.volumePercent ?? config.initialVolume;
+  bool get muteado => _volumenAntesDeMutear != null;
+
+  int get volumeShown =>
+      _volumenAntesDeMutear ?? state.volumePercent ?? config.initialVolume;
+
+  void _aplicarVolumenAlAudio(int percent, {int intentos = 0}) {
+    unawaited(_volumenLocal.aplicar(percent).then((ok) {
+      if (ok || _disposed || intentos >= 8) return;
+      _reintentoVolumen?.cancel();
+      _reintentoVolumen = Timer(const Duration(milliseconds: 800), () {
+        if (!_disposed) {
+          _aplicarVolumenAlAudio(percent, intentos: intentos + 1);
+        }
+      });
+    }));
+  }
+
+  /// Solo el audio, sin hablar con Spotify. El arrastre del slider lo usa
+  /// para no disparar un PUT por cada pixel (eso acaba en 429).
+  void previsualizarVolumen(int percent) {
+    final v = percent.clamp(0, 100);
+    if (_volumenAntesDeMutear != null) {
+      _volumenAntesDeMutear = null;
+    }
+    if (libre != null) {
+      unawaited(libre!.fijarVolumen(v));
+      return;
+    }
+    state = state.copyWith(volumePercent: v);
+    _aplicarVolumenAlAudio(v);
+  }
+
+  Future<void> alternarMute() async {
+    if (muteado) {
+      final v = _volumenAntesDeMutear!;
+      _volumenAntesDeMutear = null;
+      await setVolume(v);
+      return;
+    }
+    _volumenAntesDeMutear = volumeShown == 0 ? 50 : volumeShown;
+    notifyListeners();
+    if (libre != null) {
+      await libre!.fijarVolumen(0);
+      return;
+    }
+    _aplicarVolumenAlAudio(0);
+    _pendingVolume = 0;
+    _pendingVolumeAt = DateTime.now();
+    await _withDevice(() => api.setVolume(0, deviceId: ourDeviceId));
+  }
 
   Future<void> setVolume(int percent) async {
+    _volumenAntesDeMutear = null;
     if (libre != null) return libre!.fijarVolumen(percent);
     final v = percent.clamp(0, 100);
     _pendingVolume = v;
@@ -505,7 +562,8 @@ class PlayerController extends ChangeNotifier {
       config.initialVolume = v;
       unawaited(config.save());
     }
-    await _withDevice(() => api.setVolume(v));
+    _aplicarVolumenAlAudio(v);
+    await _withDevice(() => api.setVolume(v, deviceId: ourDeviceId));
   }
 
   static List<int> calcularOffsetsEstratificados(
@@ -831,6 +889,7 @@ class PlayerController extends ChangeNotifier {
     libre?.dispose();
     _pollTimer?.cancel();
     _tickTimer?.cancel();
+    _reintentoVolumen?.cancel();
     progressMs.dispose();
     currentUri.dispose();
     super.dispose();

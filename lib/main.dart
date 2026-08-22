@@ -28,12 +28,14 @@ import 'core/resource_monitor.dart';
 import 'core/settings.dart';
 import 'core/smtc.dart';
 import 'core/spotify_api.dart';
+import 'core/tema_store.dart';
 import 'core/ultima_reproduccion.dart';
 import 'core/updater.dart';
 import 'core/yt_auth.dart';
 import 'core/yt_music_api.dart';
 import 'core/yt_player.dart';
 import 'ui/atajos.dart';
+import 'ui/cristal.dart';
 import 'ui/login_screen.dart';
 import 'ui/shell.dart';
 
@@ -89,44 +91,61 @@ Future<void> main(List<String> args) async {
   await windowManager.setPreventClose(true);
 
   final config = await AppConfig.load();
+  final temas = TemaStore(config);
+  await temas.cargar();
   unawaited(ArtCache.prune());
 
-  runApp(SpotifyNativeApp(config: config));
+  runApp(SpotifyNativeApp(config: config, temas: temas));
 }
 
 const Color kSeedNeoFy = Color(0xFF1DB954);
 
-class SpotifyNativeApp extends StatelessWidget {
-  const SpotifyNativeApp({super.key, required this.config});
+class SpotifyNativeApp extends StatefulWidget {
+  const SpotifyNativeApp({super.key, required this.config, required this.temas});
 
   final AppConfig config;
+  final TemaStore temas;
+
+  @override
+  State<SpotifyNativeApp> createState() => _SpotifyNativeAppState();
+}
+
+class _SpotifyNativeAppState extends State<SpotifyNativeApp> {
+  @override
+  void initState() {
+    super.initState();
+    widget.temas.vigilarLaCarpeta();
+  }
+
+  @override
+  void dispose() {
+    widget.temas.dejarDeVigilar();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'NeoFy',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: kSeedNeoFy),
-        useMaterial3: true,
+    return AnimatedBuilder(
+      animation: widget.temas,
+      builder: (context, _) => MaterialApp(
+        title: 'NeoFy',
+        debugShowCheckedModeBanner: false,
+        theme: widget.temas.themeDataClaro,
+        darkTheme: widget.temas.themeDataOscuro,
+        themeMode: widget.temas.modo,
+        builder: (context, hijo) =>
+            FondoDelTema(child: hijo ?? const SizedBox.shrink()),
+        home: RootScreen(config: widget.config, temas: widget.temas),
       ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: kSeedNeoFy,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
-      home: RootScreen(config: config),
     );
   }
 }
 
 class RootScreen extends StatefulWidget {
-  const RootScreen({super.key, required this.config});
+  const RootScreen({super.key, required this.config, required this.temas});
 
   final AppConfig config;
+  final TemaStore temas;
 
   @override
   State<RootScreen> createState() => _RootScreenState();
@@ -322,6 +341,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   void _avisarAlSistema() {
     unawaited(_recordarReproduccion());
+    caratulaDeFondo.value =
+        _player.state.track?.artMedium ?? _player.state.track?.artSmall;
     _mpris.notificarCambio();
     _smtc.notificarCambio();
     if (_player.libre == null) {
@@ -644,6 +665,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         carpetas: _carpetas,
         ram: _ram,
         settings: _settings,
+        temas: widget.temas,
         updater: _updater,
         onSalirParaActualizar: _quit,
         onReiniciarAudio: () =>

@@ -2,7 +2,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../core/settings.dart';
+import '../core/temas.dart';
+
 const Color kColorFavorito = Color(0xFFE53935);
+
+const Color kColorFavoritoResaltado = Color(0xFFFF6B6B);
+
+const Duration kResaltadoDelCorazon = Duration(milliseconds: 160);
 
 class CorazonAnimado extends StatefulWidget {
   const CorazonAnimado({
@@ -11,12 +18,14 @@ class CorazonAnimado extends StatefulWidget {
     required this.tooltip,
     required this.onTap,
     this.size = 20,
+    this.caja = 36,
   });
 
   final bool lleno;
   final String tooltip;
   final VoidCallback onTap;
   final double size;
+  final double caja;
 
   @override
   State<CorazonAnimado> createState() => _CorazonAnimadoState();
@@ -42,10 +51,34 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     reverseCurve: Curves.easeInCubic,
   );
 
+  late final AnimationController _resalte;
+
   @override
   void initState() {
     super.initState();
+    _resalte = AnimationController(
+      vsync: this,
+      duration: kResaltadoDelCorazon,
+      reverseDuration: kResaltadoDelCorazon,
+      value: 0,
+    );
     _nivel.addStatusListener(_alTerminarElLlenado);
+  }
+
+  void _alEntrarElRaton() {
+    if (EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value) {
+      _resalte.forward();
+    } else {
+      _resalte.value = 1;
+    }
+  }
+
+  void _alSalirElRaton() {
+    if (EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value) {
+      _resalte.reverse();
+    } else {
+      _resalte.value = 0;
+    }
   }
 
   @override
@@ -65,6 +98,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     _llenado.dispose();
     _nivel.dispose();
     _onda.dispose();
+    _resalte.dispose();
     super.dispose();
   }
 
@@ -80,41 +114,59 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     return Tooltip(
       message: widget.tooltip,
       waitDuration: const Duration(milliseconds: 600),
-      child: InkResponse(
-        onTap: widget.onTap,
-        radius: 18,
-        child: SizedBox(
-          width: 36,
-          height: 36,
-          child: Center(
-            child: RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_llenado, _onda]),
-                builder: (context, _) {
-                  final n = _llenado.value.clamp(0.0, 1.0);
-                  return Transform.scale(
-                    scale: 1 + 0.22 * math.sin(math.pi * n),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Icon(
-                          Icons.favorite_border,
-                          size: widget.size,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        if (n > 0)
-                          ClipPath(
-                            clipper: _RecorteLiquido(nivel: n, fase: _onda.value),
-                            child: Icon(
-                              Icons.favorite,
-                              size: widget.size,
-                              color: kColorFavorito,
+      child: MouseRegion(
+        onEnter: (_) => _alEntrarElRaton(),
+        onExit: (_) => _alSalirElRaton(),
+        child: InkResponse(
+          onTap: widget.onTap,
+          radius: 18,
+          child: SizedBox(
+            width: widget.caja,
+            height: widget.caja,
+            child: Center(
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_llenado, _onda, _resalte]),
+                  builder: (context, _) {
+                    final n = _llenado.value.clamp(0.0, 1.0);
+                    final resalte = _resalte.value.clamp(0.0, 1.0);
+                    return Transform.scale(
+                      scale:
+                          (1 + 0.22 * math.sin(math.pi * n)) *
+                          (1 + 0.08 * resalte),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.favorite_border,
+                            size: widget.size,
+                            color: Color.lerp(
+                              theme.colorScheme.onSurfaceVariant,
+                              kColorFavorito,
+                              resalte,
                             ),
                           ),
-                      ],
-                    ),
-                  );
-                },
+                          if (n > 0)
+                            ClipPath(
+                              clipper: _RecorteLiquido(
+                                nivel: n,
+                                fase: _onda.value,
+                              ),
+                              child: Icon(
+                                Icons.favorite,
+                                size: widget.size,
+                                color: Color.lerp(
+                                  kColorFavorito,
+                                  kColorFavoritoResaltado,
+                                  resalte,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),

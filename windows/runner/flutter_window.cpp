@@ -6,6 +6,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "utils.h"
+#include "volumen_sesion.h"
 
 namespace {
 
@@ -17,6 +18,7 @@ constexpr int kHotKeyStop = 4;
 constexpr const char kMediaKeysChannel[] = "neofy/media_keys";
 constexpr const char kAudioDeviceChannel[] = "neofy/audio_device";
 constexpr const char kSystemMediaChannel[] = "neofy/system_media";
+constexpr const char kVolumenSesionChannel[] = "neofy/volumen_sesion";
 
 constexpr UINT kAudioDeviceChangedMessage = WM_APP + 1;
 
@@ -98,6 +100,15 @@ bool FlutterWindow::OnCreate() {
                  result) { OnSystemMediaCall(call, std::move(result)); });
   StartSystemMedia();
 
+  volumen_sesion_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), kVolumenSesionChannel,
+          &flutter::StandardMethodCodec::GetInstance());
+  volumen_sesion_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) { OnVolumenSesionCall(call, std::move(result)); });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -148,6 +159,25 @@ void FlutterWindow::StartSystemMedia() {
   thumb_bar_.Start(GetHandle(), [this](ComandoMultimedia comando) {
     EnviarComando(comando, 0);
   });
+}
+
+void FlutterWindow::OnVolumenSesionCall(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  if (call.method_name() != "set") {
+    result->NotImplemented();
+    return;
+  }
+  const auto* argumentos = call.arguments();
+  const auto* mapa =
+      argumentos == nullptr ? nullptr
+                            : std::get_if<flutter::EncodableMap>(argumentos);
+  if (mapa == nullptr) {
+    result->Error("argumentos", "se esperaba un mapa");
+    return;
+  }
+  result->Success(flutter::EncodableValue(
+      SetVolumenLibrespot(static_cast<int>(LeerEntero(*mapa, "percent")))));
 }
 
 void FlutterWindow::OnSystemMediaCall(

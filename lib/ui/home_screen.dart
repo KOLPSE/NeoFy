@@ -6,7 +6,9 @@ import '../core/home_store.dart';
 import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
+import '../core/temas.dart';
 import 'art_image.dart';
+import 'movimiento.dart';
 import 'tira_horizontal.dart';
 import 'track_tile.dart';
 
@@ -277,9 +279,10 @@ class TiraDeCanciones extends StatelessWidget {
       itemCount: tracks.length,
       itemBuilder: (context, i) {
         final t = tracks[i];
-        return InkWell(
+        return Pulsable(
+          child: InkWell(
           onTap: () => onPlay(i),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(EstiloNeoFy.de(context).radio),
           child: Padding(
             padding: const EdgeInsets.all(_margenTarjeta),
             child: SizedBox(
@@ -292,7 +295,6 @@ class TiraDeCanciones extends StatelessWidget {
                     url: t.artSmall,
                     urlGrande: t.artMedium,
                     size: _ladoTarjeta,
-                    radius: 6,
                   ),
                   const SizedBox(height: _huecoTarjeta),
                   Text(t.name,
@@ -306,6 +308,7 @@ class TiraDeCanciones extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant)),
                 ],
               ),
+            ),
             ),
           ),
         );
@@ -333,7 +336,8 @@ class TiraDeArtistas extends StatelessWidget {
       itemCount: artistas.length,
       itemBuilder: (context, i) {
         final a = artistas[i];
-        return InkWell(
+        return Pulsable(
+          child: InkWell(
           onTap: () => onAbrir(a),
           borderRadius: BorderRadius.circular(_lado),
           child: Padding(
@@ -352,6 +356,7 @@ class TiraDeArtistas extends StatelessWidget {
                       style: estilo),
                 ],
               ),
+            ),
             ),
           ),
         );
@@ -378,9 +383,10 @@ class TiraDeAlbumes extends StatelessWidget {
       itemCount: albumes.length,
       itemBuilder: (context, i) {
         final a = albumes[i];
-        return InkWell(
+        return Pulsable(
+          child: InkWell(
           onTap: () => onAbrir(a),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(EstiloNeoFy.de(context).radio),
           child: Padding(
             padding: const EdgeInsets.all(_margenTarjeta),
             child: SizedBox(
@@ -389,7 +395,7 @@ class TiraDeAlbumes extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ArtImage(url: a.art, size: _ladoTarjeta, radius: 6),
+                  ArtImage(url: a.art, size: _ladoTarjeta),
                   const SizedBox(height: _huecoTarjeta),
                   Text(a.name,
                       maxLines: 1,
@@ -402,6 +408,7 @@ class TiraDeAlbumes extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant)),
                 ],
               ),
+            ),
             ),
           ),
         );

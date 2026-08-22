@@ -13,16 +13,21 @@ import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
+import '../core/tema_store.dart';
+import '../core/temas.dart';
 import '../core/updater.dart';
 import '../core/spotify_api.dart';
 import '../core/yt_auth.dart';
 import 'art_image.dart';
 import 'conectar_youtube.dart';
+import 'cristal.dart';
+import 'movimiento.dart';
 import 'artist_screen.dart';
 import 'home_screen.dart';
 import 'liked_screen.dart';
 import 'now_playing_bar.dart';
 import 'settings_dialog.dart';
+import 'temas_dialog.dart';
 import 'playlist_screen.dart';
 import 'queue_screen.dart';
 import 'search_screen.dart';
@@ -55,6 +60,7 @@ class AppShell extends StatefulWidget {
     required this.carpetas,
     required this.ram,
     required this.settings,
+    required this.temas,
     required this.updater,
     required this.onSalirParaActualizar,
     required this.onReiniciarAudio,
@@ -72,6 +78,7 @@ class AppShell extends StatefulWidget {
   final CarpetasStore carpetas;
   final ResourceMonitor ram;
   final Settings settings;
+  final TemaStore temas;
   final Updater updater;
 
   final Future<void> Function() onSalirParaActualizar;
@@ -378,13 +385,16 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _scaffold(BuildContext context) {
+    final hayCristal = EstiloNeoFy.de(context).hayCristal;
     return Scaffold(
       body: Column(
         children: [
           Expanded(
             child: Row(
               children: [
-                AnimatedBuilder(
+                _panelLateral(
+                  hayCristal,
+                  AnimatedBuilder(
                   animation: Listenable.merge([widget.player, widget.carpetas]),
                   builder: (context, _) => _Sidebar(
                     playlists: _playlists,
@@ -421,6 +431,7 @@ class _AppShellState extends State<AppShell> {
                     onMoverPlaylist: _moverPlaylist,
                     ram: widget.ram,
                     settings: widget.settings,
+                    temas: widget.temas,
                     updater: widget.updater,
                     onSalirParaActualizar: widget.onSalirParaActualizar,
                     onReiniciarAudio: widget.onReiniciarAudio,
@@ -429,20 +440,49 @@ class _AppShellState extends State<AppShell> {
                         !widget.player.isPremium,
                   ),
                 ),
-                const VerticalDivider(width: 1),
+                ),
+                if (!hayCristal) const VerticalDivider(width: 1),
                 Expanded(child: _content()),
               ],
             ),
           ),
-          const Divider(height: 1),
-          NowPlayingBar(
-            player: widget.player,
-            librespot: widget.librespot,
-            likes: widget.likes,
-            home: widget.home,
+          if (!hayCristal) const Divider(height: 1),
+          _panelInferior(
+            hayCristal,
+            NowPlayingBar(
+              player: widget.player,
+              librespot: widget.librespot,
+              likes: widget.likes,
+              home: widget.home,
+              onAbrirArtista: (a) => setState(() {
+                _artista = a;
+                _view = _View.artist;
+              }),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _panelLateral(bool hayCristal, Widget hijo) {
+    if (hayCristal) {
+      return PanelDeCristal(
+        margen: const EdgeInsets.fromLTRB(10, 10, 0, 10),
+        child: hijo,
+      );
+    }
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: hijo,
+    );
+  }
+
+  Widget _panelInferior(bool hayCristal, Widget hijo) {
+    if (!hayCristal) return hijo;
+    return PanelDeCristal(
+      margen: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: hijo,
     );
   }
 
@@ -539,6 +579,7 @@ class _Sidebar extends StatelessWidget {
     required this.onMoverPlaylist,
     required this.ram,
     required this.settings,
+    required this.temas,
     required this.updater,
     required this.onSalirParaActualizar,
     required this.onReiniciarAudio,
@@ -569,6 +610,7 @@ class _Sidebar extends StatelessWidget {
   final Future<void> Function(Playlist) onMoverPlaylist;
   final ResourceMonitor ram;
   final Settings settings;
+  final TemaStore temas;
   final Updater updater;
   final Future<void> Function() onSalirParaActualizar;
   final Future<void> Function() onReiniciarAudio;
@@ -646,9 +688,10 @@ class _Sidebar extends StatelessWidget {
             onCreatePlaylist: onCreatePlaylist,
             onCreateCarpeta: onCreateCarpeta,
           ),
-          if (expanded)
-            Expanded(
-              child: error != null && playlists.isEmpty
+          Expanded(
+            child: Plegable(
+              abierto: expanded,
+              contenidoAbierto: error != null && playlists.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(error!,
@@ -656,20 +699,20 @@ class _Sidebar extends StatelessWidget {
                               ?.copyWith(color: theme.colorScheme.error)),
                     )
                   : _listaDePlaylists(context),
-            )
-          else ...[
-            if (playing != null)
-              _PlaylistTile(
-                playlist: playing,
-                selected: view == _View.playlist && selected?.id == playing.id,
-                playing: true,
-                hayCarpetas: carpetas.isNotEmpty,
-                onTap: () => onSelectPlaylist(playing),
-                onDelete: () => onDeletePlaylist(playing),
-                onMover: () => onMoverPlaylist(playing),
-              ),
-            const Spacer(),
-          ],
+              contenidoCerrado: playing == null
+                  ? const SizedBox.shrink()
+                  : _PlaylistTile(
+                      playlist: playing,
+                      selected:
+                          view == _View.playlist && selected?.id == playing.id,
+                      playing: true,
+                      hayCarpetas: carpetas.isNotEmpty,
+                      onTap: () => onSelectPlaylist(playing),
+                      onDelete: () => onDeletePlaylist(playing),
+                      onMover: () => onMoverPlaylist(playing),
+                    ),
+            ),
+          ),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -685,6 +728,7 @@ class _Sidebar extends StatelessWidget {
                         updater: updater,
                         onSalirParaActualizar: onSalirParaActualizar,
                         bloquesExtra: [
+                          BotonDeTemas(temas: temas),
                           if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
                           ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
                         ],
@@ -843,10 +887,13 @@ class _SectionHeader extends StatelessWidget {
                 ),
               ],
             ),
-            Icon(
-              expanded ? Icons.expand_less : Icons.expand_more,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
+            GiroConMuelle(
+              abierto: expanded,
+              child: Icon(
+                Icons.expand_less,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -1024,12 +1071,61 @@ class _NavTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      selected: selected,
-      leading: Icon(icon, size: 20),
-      title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      onTap: onTap,
+    if (!EstiloNeoFy.de(context).navegacionEnPildora) {
+      return ListTile(
+        dense: true,
+        selected: selected,
+        leading: Icon(icon, size: 20),
+        title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        onTap: onTap,
+      );
+    }
+
+    final esquema = Theme.of(context).colorScheme;
+    final tinta =
+        selected ? esquema.onSecondaryContainer : esquema.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Pulsable(
+        escalaSobre: 1.015,
+        escalaPulsada: 0.97,
+        child: PildoraDeNavegacion(
+          seleccionado: selected,
+          color: esquema.secondaryContainer,
+          child: Material(
+            color: Colors.transparent,
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const StadiumBorder(),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 20, color: tinta),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: tinta,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

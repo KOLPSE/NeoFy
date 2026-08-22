@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/home_store.dart';
@@ -5,8 +7,13 @@ import '../core/librespot.dart';
 import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
+import '../core/temas.dart';
 import 'art_image.dart';
+import 'icono_de_volumen.dart';
 import 'like_button.dart';
+import 'linea_de_artistas.dart';
+import 'onda_de_progreso.dart';
+import 'titulo_desplazable.dart';
 
 String formatMs(int ms) {
   final total = (ms / 1000).round();
@@ -22,12 +29,14 @@ class NowPlayingBar extends StatefulWidget {
     required this.librespot,
     this.likes,
     this.home,
+    this.onAbrirArtista,
   });
 
   final PlayerController player;
   final LibrespotManager librespot;
   final LikedStore? likes;
   final HomeStore? home;
+  final void Function(Artist artista)? onAbrirArtista;
 
   @override
   State<NowPlayingBar> createState() => _NowPlayingBarState();
@@ -49,7 +58,9 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
         final status = _statusMessage();
 
         return Material(
-          color: theme.colorScheme.surfaceContainer,
+          color: EstiloNeoFy.de(context).hayCristal
+              ? Colors.transparent
+              : theme.colorScheme.surfaceContainer,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -66,36 +77,42 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 200,
-                      child: Row(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  track?.name ?? 'Nada sonando',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: TituloDesplazable(
+                                  texto: track?.name ?? 'Nada sonando',
+                                  estilo: theme.textTheme.bodyMedium
                                       ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
-                                Text(
-                                  track?.artists ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                              if (widget.likes != null &&
+                                  track != null &&
+                                  track.uri.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                LikeButton(
+                                  likes: widget.likes!,
+                                  uri: track.uri,
+                                  size: 20,
+                                  caja: 24,
                                 ),
                               ],
-                            ),
+                            ],
                           ),
-                          if (widget.likes != null && track != null && track.uri.isNotEmpty)
-                            LikeButton(
-                              likes: widget.likes!,
-                              uri: track.uri,
-                              size: 20,
-                            ),
+                          LineaDeArtistas(
+                            artistas: track?.listaDeArtistas ?? const [],
+                            texto: track?.artists ?? '',
+                            estilo: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant),
+                            onAbrir: widget.onAbrirArtista == null
+                                ? null
+                                : (a) => widget.onAbrirArtista!(_artistaConFoto(a)),
+                          ),
                         ],
                       ),
                     ),
@@ -193,23 +210,17 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                       style: theme.textTheme.bodySmall, textAlign: TextAlign.right),
                 ),
                 Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                    ),
-                    child: Slider(
-                      value: shown.clamp(0, max),
-                      max: max,
-                      onChanged: durationMs <= 0
-                          ? null
-                          : (v) => setState(() => _dragMs = v),
-                      onChangeEnd: (v) {
-                        setState(() => _dragMs = null);
-                        player.seek(v.round());
-                      },
-                    ),
+                  child: BarraDeProgreso(
+                    valor: shown.clamp(0, max),
+                    maximo: max,
+                    enMarcha: state.isPlaying,
+                    onCambio: durationMs <= 0
+                        ? null
+                        : (v) => setState(() => _dragMs = v),
+                    onFinDelCambio: (v) {
+                      setState(() => _dragMs = null);
+                      player.seek(v.round());
+                    },
                   ),
                 ),
                 SizedBox(
@@ -224,21 +235,44 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     );
   }
 
+  Artist _artistaConFoto(ArtistaDePista a) {
+    final conocidos = widget.home?.artistas ?? const <Artist>[];
+    for (final c in conocidos) {
+      if (c.id == a.id) return c;
+    }
+    return a.comoArtista;
+  }
+
   Widget _volume(int percent) {
+    final player = widget.player;
+    final muteado = player.muteado;
     final shown = _dragVolume ?? percent.toDouble().clamp(0, 100);
     return SizedBox(
       width: 150,
       child: Row(
         children: [
-          Icon(_iconoVolumen(shown), size: 18),
+          IconButton(
+            tooltip: muteado ? 'Activar sonido' : 'Silenciar',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            icon: IconoDeVolumen(
+              volumen: shown,
+              muteado: muteado,
+              tamano: 20,
+            ),
+            onPressed: () => unawaited(player.alternarMute()),
+          ),
           Expanded(
             child: Slider(
               value: shown,
               max: 100,
-              onChanged: (v) => setState(() => _dragVolume = v),
+              onChanged: (v) {
+                setState(() => _dragVolume = v);
+                player.previsualizarVolumen(v.round());
+              },
               onChangeEnd: (v) {
                 setState(() => _dragVolume = null);
-                widget.player.setVolume(v.round());
+                unawaited(player.setVolume(v.round()));
               },
             ),
           ),
@@ -250,12 +284,6 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
         ],
       ),
     );
-  }
-
-  IconData _iconoVolumen(double v) {
-    if (v <= 0) return Icons.volume_off;
-    if (v < 50) return Icons.volume_down;
-    return Icons.volume_up;
   }
 
   String? _statusMessage() {

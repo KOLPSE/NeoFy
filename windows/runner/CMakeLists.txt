@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "audio_device_watcher.cpp"
+  "volumen_sesion.cpp"
   "flutter_window.cpp"
   "main.cpp"
   "system_media.cpp"

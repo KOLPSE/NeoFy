@@ -12,11 +12,13 @@ class LikeButton extends StatefulWidget {
     required this.likes,
     required this.uri,
     this.size = 20,
+    this.caja = 36,
   });
 
   final LikedStore likes;
   final String uri;
   final double size;
+  final double caja;
 
   @override
   State<LikeButton> createState() => _LikeButtonState();
@@ -89,6 +91,7 @@ class _LikeButtonState extends State<LikeButton> {
     return CorazonAnimado(
       lleno: lleno,
       size: widget.size,
+      caja: widget.caja,
       tooltip: lleno ? 'Quitar de tus me gusta' : 'Guardar en tus me gusta',
       onTap: _pulsar,
     );

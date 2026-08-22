@@ -62,10 +62,28 @@ void main() {
 
       expect(t, isNotNull);
       expect(t!.artists, 'Uno, Dos');
+      expect(t.listaDeArtistas.map((a) => a.name), ['Uno', 'Dos']);
+      expect(t.listaDeArtistas.every((a) => a.id.isEmpty), isTrue);
       expect(t.album, 'Álbum');
       expect(t.artSmall, 'small');
       expect(t.durationMs, 185000);
       expect(t.popularity, 85);
+    });
+
+    test('guarda id y uri de cada artista para abrir su página', () {
+      final t = Track.fromJson({
+        'name': 'Dúo',
+        'artists': [
+          {'id': 'a1', 'name': 'Uno', 'uri': 'spotify:artist:a1'},
+          {'id': 'a2', 'name': 'Dos'},
+        ],
+      });
+
+      expect(t, isNotNull);
+      expect(t!.listaDeArtistas, hasLength(2));
+      expect(t.listaDeArtistas[0].id, 'a1');
+      expect(t.listaDeArtistas[0].sePuedeAbrir, isTrue);
+      expect(t.listaDeArtistas[1].uri, 'spotify:artist:a2');
     });
 
     test('sobrevive a una respuesta incompleta', () {

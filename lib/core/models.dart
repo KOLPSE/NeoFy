@@ -49,11 +49,54 @@ class SearchResults {
         playlists = const ApiPage.empty();
 }
 
+class ArtistaDePista {
+  const ArtistaDePista({
+    required this.id,
+    required this.uri,
+    required this.name,
+  });
+
+  final String id;
+  final String uri;
+  final String name;
+
+  bool get sePuedeAbrir => id.isNotEmpty;
+
+  Artist get comoArtista => Artist(
+        id: id,
+        uri: uri.isNotEmpty ? uri : 'spotify:artist:$id',
+        name: name,
+        art: null,
+      );
+
+  Map<String, dynamic> aJson() => {
+        'id': id,
+        'uri': uri,
+        'name': name,
+      };
+
+  static ArtistaDePista? desdeJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    final id = (j['id'] as String?) ?? '';
+    final nombre = (j['name'] as String?) ?? '';
+    if (id.isEmpty && nombre.isEmpty) return null;
+    final uri = (j['uri'] as String?) ?? '';
+    return ArtistaDePista(
+      id: id,
+      uri: uri.isNotEmpty
+          ? uri
+          : (id.isEmpty ? '' : 'spotify:artist:$id'),
+      name: nombre,
+    );
+  }
+}
+
 class Track {
   final String id;
   final String uri;
   final String name;
   final String artists;
+  final List<ArtistaDePista> listaDeArtistas;
   final String album;
   final String? artSmall;
   final String? artMedium;
@@ -72,6 +115,7 @@ class Track {
     required this.durationMs,
     required this.isLocal,
     this.popularity = 0,
+    this.listaDeArtistas = const [],
   });
 
   Track copyWith({
@@ -79,6 +123,7 @@ class Track {
     String? uri,
     String? name,
     String? artists,
+    List<ArtistaDePista>? listaDeArtistas,
     String? album,
     String? artSmall,
     String? artMedium,
@@ -91,6 +136,7 @@ class Track {
         uri: uri ?? this.uri,
         name: name ?? this.name,
         artists: artists ?? this.artists,
+        listaDeArtistas: listaDeArtistas ?? this.listaDeArtistas,
         album: album ?? this.album,
         artSmall: artSmall ?? this.artSmall,
         artMedium: artMedium ?? this.artMedium,
@@ -104,13 +150,20 @@ class Track {
     final artistList = j['artists'] as List<dynamic>?;
     final album = j['album'] as Map<String, dynamic>?;
     final images = album?['images'] as List<dynamic>?;
+    final lista = <ArtistaDePista>[
+      if (artistList != null)
+        for (final raw in artistList)
+          if (raw is Map<String, dynamic>)
+            ?ArtistaDePista.desdeJson(raw),
+    ];
     return Track(
       id: (j['id'] as String?) ?? '',
       uri: (j['uri'] as String?) ?? '',
       name: (j['name'] as String?) ?? 'Desconocido',
-      artists: artistList == null
-          ? ''
-          : artistList.map((a) => (a as Map)['name'] as String? ?? '').join(', '),
+      artists: lista.isNotEmpty
+          ? lista.map((a) => a.name).where((n) => n.isNotEmpty).join(', ')
+          : '',
+      listaDeArtistas: lista,
       album: (album?['name'] as String?) ?? '',
       artSmall: pickImage(images, 64),
       artMedium: pickImage(images, 300),

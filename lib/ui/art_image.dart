@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/art_cache.dart';
 import '../core/settings.dart';
+import '../core/temas.dart';
 
 class ArtImage extends StatefulWidget {
   const ArtImage({
@@ -11,7 +12,7 @@ class ArtImage extends StatefulWidget {
     required this.url,
     this.urlGrande,
     required this.size,
-    this.radius = 4,
+    this.radius,
   });
 
   final String? url;
@@ -19,7 +20,8 @@ class ArtImage extends StatefulWidget {
   final String? urlGrande;
 
   final double size;
-  final double radius;
+
+  final double? radius;
 
   static const int _escalonPequeno = 64;
 
@@ -88,8 +90,11 @@ class _ArtImageState extends State<ArtImage> {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
     final target = (widget.size * dpr).round();
 
+    final radio = widget.radius ??
+        EstiloNeoFy.de(context).radioDeCaratula(widget.size);
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(widget.radius),
+      borderRadius: BorderRadius.circular(radio),
       child: SizedBox(
         width: widget.size,
         height: widget.size,

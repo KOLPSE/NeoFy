@@ -33,6 +33,9 @@ class UltimaReproduccion {
           'uri': track.uri,
           'name': track.name,
           'artists': track.artists,
+          'listaDeArtistas': [
+            for (final a in track.listaDeArtistas) a.aJson(),
+          ],
           'album': track.album,
           'artSmall': track.artSmall,
           'artMedium': track.artMedium,
@@ -62,6 +65,11 @@ class UltimaReproduccion {
         uri: uri,
         name: (t['name'] as String?) ?? 'Desconocido',
         artists: (t['artists'] as String?) ?? '',
+        listaDeArtistas: [
+          for (final raw in (t['listaDeArtistas'] as List<dynamic>? ?? const [])
+              )
+            if (raw is Map<String, dynamic>) ?ArtistaDePista.desdeJson(raw),
+        ],
         album: (t['album'] as String?) ?? '',
         artSmall: t['artSmall'] as String?,
         artMedium: t['artMedium'] as String?,
