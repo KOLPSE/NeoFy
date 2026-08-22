@@ -355,8 +355,10 @@ class Tema {
   String? rutaDeRecurso(String relativo) {
     final base = carpeta;
     if (base == null) return null;
-    final destino = p.normalize(p.join(base, relativo));
-    if (!p.isWithin(base, destino)) return null;
+    final relNormalizado = relativo.replaceAll(r'\', '/');
+    final baseNormalizada = p.normalize(base);
+    final destino = p.normalize(p.join(baseNormalizada, relNormalizado));
+    if (!p.isWithin(baseNormalizada, destino)) return null;
     return destino;
   }
 
@@ -647,8 +649,10 @@ class EstiloNeoFy extends ThemeExtension<EstiloNeoFy> {
   String? rutaDeRecurso(String relativo) {
     final base = carpeta;
     if (base == null) return null;
-    final destino = p.normalize(p.join(base, relativo));
-    if (!p.isWithin(base, destino)) return null;
+    final relNormalizado = relativo.replaceAll(r'\', '/');
+    final baseNormalizada = p.normalize(base);
+    final destino = p.normalize(p.join(baseNormalizada, relNormalizado));
+    if (!p.isWithin(baseNormalizada, destino)) return null;
     return destino;
   }
 

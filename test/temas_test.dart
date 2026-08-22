@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
+import 'package:path/path.dart' as p;
 
 import '../tool/tema.dart' as herramienta;
 
@@ -134,9 +135,10 @@ void main() {
 
   group('recursos del tema', () {
     test('no deja salir de la carpeta del tema', () {
+      final carpeta = p.join(p.separator, 'temas', 'mio');
       final tema = leerTemaDeTexto(
         '{"nombre": "X", "colores": {"primario": "#1DB954"}}',
-        carpeta: r'C:\temas\mio',
+        carpeta: carpeta,
       ).tema;
 
       expect(tema.rutaDeRecurso('fondo.jpg'), isNotNull);
