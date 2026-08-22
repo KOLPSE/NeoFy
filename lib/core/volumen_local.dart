@@ -24,7 +24,7 @@ class VolumenLocal {
         return ok == true;
       }
       if (Platform.isLinux) {
-        return _aplicarPulse(nivel);
+        return await _aplicarPulse(nivel);
       }
     } catch (_) {
       return false;
