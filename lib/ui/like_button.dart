@@ -3,20 +3,24 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/liked_store.dart';
+import '../core/models.dart';
 import '../core/spotify_api.dart';
 import 'corazon_animado.dart';
+import 'texto_traducido.dart';
 
 class LikeButton extends StatefulWidget {
   const LikeButton({
     super.key,
     required this.likes,
     required this.uri,
+    this.pista,
     this.size = 20,
     this.caja = 36,
   });
 
   final LikedStore likes;
   final String uri;
+  final Track? pista;
   final double size;
   final double caja;
 
@@ -56,33 +60,40 @@ class _LikeButtonState extends State<LikeButton> {
       return;
     }
     try {
-      await widget.likes.toggle(widget.uri);
+      await widget.likes.toggle(widget.uri, pista: widget.pista);
     } catch (e) {
       if (!mounted) return;
       final mensaje = e is ApiException && e.isForbidden
           ? 'Spotify no dejó cambiar tus favoritos: ${e.message}'
           : 'No se pudo cambiar: $e';
+      final t = await traducirTexto(context, mensaje);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(mensaje), duration: const Duration(seconds: 3)),
+        SnackBar(content: Text(t), duration: const Duration(seconds: 3)),
       );
     }
   }
 
   void _avisarFaltaPermiso() {
     final reauth = widget.likes.onReauth;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 6),
-      content: const Text(
+    unawaited(() async {
+      final t = await traducirTexto(
+        context,
         'Tu sesión se inició sin permiso para editar favoritos. Hay que volver '
-        'a pasar por Spotify una vez; no perderás nada.',
-      ),
-      action: reauth == null
-          ? null
-          : SnackBarAction(
-              label: 'Iniciar sesión',
-              onPressed: () => unawaited(reauth()),
-            ),
-    ));
+        'a pasar por Spotify otra vez.',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text(t),
+        action: reauth == null
+            ? null
+            : SnackBarAction(
+                label: 'Iniciar sesión',
+                onPressed: () => unawaited(reauth()),
+              ),
+      ));
+    }());
   }
 
   @override

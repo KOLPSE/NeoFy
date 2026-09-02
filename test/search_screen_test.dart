@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neofy/core/artistas_favoritos_store.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/auth.dart';
 import 'package:neofy/core/followed_playlists_store.dart';
@@ -93,12 +94,21 @@ const _playlist2 = Playlist(
   trackCount: 45,
 );
 
+const _artista1 = Artist(
+  id: 'a1',
+  uri: 'spotify:artist:a1',
+  name: 'Marmi',
+  art: null,
+  followers: 12000,
+);
+
 void main() {
   late _MockSpotifyApi api;
   late _FakeConfig config;
   late PlayerController player;
   late LikedStore likes;
   late FollowedPlaylistsStore followed;
+  late ArtistasFavoritosStore favoritos;
 
   setUp(() {
     api = _MockSpotifyApi();
@@ -110,12 +120,14 @@ void main() {
       auth: _FakeAuth(),
       obtenerUserId: () => player.currentUserId,
     );
+    favoritos = ArtistasFavoritosStore();
   });
 
   tearDown(() {
     player.dispose();
     likes.dispose();
     followed.dispose();
+    favoritos.dispose();
   });
 
   Widget crearApp({
@@ -131,6 +143,7 @@ void main() {
           playlists: const [],
           likes: likes,
           followed: followed,
+          favoritos: favoritos,
           onAbrirPlaylist: onAbrirPlaylist,
           onCambioSeguimiento: onCambioSeguimiento,
           autofocus: autofocus,
@@ -146,11 +159,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('muestra estado inicial con barra de búsqueda y los 4 chips de filtro', (tester) async {
+  testWidgets('muestra estado inicial con barra de búsqueda y los chips de filtro', (tester) async {
     await tester.pumpWidget(crearApp());
 
-    expect(find.text('Escribe para buscar en Spotify.'), findsOneWidget);
+    expect(find.text('Escribe para buscar en NeoFy.'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'Todo'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'Artistas'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'Canciones'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'Playlists'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'Más escuchadas'), findsOneWidget);
@@ -161,8 +175,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('en filtro Todo busca canciones y playlists y las muestra en secciones', (tester) async {
+  testWidgets('en filtro Todo busca artistas, canciones y playlists priorizando artistas', (tester) async {
     api.searchResult = const SearchResults(
+      artists: ApiPage(items: [_artista1], hasMore: false, rawCount: 1),
       tracks: ApiPage(items: [_track1], hasMore: false, rawCount: 1),
       playlists: ApiPage(items: [_playlist1], hasMore: false, rawCount: 1),
     );
@@ -171,9 +186,11 @@ void main() {
     await buscar(tester, 'lofi');
 
     expect(api.llamadasSearch.length, 1);
-    expect(api.llamadasSearch.first['types'], ['track', 'playlist']);
+    expect(api.llamadasSearch.first['types'], ['artist', 'track', 'playlist']);
     expect(api.llamadasSearch.first['query'], 'lofi');
 
+    expect(find.text('Artistas'), findsWidgets);
+    expect(find.text('Marmi'), findsOneWidget);
     expect(find.text('Playlists'), findsWidgets);
     expect(find.text('Lofi Beats'), findsOneWidget);
     expect(find.text('Canciones'), findsWidgets);
@@ -197,6 +214,26 @@ void main() {
 
     expect(abierta, isNotNull);
     expect(abierta!.id, 'p1');
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('filtro Artistas pide solo artistas y muestra sus resultados', (tester) async {
+    api.searchResult = const SearchResults(
+      artists: ApiPage(items: [_artista1], hasMore: false, rawCount: 1),
+      tracks: ApiPage(items: [_track1], hasMore: false, rawCount: 1),
+    );
+
+    await tester.pumpWidget(crearApp());
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Artistas'));
+    await tester.pumpAndSettle();
+
+    await buscar(tester, 'marmi');
+
+    expect(api.llamadasSearch.last['types'], ['artist']);
+    expect(find.byType(ArtistSearchTile), findsOneWidget);
+    expect(find.byType(TrackTile), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -302,7 +339,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(TrackTile), findsNothing);
-    expect(find.text('Escribe para buscar en Spotify.'), findsOneWidget);
+    expect(find.text('Escribe para buscar en NeoFy.'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });

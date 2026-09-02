@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/yt_auth.dart';
+import 'texto_traducido.dart';
 
 class ConectarYouTubeMusic extends StatefulWidget {
   const ConectarYouTubeMusic({
@@ -50,11 +51,11 @@ class _ConectarYouTubeMusicState extends State<ConectarYouTubeMusic> {
             Icon(Icons.play_circle,
                 size: 18, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 8),
-            Text('¿Sin Premium?', style: theme.textTheme.bodyMedium),
+            T('¿Sin Premium?', style: theme.textTheme.bodyMedium),
           ],
         ),
         const SizedBox(height: 6),
-        Text(
+        T(
           conectado
               ? 'YouTube Music está conectado. Si tu cuenta de Spotify no es '
                   'Premium, la música sonará desde aquí.'
@@ -76,7 +77,7 @@ class _ConectarYouTubeMusicState extends State<ConectarYouTubeMusic> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : Icon(conectado ? Icons.refresh : Icons.play_circle_outline),
-            label: Text(switch ((_busy, conectado)) {
+            label: T(switch ((_busy, conectado)) {
               (true, _) => 'Esperando el login…',
               (false, true) => 'Volver a conectar YouTube Music',
               (false, false) => 'Conectar YouTube Music',

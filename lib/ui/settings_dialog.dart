@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/updater.dart';
+import 'texto_traducido.dart';
 
 Future<void> mostrarAjustes(
   BuildContext context, {
@@ -14,7 +15,7 @@ Future<void> mostrarAjustes(
   required Future<void> Function() onSalirParaActualizar,
   List<Widget> bloquesExtra = const [],
 }) {
-  return showDialog<void>(
+  return showDialogTraducido<void>(
     context: context,
     builder: (context) => _DialogoAjustes(
       monitor: monitor,
@@ -47,7 +48,7 @@ class _DialogoAjustes extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('Ajustes'),
+      title: T('Ajustes'),
       content: SizedBox(
         width: 380,
         child: SingleChildScrollView(
@@ -64,7 +65,7 @@ class _DialogoAjustes extends StatelessWidget {
                       Expanded(
                         child: _Medida(
                           icono: Icons.memory,
-                          etiqueta: 'Memoria',
+                          etiqueta: 'RAM',
                           valor: UsoDeRecursos.mb(uso.total),
                         ),
                       ),
@@ -89,10 +90,9 @@ class _DialogoAjustes extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       value: settings.performanceMode,
                       onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
-                      title: const Text('Modo rendimiento'),
-                      subtitle: Text(
-                        'Sustituye las carátulas por mosaicos de color y apaga el '
-                        'lector de metadatos. El audio no se toca.',
+                      title: T('Modo rendimiento'),
+                      subtitle: T(
+                        'Elimina las portadas por cuadrados de color',
                         style: theme.textTheme.bodySmall
                             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
@@ -102,10 +102,9 @@ class _DialogoAjustes extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       value: settings.discordRpcEnabled,
                       onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
-                      title: const Text('Mostrar en Discord (Rich Presence)'),
-                      subtitle: Text(
-                        'Enseña en tu perfil de Discord la canción que suena, la '
-                        'siguiente de la cola y un botón a GitHub.',
+                      title: T('Rich Presence'),
+                      subtitle: T(
+                        'Muestra en tu perfil de Discord la canción que estás escuchando.',
                         style: theme.textTheme.bodySmall
                             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
@@ -133,7 +132,7 @@ class _DialogoAjustes extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cerrar'),
+          child: T('Cerrar'),
         ),
       ],
     );
@@ -171,13 +170,12 @@ class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Audio', style: theme.textTheme.bodyMedium),
+              T('Audio', style: theme.textTheme.bodyMedium),
               const SizedBox(height: 2),
-              Text(
+              T(
                 _enMarcha
                     ? 'Reabriendo la salida…'
-                    : 'Si deja de oírse, vuelve a abrir la salida sin cerrar '
-                        'NeoFy. Sigue por donde iba.',
+                    : 'Si deja de escucharse, vuelve a abrir la salida.',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -187,7 +185,7 @@ class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
         const SizedBox(width: 12),
         OutlinedButton(
           onPressed: _enMarcha ? null : () => unawaited(_reiniciar()),
-          child: const Text('Reiniciar'),
+          child: T('Reiniciar'),
         ),
       ],
     );
@@ -230,28 +228,35 @@ class _Actualizaciones extends StatelessWidget {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    switch (estado) {
-                      EstadoActualizacion.buscando => 'Buscando…',
-                      EstadoActualizacion.alDia => 'Estás al día',
-                      EstadoActualizacion.disponible => Updater.seInstalaSolo
-                          ? 'Hay una versión nueva: ${updater.versionDisponible}'
-                          : 'Hay una versión nueva (${updater.versionDisponible}). '
-                              'Actualiza con ${Updater.comandoDeActualizacion}',
-                      EstadoActualizacion.descargando =>
-                        'Descargando… ${(updater.progreso * 100).round()} %',
-                      EstadoActualizacion.listaParaInstalar =>
-                        'Instalando; NeoFy se reiniciará',
-                      EstadoActualizacion.fallo =>
-                        updater.error ?? 'No se pudo comprobar',
-                      EstadoActualizacion.reposo => 'Comprobar si hay novedades',
-                    },
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: estado == EstadoActualizacion.disponible
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
+                  if (estado == EstadoActualizacion.fallo && updater.error != null)
+                    Text(
+                      updater.error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  else
+                    T(
+                      switch (estado) {
+                        EstadoActualizacion.buscando => 'Buscando…',
+                        EstadoActualizacion.alDia => 'Estás al día',
+                        EstadoActualizacion.disponible => Updater.seInstalaSolo
+                            ? 'Hay una versión nueva: ${updater.versionDisponible}'
+                            : 'Hay una versión nueva (${updater.versionDisponible}). '
+                                'Actualiza con ${Updater.comandoDeActualizacion}',
+                        EstadoActualizacion.descargando =>
+                          'Descargando… ${(updater.progreso * 100).round()} %',
+                        EstadoActualizacion.listaParaInstalar =>
+                          'Instalando; NeoFy se reiniciará',
+                        EstadoActualizacion.fallo => 'No se pudo comprobar',
+                        EstadoActualizacion.reposo => 'Comprobar si hay novedades',
+                      },
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: estado == EstadoActualizacion.disponible
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
                   if (estado == EstadoActualizacion.descargando) ...[
                     const SizedBox(height: 6),
                     LinearProgressIndicator(
@@ -267,7 +272,7 @@ class _Actualizaciones extends StatelessWidget {
                 Updater.seInstalaSolo)
               FilledButton(
                 onPressed: () => _actualizar(context),
-                child: const Text('Actualizar'),
+                child: T('Actualizar'),
               )
             else if (estado != EstadoActualizacion.descargando &&
                 estado != EstadoActualizacion.listaParaInstalar)
@@ -275,7 +280,7 @@ class _Actualizaciones extends StatelessWidget {
                 onPressed: estado == EstadoActualizacion.buscando
                     ? null
                     : () => unawaited(updater.buscar()),
-                child: const Text('Buscar'),
+                child: T('Buscar'),
               ),
           ],
         );
@@ -358,20 +363,16 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return TextField(
+    return CampoTextoTraducido(
       controller: _controller,
       focusNode: _foco,
-      decoration: InputDecoration(
-        labelText: 'Client ID de Discord',
-        hintText: 'Pega aquí el Client ID de tu aplicación',
-        helperText:
-            'Crea una app en el Discord Developer Portal con un asset llamado "logo"',
-        helperMaxLines: 2,
-        helperStyle: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
+      label: 'Client ID de Discord',
+      hint: 'Pega aquí el Client ID de tu aplicación',
+      helper:
+          'Crea una app en el Discord Developer Portal con un asset llamado "logo"',
+      helperMaxLines: 2,
+      helperStyle: theme.textTheme.bodySmall
+          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       onSubmitted: (_) => _guardar(),
     );
   }

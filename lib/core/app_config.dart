@@ -3,13 +3,15 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'idiomas_spotify.dart';
+
 const String kDefaultClientId = '';
 
 bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.1.0';
+const String kVersion = '1.2.0';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
@@ -97,6 +99,9 @@ class AppConfig {
 
   String tema;
 
+  /// Vacío = sigue el idioma del PC. Formato Spotify: `es_ES`, `en_US`…
+  String idiomaPreferido;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
@@ -106,6 +111,7 @@ class AppConfig {
     this.discordRpcEnabled = false,
     this.discordClientId = kDiscordClientId,
     this.tema = kTemaPorDefecto,
+    this.idiomaPreferido = kIdiomaSistema,
   });
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
@@ -124,6 +130,7 @@ class AppConfig {
         discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
         discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
         tema: (map['tema'] as String?) ?? kTemaPorDefecto,
+        idiomaPreferido: (map['idiomaPreferido'] as String?) ?? kIdiomaSistema,
       );
     } catch (_) {
       return AppConfig();
@@ -140,6 +147,7 @@ class AppConfig {
       'discordRpcEnabled': discordRpcEnabled,
       'discordClientId': discordClientId,
       'tema': tema,
+      'idiomaPreferido': idiomaPreferido,
     }));
   }
 }

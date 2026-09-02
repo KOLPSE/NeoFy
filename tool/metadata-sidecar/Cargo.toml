@@ -8,8 +8,9 @@ publish = false
 #
 # Existe por una restriccion concreta: estando en Modo Desarrollo, la Web API de
 # Spotify devuelve 403 al pedir el contenido de una playlist que no sea tuya
-# (y tambien en /v1/tracks?ids=). La sesion de librespot, en cambio, si puede
-# leerlo, porque habla el protocolo interno igual que el cliente oficial.
+# (y tambien en /v1/tracks?ids=), y la cuota diaria deja ciegos perfiles y discos.
+# La sesion de librespot si puede leerlo, porque habla el protocolo interno igual
+# que el cliente oficial; no cuenta contra esa cuota.
 #
 # Este binario abre esa sesion con las credenciales que librespot ya dejo
 # cacheadas y expone lo minimo por HTTP en localhost, con la misma forma de JSON

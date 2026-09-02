@@ -5,6 +5,7 @@ import '../core/models.dart';
 import 'art_image.dart';
 import 'like_button.dart';
 import 'now_playing_bar.dart' show formatMs;
+import 'texto_traducido.dart';
 
 class TrackActions {
   const TrackActions({
@@ -29,6 +30,7 @@ class TrackTile extends StatelessWidget {
     this.isCurrent = false,
     this.leadingNumber,
     this.showArt = true,
+    this.contentPadding,
   });
 
   final Track track;
@@ -39,6 +41,7 @@ class TrackTile extends StatelessWidget {
   final LikedStore? likes;
 
   final bool showArt;
+  final EdgeInsetsGeometry? contentPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +49,7 @@ class TrackTile extends StatelessWidget {
     return ListTile(
       dense: true,
       onTap: actions.onPlay,
+      contentPadding: contentPadding,
       leading: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -82,7 +86,7 @@ class TrackTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (likes != null && track.uri.isNotEmpty)
-            LikeButton(likes: likes!, uri: track.uri),
+            LikeButton(likes: likes!, uri: track.uri, pista: track),
           Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 18),
@@ -99,11 +103,11 @@ class TrackTile extends StatelessWidget {
             },
             itemBuilder: (context) => [
               if (actions.onQueue != null)
-                const PopupMenuItem(value: 'queue', child: Text('Añadir a la cola')),
+                PopupMenuItem(value: 'queue', child: T('Añadir a la cola')),
               if (actions.onAddToPlaylist != null)
-                const PopupMenuItem(value: 'add', child: Text('Añadir a una playlist')),
+                PopupMenuItem(value: 'add', child: T('Añadir a una playlist')),
               if (actions.onRemove != null)
-                const PopupMenuItem(value: 'remove', child: Text('Quitar de esta playlist')),
+                PopupMenuItem(value: 'remove', child: T('Quitar de esta playlist')),
             ],
           ),
         ],
@@ -113,15 +117,15 @@ class TrackTile extends StatelessWidget {
 }
 
 Future<Playlist?> pickPlaylist(BuildContext context, List<Playlist> playlists) {
-  return showDialog<Playlist>(
+  return showDialogTraducido<Playlist>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Añadir a una playlist'),
+      title: T('Añadir a una playlist'),
       content: SizedBox(
         width: 360,
         height: 400,
         child: playlists.isEmpty
-            ? const Center(child: Text('No hay playlists cargadas.'))
+            ? const Center(child: T('No hay playlists cargadas.'))
             : ListView.builder(
                 itemCount: playlists.length,
                 itemBuilder: (context, i) {
@@ -138,7 +142,7 @@ Future<Playlist?> pickPlaylist(BuildContext context, List<Playlist> playlists) {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+          child: T('Cancelar'),
         ),
       ],
     ),
@@ -180,7 +184,60 @@ class PlaylistSearchTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
       ),
-      subtitle: Text(
+      subtitle: T(
+        subtitulo,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: trailing ??
+          Icon(
+            Icons.chevron_right,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+    );
+  }
+}
+
+class ArtistSearchTile extends StatelessWidget {
+  const ArtistSearchTile({
+    super.key,
+    required this.artista,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Artist artista;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final subtitulo = artista.followers > 0
+        ? 'Artista · ${formatearCuenta(artista.followers)} seguidores'
+        : 'Artista';
+
+    return ListTile(
+      dense: true,
+      onTap: onTap,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 8),
+          ArtImage(url: artista.art, size: 40),
+        ],
+      ),
+      title: Text(
+        artista.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+      ),
+      subtitle: T(
         subtitulo,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

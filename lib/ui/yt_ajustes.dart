@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/yt_player.dart';
+import 'texto_traducido.dart';
 
 class EstadoDeYtDlp extends StatefulWidget {
   const EstadoDeYtDlp({super.key});
@@ -59,9 +60,9 @@ class _EstadoDeYtDlpState extends State<EstadoDeYtDlp> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Descodificador (yt-dlp)', style: theme.textTheme.bodyMedium),
+              T('Descodificador (yt-dlp)', style: theme.textTheme.bodyMedium),
               const SizedBox(height: 2),
-              Text(mensaje, style: theme.textTheme.bodySmall?.copyWith(color: color)),
+              T(mensaje, style: theme.textTheme.bodySmall?.copyWith(color: color)),
               if (_ruta != null && !_comprobando) ...[
                 const SizedBox(height: 2),
                 Text(
@@ -80,7 +81,7 @@ class _EstadoDeYtDlpState extends State<EstadoDeYtDlp> {
         const SizedBox(width: 12),
         OutlinedButton(
           onPressed: _comprobando ? null : () => unawaited(_comprobar()),
-          child: const Text('Comprobar'),
+          child: T('Comprobar'),
         ),
       ],
     );

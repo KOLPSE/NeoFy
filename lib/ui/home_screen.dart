@@ -10,6 +10,7 @@ import '../core/temas.dart';
 import 'art_image.dart';
 import 'movimiento.dart';
 import 'tira_horizontal.dart';
+import 'texto_traducido.dart';
 import 'track_tile.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -71,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
               child: Row(
                 children: [
-                  Text('Inicio', style: theme.textTheme.headlineSmall),
+                  T('Inicio', style: theme.textTheme.headlineSmall),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Actualizar',
@@ -84,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             if (home.recientes.isNotEmpty) ...[
-              _Titulo('Vuelve a escuchar', theme),
+              _Titulo('Vuelve a escuchar'),
               TiraDeCanciones(
                 tracks: home.recientes,
                 onPlay: (i) => widget.player.playLista(
@@ -94,10 +95,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (home.paraTi.isNotEmpty) ...[
-              _Titulo('Hecho para ti', theme),
+              _Titulo('Hecho para ti'),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
+                child: T(
                   '   Canciones de tus artistas top que no has escuchado hace poco',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -112,17 +113,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (home.artistas.isNotEmpty) ...[
-              _Titulo('Tus artistas', theme),
+              _Titulo('Tus artistas'),
               TiraDeArtistas(
                 artistas: home.artistas,
                 onAbrir: widget.onAbrirArtista,
               ),
             ],
             if (home.novedades.isNotEmpty) ...[
-              _Titulo('Novedades', theme),
+              _Titulo('Novedades'),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
+                child: T(
                   '   Lo último publicado en Spotify',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -134,10 +135,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (home.masEscuchadas.isNotEmpty) ...[
-              _Titulo('Lo que más escuchas', theme),
+              _Titulo('Lo que más escuchas'),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
+                child: T(
                   '   De las últimas semanas',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -162,10 +163,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             await widget.player
                                 .addToQueue(home.masEscuchadas[i].uri);
                             if (!context.mounted) return;
+                            final t = await traducirTexto(
+                                context, 'Añadida a la cola');
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Añadida a la cola'),
-                                duration: Duration(seconds: 2),
+                              SnackBar(
+                                content: Text(t),
+                                duration: const Duration(seconds: 2),
                               ),
                             );
                           },
@@ -178,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (!home.cargando && home.vacio)
               Padding(
                 padding: const EdgeInsets.all(32),
-                child: Text(
+                child: T(
                   'Todavía no hay historial que enseñar. Pon algo de música y '
                   'vuelve por aquí.',
                   textAlign: TextAlign.center,
@@ -204,10 +208,10 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(Icons.home_outlined, size: 40, color: theme.colorScheme.primary),
               const SizedBox(height: 16),
-              Text('Falta un permiso para la portada',
+              T('Falta un permiso para la portada',
                   style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text(
+              T(
                 'Para enseñarte lo que más escuchas y tu historial hacen falta '
                 'dos permisos que tu sesión no incluye, porque se pidieron '
                 'después de que la iniciaras.\n\n'
@@ -220,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen> {
               FilledButton.icon(
                 onPressed: widget.onReauth,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Volver a iniciar sesión'),
+                label: T('Volver a iniciar sesión'),
               ),
             ],
           ),
@@ -231,15 +235,14 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Titulo extends StatelessWidget {
-  const _Titulo(this.texto, this.theme);
+  const _Titulo(this.texto);
 
   final String texto;
-  final ThemeData theme;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-        child: Text(texto, style: theme.textTheme.titleMedium),
+        child: T(texto, style: Theme.of(context).textTheme.titleMedium),
       );
 }
 
@@ -318,20 +321,27 @@ class TiraDeCanciones extends StatelessWidget {
 }
 
 class TiraDeArtistas extends StatelessWidget {
-  const TiraDeArtistas({super.key, required this.artistas, required this.onAbrir});
+  const TiraDeArtistas({
+    super.key,
+    required this.artistas,
+    required this.onAbrir,
+    this.subtituloDe,
+  });
 
   static const double _lado = 108;
 
   final List<Artist> artistas;
 
   final void Function(Artist) onAbrir;
+  final String? Function(Artist)? subtituloDe;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+    final extra = subtituloDe != null;
     return TiraHorizontal(
-      alto: _altoDeTarjeta(context, estilo, lado: _lado, lineas: 1),
+      alto: _altoDeTarjeta(context, estilo, lado: _lado, lineas: extra ? 2 : 1),
       centroDeFlechas: _margenTarjeta + _lado / 2,
       itemCount: artistas.length,
       itemBuilder: (context, i) {
@@ -354,6 +364,15 @@ class TiraDeArtistas extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: estilo),
+                  if (subtituloDe != null)
+                    Text(
+                      subtituloDe!(a) ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: estilo.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
                 ],
               ),
             ),
@@ -366,12 +385,18 @@ class TiraDeArtistas extends StatelessWidget {
 }
 
 class TiraDeAlbumes extends StatelessWidget {
-  const TiraDeAlbumes({super.key, required this.albumes, required this.onAbrir});
+  const TiraDeAlbumes({
+    super.key,
+    required this.albumes,
+    required this.onAbrir,
+    this.subtituloDe,
+  });
 
   static const double _ladoTarjeta = 128;
 
   final List<Album> albumes;
   final void Function(Album) onAbrir;
+  final String Function(Album)? subtituloDe;
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +426,7 @@ class TiraDeAlbumes extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: estilo.copyWith(fontWeight: FontWeight.w600)),
-                  Text(a.artists,
+                  Text(subtituloDe?.call(a) ?? a.artists,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: estilo.copyWith(
@@ -416,3 +441,62 @@ class TiraDeAlbumes extends StatelessWidget {
     );
   }
 }
+
+class TiraDePlaylists extends StatelessWidget {
+  const TiraDePlaylists({
+    super.key,
+    required this.playlists,
+    required this.onAbrir,
+  });
+
+  static const double _ladoTarjeta = 128;
+
+  final List<Playlist> playlists;
+  final void Function(Playlist) onAbrir;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final estilo = theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12);
+    return TiraHorizontal(
+      alto: _altoDeTarjeta(context, estilo, lado: _ladoTarjeta, lineas: 2),
+      centroDeFlechas: _margenTarjeta + _ladoTarjeta / 2,
+      itemCount: playlists.length,
+      itemBuilder: (context, i) {
+        final pl = playlists[i];
+        return Pulsable(
+          child: InkWell(
+            onTap: () => onAbrir(pl),
+            borderRadius: BorderRadius.circular(EstiloNeoFy.de(context).radio),
+            child: Padding(
+              padding: const EdgeInsets.all(_margenTarjeta),
+              child: SizedBox(
+                width: _ladoTarjeta,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ArtImage(url: pl.art, size: _ladoTarjeta),
+                    const SizedBox(height: _huecoTarjeta),
+                    Text(pl.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: estilo.copyWith(fontWeight: FontWeight.w600)),
+                    T(
+                      pl.owner.isEmpty ? 'Lista de reproducción' : pl.owner,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: estilo.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+

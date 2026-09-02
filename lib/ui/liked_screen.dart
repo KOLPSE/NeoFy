@@ -8,6 +8,7 @@ import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import 'texto_traducido.dart';
 import 'track_tile.dart';
 
 class LikedScreen extends StatefulWidget {
@@ -67,8 +68,12 @@ class _LikedScreenState extends State<LikedScreen> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+    unawaited(() async {
+      final t = await traducirTexto(context, message);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+    }());
   }
 
   Future<void> _addToPlaylist(Track track) async {
@@ -142,10 +147,10 @@ class _LikedScreenState extends State<LikedScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Canciones que te gustan',
+                        T('Canciones que te gustan',
                             style: theme.textTheme.headlineSmall),
                         const SizedBox(height: 4),
-                        Text(
+                        T(
                           _textoProgreso(likes),
                           style: theme.textTheme.bodySmall
                               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -156,11 +161,12 @@ class _LikedScreenState extends State<LikedScreen> {
                             FilledButton.icon(
                               onPressed: () => _play(),
                               icon: const Icon(Icons.play_arrow),
-                              label: const Text('Reproducir'),
+                              label: T('Reproducir'),
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              tooltip: 'Volver a cargar la biblioteca',
+                              tooltip:
+                                  'Volver a leer la biblioteca desde Spotify',
                               icon: const Icon(Icons.refresh),
                               onPressed: likes.cargandoBiblioteca
                                   ? null
@@ -248,15 +254,11 @@ class _LikedScreenState extends State<LikedScreen> {
             children: [
               Icon(Icons.lock_outline, size: 40, color: theme.colorScheme.primary),
               const SizedBox(height: 16),
-              Text('Hace falta un permiso más', style: theme.textTheme.titleLarge),
+              T('Hace falta un permiso más', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text(
-                'Tus canciones guardadas no son una playlist: van por otro sitio de '
-                'la API y necesitan el permiso «user-library-read», que tu sesión '
-                'actual no incluye.\n\n'
-                'Un inicio de sesión antiguo no gana permisos al renovarse, así que '
-                'hay que volver a pasar por la pantalla de Spotify una vez. No '
-                'perderás nada.',
+              T(
+                'Para ver tus canciones guardadas necesitas dar el permiso «user-library-read».\n\n'
+                'Solo tienes que volver a iniciar sesión en Spotify. No perderás nada.',
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -264,7 +266,7 @@ class _LikedScreenState extends State<LikedScreen> {
               FilledButton.icon(
                 onPressed: widget.onReauth,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Volver a iniciar sesión'),
+                label: T('Volver a iniciar sesión'),
               ),
             ],
           ),

@@ -149,4 +149,22 @@ void main() {
     expect(find.byType(Image), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('un banner ancho no decodifica estirando el alto',
+      (tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ArtImage(url: url, size: 180, ancho: 640),
+        ),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    });
+
+    final imagen = tester.widget<Image>(find.byType(Image));
+    final resize = imagen.image as ResizeImage;
+    expect(resize.width, isNotNull);
+    expect(resize.height, isNull);
+  });
 }

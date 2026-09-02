@@ -10,7 +10,9 @@ use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_core::SpotifyUri;
-use librespot_metadata::{Metadata, Playlist, Track};
+use librespot_metadata::artist::AlbumGroups;
+use librespot_metadata::image::Images;
+use librespot_metadata::{Album, Artist, Metadata, Playlist, Track};
 use librespot_protocol as protocol;
 use protobuf::Message;
 use serde::{Deserialize, Serialize};
@@ -35,6 +37,11 @@ struct Estado {
 struct Paginacion {
     offset: Option<usize>,
     limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct ConsultaArtista {
+    locale: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -120,6 +127,8 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/playlist/{id}", get(playlist))
+        .route("/artist/{id}", get(artista))
+        .route("/album/{id}", get(album))
         .with_state(estado);
 
     let listener = match tokio::net::TcpListener::bind(("127.0.0.1", puerto)).await {
@@ -283,15 +292,241 @@ fn track_a_json(t: &Track) -> Value {
         "artists": artistas,
         "album": {
             "name": t.album.name,
-            "images": imagenes(t),
+            "images": imagenes_de(&t.album.covers),
         },
     })
 }
 
-fn imagenes(t: &Track) -> Vec<Value> {
-    t.album
-        .covers
+fn id_base62(uri: &SpotifyUri) -> String {
+    uri.to_uri()
+        .ok()
+        .and_then(|u| u.rsplit(':').next().map(|s| s.to_string()))
+        .unwrap_or_default()
+}
+
+const MAX_TOP: usize = 8;
+const MAX_ALBUMES: usize = 12;
+const MAX_SINGLES: usize = 12;
+const MAX_APARECE: usize = 10;
+const MAX_RELACIONADOS: usize = 12;
+
+async fn artista(
+    State(estado): State<Estado>,
+    Path(id): Path<String>,
+    Query(consulta): Query<ConsultaArtista>,
+) -> Result<Json<Value>, Fallo> {
+    let uri = SpotifyUri::from_uri(&format!("spotify:artist:{id}"))
+        .map_err(|e| fallo(StatusCode::BAD_REQUEST, format!("id de artista invalido: {e}")))?;
+
+    let a = Artist::get(&estado.session, &uri)
+        .await
+        .map_err(|e| fallo(StatusCode::BAD_GATEWAY, format!("Spotify no devolvio el artista: {e}")))?;
+
+    let retratos = if a.portrait_group.is_empty() {
+        &a.portraits
+    } else {
+        &a.portrait_group
+    };
+    let biografias: Vec<String> = a
+        .biographies
         .iter()
+        .map(|b| b.text.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect();
+
+    let top_uris: Vec<SpotifyUri> = uris_top(&a, consulta.locale.as_deref());
+    let album_uris: Vec<SpotifyUri> = uris_de(&a.albums, MAX_ALBUMES);
+    let single_uris: Vec<SpotifyUri> = uris_de(&a.singles, MAX_SINGLES);
+    let aparece_uris: Vec<SpotifyUri> = uris_de(&a.appears_on_albums, MAX_APARECE);
+
+    let (top, albumes, singles, aparece_en) = tokio::join!(
+        pistas_de(estado.session.clone(), top_uris),
+        albumes_de(estado.session.clone(), album_uris, "album"),
+        albumes_de(estado.session.clone(), single_uris, "single"),
+        albumes_de(estado.session.clone(), aparece_uris, "appears_on"),
+    );
+
+    let relacionados: Vec<Value> = a
+        .related
+        .iter()
+        .take(MAX_RELACIONADOS)
+        .map(artista_resumen)
+        .collect();
+
+    Ok(Json(json!({
+        "id": id_base62(&a.id),
+        "uri": a.id.to_uri().unwrap_or_default(),
+        "name": a.name,
+        "popularity": a.popularity,
+        "biographies": biografias,
+        "biography": biografias.first().cloned().unwrap_or_default(),
+        "images": imagenes_de(retratos),
+        "top_tracks": top,
+        "albums": albumes,
+        "singles": singles,
+        "appears_on": aparece_en,
+        "related": relacionados,
+    })))
+}
+
+async fn album(
+    State(estado): State<Estado>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, Fallo> {
+    let uri = SpotifyUri::from_uri(&format!("spotify:album:{id}"))
+        .map_err(|e| fallo(StatusCode::BAD_REQUEST, format!("id de album invalido: {e}")))?;
+
+    let a = Album::get(&estado.session, &uri)
+        .await
+        .map_err(|e| fallo(StatusCode::BAD_GATEWAY, format!("Spotify no devolvio el album: {e}")))?;
+
+    let uris: Vec<SpotifyUri> = a.tracks().cloned().collect();
+    let items = pistas_de(estado.session.clone(), uris).await;
+    let total = items.len();
+
+    Ok(Json(json!({
+        "id": id_base62(&a.id),
+        "uri": a.id.to_uri().unwrap_or_default(),
+        "name": a.name,
+        "artists": artistas_a_json(&a.artists),
+        "images": imagenes_de(&a.covers),
+        "release_date": fecha_iso(&a.date),
+        "album_type": tipo_de_album(&a),
+        "total_tracks": total,
+        "tracks": {
+            "items": items,
+            "total": total,
+        },
+    })))
+}
+
+fn uris_de(grupos: &AlbumGroups, max: usize) -> Vec<SpotifyUri> {
+    grupos.current_releases().take(max).cloned().collect()
+}
+
+/// Las top tracks de mercury van por país. `for_country("")` solo acierta si
+/// hay cubo global; si no, la lista sale vacía aunque ES/US estén llenos.
+fn uris_top(a: &Artist, locale: Option<&str>) -> Vec<SpotifyUri> {
+    let mut paises: Vec<&str> = Vec::new();
+    if let Some(loc) = locale {
+        if let Some((_, pais)) = loc.split_once('_') {
+            if !pais.is_empty() {
+                paises.push(pais);
+            }
+        }
+    }
+    for pais in ["ES", "US", "GB", ""] {
+        if !paises.contains(&pais) {
+            paises.push(pais);
+        }
+    }
+    for pais in paises {
+        let tracks = a.top_tracks.for_country(pais);
+        if !tracks.is_empty() {
+            return tracks.iter().cloned().take(MAX_TOP).collect();
+        }
+    }
+    a.top_tracks
+        .iter()
+        .find(|g| !g.tracks.is_empty())
+        .map(|g| g.tracks.iter().cloned().take(MAX_TOP).collect())
+        .unwrap_or_default()
+}
+
+async fn pistas_de(session: librespot_core::session::Session, uris: Vec<SpotifyUri>) -> Vec<Value> {
+    let mut tareas = tokio::task::JoinSet::new();
+    for (i, uri) in uris.into_iter().enumerate() {
+        let s = session.clone();
+        tareas.spawn(async move { (i, Track::get(&s, &uri).await) });
+    }
+    recoger(tareas, |t| track_a_json(&t)).await
+}
+
+async fn albumes_de(
+    session: librespot_core::session::Session,
+    uris: Vec<SpotifyUri>,
+    grupo: &'static str,
+) -> Vec<Value> {
+    let mut tareas = tokio::task::JoinSet::new();
+    for (i, uri) in uris.into_iter().enumerate() {
+        let s = session.clone();
+        tareas.spawn(async move { (i, Album::get(&s, &uri).await) });
+    }
+    recoger(tareas, |a| album_a_json(&a, grupo)).await
+}
+
+async fn recoger<T, F>(
+    mut tareas: tokio::task::JoinSet<(usize, Result<T, librespot_core::Error>)>,
+    a_json: F,
+) -> Vec<Value>
+where
+    T: Send + 'static,
+    F: Fn(&T) -> Value,
+{
+    let mut recogidas: Vec<(usize, Value)> = Vec::new();
+    while let Some(res) = tareas.join_next().await {
+        if let Ok((i, Ok(v))) = res {
+            recogidas.push((i, a_json(&v)));
+        }
+    }
+    recogidas.sort_by_key(|(i, _)| *i);
+    recogidas.into_iter().map(|(_, v)| v).collect()
+}
+
+fn artista_resumen(a: &Artist) -> Value {
+    let retratos = if a.portrait_group.is_empty() {
+        &a.portraits
+    } else {
+        &a.portrait_group
+    };
+    json!({
+        "id": id_base62(&a.id),
+        "uri": a.id.to_uri().unwrap_or_default(),
+        "name": a.name,
+        "popularity": a.popularity,
+        "images": imagenes_de(retratos),
+    })
+}
+
+fn artistas_a_json(artistas: &librespot_metadata::artist::Artists) -> Vec<Value> {
+    artistas
+        .iter()
+        .map(|a| {
+            json!({
+                "id": id_base62(&a.id),
+                "uri": a.id.to_uri().unwrap_or_default(),
+                "name": a.name,
+            })
+        })
+        .collect()
+}
+
+fn album_a_json(a: &Album, grupo: &str) -> Value {
+    json!({
+        "id": id_base62(&a.id),
+        "uri": a.id.to_uri().unwrap_or_default(),
+        "name": a.name,
+        "artists": artistas_a_json(&a.artists),
+        "images": imagenes_de(&a.covers),
+        "release_date": fecha_iso(&a.date),
+        "album_group": grupo,
+        "album_type": tipo_de_album(a),
+        "total_tracks": a.tracks().count(),
+    })
+}
+
+fn tipo_de_album(a: &Album) -> String {
+    let t = a.type_str.trim().to_lowercase();
+    if t.is_empty() { "album".into() } else { t }
+}
+
+fn fecha_iso(d: &librespot_core::date::Date) -> String {
+    format!("{:04}-{:02}-{:02}", d.year(), u8::from(d.month()), d.day())
+}
+
+fn imagenes_de(imgs: &Images) -> Vec<Value> {
+    imgs.iter()
         .filter_map(|img| {
             let hex = img.id.to_base16().ok()?;
             Some(json!({
@@ -301,11 +536,4 @@ fn imagenes(t: &Track) -> Vec<Value> {
             }))
         })
         .collect()
-}
-
-fn id_base62(uri: &SpotifyUri) -> String {
-    uri.to_uri()
-        .ok()
-        .and_then(|u| u.rsplit(':').next().map(|s| s.to_string()))
-        .unwrap_or_default()
 }

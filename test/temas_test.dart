@@ -182,6 +182,35 @@ void main() {
       expect(estilo.idDelTema, 'prueba');
     });
 
+    test('no hay ondulacion de Material al pulsar', () {
+      final datos = construirThemeData(temaOscuro);
+      expect(datos.splashFactory, NoSplash.splashFactory);
+      expect(datos.splashColor, Colors.transparent);
+      expect(datos.highlightColor, Colors.transparent);
+    });
+
+    test('los botones reaccionan al hover sin ripple al pulsar', () {
+      final datos = construirThemeData(temaOscuro);
+      const hover = {WidgetState.hovered};
+      const reposo = <WidgetState>{};
+
+      final contorno = datos.outlinedButtonTheme.style!.overlayColor!;
+      expect(contorno.resolve(hover), isNot(Colors.transparent));
+      expect(contorno.resolve(reposo), Colors.transparent);
+
+      final relleno = datos.filledButtonTheme.style!.overlayColor!;
+      expect(relleno.resolve(hover), isNot(Colors.transparent));
+      expect(relleno.resolve(reposo), Colors.transparent);
+
+      final texto = datos.textButtonTheme.style!.overlayColor!;
+      expect(texto.resolve(hover), isNot(Colors.transparent));
+      expect(texto.resolve(reposo), Colors.transparent);
+
+      final icono = datos.iconButtonTheme.style!.overlayColor!;
+      expect(icono.resolve(hover), isNot(Colors.transparent));
+      expect(icono.resolve(reposo), Colors.transparent);
+    });
+
     test('sin cristal ni fondo, el Scaffold sigue siendo opaco', () {
       final datos = construirThemeData(temaOscuro);
       expect(datos.scaffoldBackgroundColor, temaOscuro.colores.fondo);
@@ -191,6 +220,45 @@ void main() {
       final datos = construirThemeData(temaLiquidGlass);
       expect(datos.scaffoldBackgroundColor, Colors.transparent);
       expect(datos.extension<EstiloNeoFy>()!.cristal.activo, isTrue);
+    });
+
+    test('el pulgar del switch contrasta con el raíl en claro y en oscuro',
+        () {
+      double ratio(Color a, Color b) {
+        final l1 = a.computeLuminance();
+        final l2 = b.computeLuminance();
+        final claro = l1 > l2 ? l1 : l2;
+        final oscuro = l1 > l2 ? l2 : l1;
+        return (claro + 0.05) / (oscuro + 0.05);
+      }
+
+      for (final tema in temasIncluidos) {
+        final datos = construirThemeData(tema);
+        final sw = datos.switchTheme;
+        final pulgar = sw.thumbColor;
+        final rail = sw.trackColor;
+        expect(pulgar, isNotNull, reason: tema.id);
+        expect(rail, isNotNull, reason: tema.id);
+
+        const apagado = <WidgetState>{};
+        const encendido = {WidgetState.selected};
+
+        final pulgarOff = pulgar!.resolve(apagado)!;
+        final railOff = rail!.resolve(apagado)!;
+        final pulgarOn = pulgar.resolve(encendido)!;
+        final railOn = rail.resolve(encendido)!;
+
+        expect(
+          ratio(pulgarOff, railOff),
+          greaterThanOrEqualTo(3),
+          reason: '${tema.id} apagado: pulgar $pulgarOff sobre raíl $railOff',
+        );
+        expect(
+          ratio(pulgarOn, railOn),
+          greaterThanOrEqualTo(3),
+          reason: '${tema.id} encendido: pulgar $pulgarOn sobre raíl $railOn',
+        );
+      }
     });
 
     test('el texto sobre el primario contrasta en los dos sentidos', () {

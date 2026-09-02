@@ -6,6 +6,7 @@ import '../core/app_config.dart';
 import '../core/auth.dart';
 import '../core/yt_auth.dart';
 import 'conectar_youtube.dart';
+import 'texto_traducido.dart';
 
 String _resumen(String id) => id.length <= 12
     ? id
@@ -127,10 +128,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 Text('NeoFy', style: theme.textTheme.headlineSmall),
                 const SizedBox(height: 8),
-                Text(
-                  'Un cliente ligero que reproduce en local y se controla con la '
-                  'API oficial de Spotify. Con cuenta Premium suena por sí solo; '
-                  'sin ella, puede sonar por YouTube Music.',
+                T(
+                  'Toda tu música de Spotify en un cliente nativo y optimizado para el día a día sin perder funciones por el camino',
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -165,13 +164,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     size: 18, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Tu app de Spotify',
+                  child: T('Tu app de Spotify',
                       style: theme.textTheme.titleSmall),
                 ),
                 if (configurada && !_pasosAbiertos)
                   TextButton(
                     onPressed: () => setState(() => _pasosAbiertos = true),
-                    child: const Text('Cambiar'),
+                    child: T('Cambiar'),
                   ),
               ],
             ),
@@ -183,7 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       size: 16, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
+                    child: T(
                       'Client ID guardado: '
                       '${_resumen(widget.config.clientId)}',
                       style: theme.textTheme.bodySmall,
@@ -217,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(titulo, style: theme.textTheme.bodyMedium),
+                    T(titulo, style: theme.textTheme.bodyMedium),
                     const SizedBox(height: 6),
                     contenido,
                   ],
@@ -230,10 +229,9 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Spotify solo deja que una app de terceros funcione para los usuarios '
-          'que su creador da de alta a mano, así que NeoFy no puede traer una '
-          'configurada: necesitas la tuya. Son dos minutos y se hace una sola vez.',
+        T(
+          'Por cómo funciona Spotify, cada usuario necesita crear su propia app y autorizarla: '
+          'NeoFy no viene configurada. No te preocupes, es rápido y solo hay que hacerlo una vez.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -247,12 +245,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 mode: LaunchMode.externalApplication,
               ),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Abrir el panel'),
+              label: T('Abrir el panel'),
             )),
         paso(
             2,
-            'Pon este Redirect URI, exactamente así. Spotify ya no acepta '
-            '«localhost», solo el 127.0.0.1 literal.',
+            'Pon este Redirect URI, exactamente así: 127.0.0.1.',
             Row(
               children: [
                 Expanded(
@@ -308,14 +305,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.check, size: 18),
-                      label: const Text('Guardar y continuar'),
+                      label: T('Guardar y continuar'),
                     ),
                     if (configurada)
                       TextButton(
                         onPressed: _guardando
                             ? null
                             : () => setState(() => _pasosAbiertos = false),
-                        child: const Text('Cancelar'),
+                        child: T('Cancelar'),
                       ),
                   ],
                 ),
@@ -324,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton.icon(
                     onPressed: _guardando ? null : _olvidarClientId,
                     icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Olvidar el Client ID guardado'),
+                    label: T('Olvidar el Client ID guardado'),
                   ),
                 ],
               ],
@@ -341,17 +338,14 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Icon(Icons.link, size: 18, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 8),
-            Text('Enlazar tu cuenta', style: theme.textTheme.titleSmall),
+            T('Enlazar tu cuenta', style: theme.textTheme.titleSmall),
           ],
         ),
         const SizedBox(height: 8),
-        Text(
+        T(
           configurada
-              ? 'La primera vez se abrirá el navegador dos veces: una para la '
-                  'app y otra para el reproductor. Después queda guardado y no '
-                  'se vuelve a pedir.'
-              : 'Guarda antes el Client ID de tu app: sin él, Spotify no tiene '
-                  'a quién dar permiso.',
+              ? 'Solo la primera vez pide enlazar dos veces.'
+              : 'Guarda el Client ID antes de continuar.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -368,7 +362,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 : const Icon(Icons.login),
             label: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(_busy
+              child: T(_busy
                   ? 'Esperando al navegador…'
                   : 'Iniciar sesión con Spotify'),
             ),
@@ -383,7 +377,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
         const SizedBox(height: 12),
-        Text(
+        T(
           'Hace falta una cuenta Spotify Premium: es la propia API la que exige '
           'Premium para controlar la reproducción.',
           style: theme.textTheme.bodySmall

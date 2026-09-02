@@ -11,11 +11,13 @@ import 'package:window_manager/window_manager.dart';
 import 'core/app_config.dart';
 import 'core/art_cache.dart';
 import 'core/audio_device.dart';
+import 'core/artistas_favoritos_store.dart';
 import 'core/auth.dart';
 import 'core/carpetas_store.dart';
 import 'core/discord_rpc.dart';
 import 'core/followed_playlists_store.dart';
 import 'core/home_store.dart';
+import 'core/idiomas_spotify.dart';
 import 'core/librespot.dart';
 import 'core/liked_store.dart';
 import 'core/media_keys.dart';
@@ -29,6 +31,7 @@ import 'core/settings.dart';
 import 'core/smtc.dart';
 import 'core/spotify_api.dart';
 import 'core/tema_store.dart';
+import 'core/traductor.dart';
 import 'core/ultima_reproduccion.dart';
 import 'core/updater.dart';
 import 'core/yt_auth.dart';
@@ -153,16 +156,33 @@ class RootScreen extends StatefulWidget {
 
 class _RootScreenState extends State<RootScreen> with WindowListener, TrayListener {
   late final SpotifyAuth _auth = SpotifyAuth(widget.config);
-  late final SpotifyApi _api = SpotifyApi(_auth);
+  late final Settings _settings = Settings(widget.config)
+    ..onCambioDeModo = _alCambiarDeModo
+    ..onCambioDiscord = _alCambiarDiscord
+    ..onCambioIdioma = () => _traductor.refrescar();
+  late final Traductor _traductor = Traductor(
+    localeEfectivo: () => _settings.localeEfectivo,
+  );
+  late final LibrespotManager _librespot = LibrespotManager(widget.config);
+  late final MetadataSidecar _sidecar = MetadataSidecar(
+    localeEfectivo: () => localeSpotifyEfectivo(widget.config.idiomaPreferido),
+  );
+  late final SpotifyApi _api = SpotifyApi(
+    _auth,
+    localeEfectivo: () => localeSpotifyEfectivo(widget.config.idiomaPreferido),
+  );
   late final PlayerController _player = PlayerController(_api, widget.config);
   late final LikedStore _likes =
-      LikedStore(api: _api, auth: _auth, onReauth: _reauth);
+      LikedStore(api: _api, auth: _auth, onReauth: _reauth)
+        ..cargarDesdeDisco();
   late final FollowedPlaylistsStore _followed = FollowedPlaylistsStore(
     api: _api,
     auth: _auth,
     obtenerUserId: () => _player.currentUserId,
     onReauth: _reauth,
   );
+  late final ArtistasFavoritosStore _favoritos =
+      ArtistasFavoritosStore()..cargar();
   late final HomeStore _home = HomeStore(api: _api, auth: _auth);
   late final CarpetasStore _carpetas = CarpetasStore()..cargar();
   final UltimaReproduccionStore _memoria = UltimaReproduccionStore();
@@ -171,13 +191,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     pidsDeSidecars: () => [_librespot.pid, _sidecar.pid],
   );
 
-  late final Settings _settings = Settings(widget.config)
-    ..onCambioDeModo = _alCambiarDeModo
-    ..onCambioDiscord = _alCambiarDiscord;
   late final DiscordRpc _discordRpc = DiscordRpc();
   final Updater _updater = Updater();
-  late final LibrespotManager _librespot = LibrespotManager(widget.config);
-  final MetadataSidecar _sidecar = MetadataSidecar();
 
   final YtAuth _ytAuth = YtAuth();
   late final YtMusicApi _ytApi = YtMusicApi(_ytAuth);
@@ -640,6 +655,13 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   @override
   Widget build(BuildContext context) {
+    return TraductorScope(
+      notifier: _traductor,
+      child: _buildContenido(),
+    );
+  }
+
+  Widget _buildContenido() {
     if (_booting) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -661,6 +683,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         player: _player,
         likes: _likes,
         followed: _followed,
+        favoritos: _favoritos,
         home: _home,
         carpetas: _carpetas,
         ram: _ram,

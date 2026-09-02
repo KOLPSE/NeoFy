@@ -31,11 +31,66 @@ void main() {
     });
   });
 
+  group('idDeSpotify', () {
+    test('deja el id suelto y recorta la URI', () {
+      expect(idDeSpotify('abc'), 'abc');
+      expect(idDeSpotify('spotify:artist:abc'), 'abc');
+      expect(idDeSpotify('spotify:album:xyz'), 'xyz');
+    });
+  });
+
   group('SearchResults', () {
     test('SearchResults vacío inicializa páginas vacías', () {
       const sr = SearchResults.empty();
       expect(sr.tracks.items, isEmpty);
       expect(sr.playlists.items, isEmpty);
+      expect(sr.artists.items, isEmpty);
+    });
+  });
+
+  group('elegirBiografia', () {
+    const ingles =
+        "Best known as the frontman of Spain's biggest power pop group, "
+        'El Canto del Loco, singer/actor Dani Martín proved he could go it alone.';
+    const espanol =
+        'Dani Martín es un cantante y compositor español, conocido por ser '
+        'la voz de El Canto del Loco y por su prolífica carrera en solitario.';
+
+    test('en un PC en español elige la bio en español', () {
+      expect(
+        elegirBiografia([ingles, espanol], locale: 'es_ES'),
+        espanol,
+      );
+    });
+
+    test('en un PC en inglés elige la bio en inglés', () {
+      expect(
+        elegirBiografia([ingles, espanol], locale: 'en_US'),
+        ingles,
+      );
+    });
+
+    test('Artist.fromJson elige entre todas las biografías del sidecar', () {
+      final a = Artist.fromJson({
+        'id': 'x',
+        'uri': 'spotify:artist:x',
+        'name': 'Prueba',
+        'biographies': [ingles, espanol],
+        'biography': ingles,
+      }, locale: 'es_ES');
+      expect(a?.biografia, espanol);
+    });
+  });
+
+  group('formatearBiografia', () {
+    test('separa atribución Rovi y parte párrafos largos', () {
+      const raw =
+          'Spanish punk band Pignoise -- comprised of Alvaro. Their debut disc fell short. '
+          'However, Pignoise third record produced hits. ~ Evan C. Gutierrez, Rovi';
+      final bio = formatearBiografia(raw);
+      expect(bio.atribucion, 'Evan C. Gutierrez, Rovi');
+      expect(bio.parrafos.length, greaterThan(1));
+      expect(bio.parrafos.first, contains('Pignoise'));
     });
   });
 
@@ -134,11 +189,13 @@ void main() {
   });
 
   group('Artist.fromJson', () {
-    test('coge la foto de 300, no la de 640', () {
+    test('coge la foto de 300 para el avatar y la más grande de banner', () {
       final a = Artist.fromJson({
         'id': 'a1',
         'uri': 'spotify:artist:a1',
         'name': 'Alguien',
+        'popularity': 88,
+        'followers': {'total': 20500000},
         'images': [
           {'url': 'big', 'width': 640},
           {'url': 'medium', 'width': 300},
@@ -150,11 +207,89 @@ void main() {
       expect(a!.name, 'Alguien');
       expect(a.uri, 'spotify:artist:a1');
       expect(a.art, 'medium');
+      expect(a.artGrande, 'big');
+      expect(a.followers, 20500000);
+      expect(a.popularity, 88);
     });
 
     test('sin fotos no revienta', () {
       expect(Artist.fromJson({'name': 'X'})?.art, isNull);
       expect(Artist.fromJson(null), isNull);
+    });
+  });
+
+  group('formatearCuenta', () {
+    test('usa coma decimal y el sufijo del tramo', () {
+      expect(formatearCuenta(39100000), '39,1 M');
+      expect(formatearCuenta(20500000), '20,5 M');
+      expect(formatearCuenta(10000000), '10 M');
+      expect(formatearCuenta(15000), '15 mil');
+      expect(formatearCuenta(6310), '6310');
+    });
+  });
+
+  group('anioDeFecha', () {
+    test('se queda con los cuatro dígitos', () {
+      expect(anioDeFecha('2014-03-18'), '2014');
+      expect(anioDeFecha('2026'), '2026');
+      expect(anioDeFecha(''), isNull);
+      expect(anioDeFecha(null), isNull);
+    });
+  });
+
+  group('Album.fromJson', () {
+    test('separa álbumes de singles por album_group y guarda el año', () {
+      final album = Album.fromJson({
+        'id': 'd1',
+        'uri': 'spotify:album:d1',
+        'name': 'Recess',
+        'album_group': 'album',
+        'release_date': '2014-03-14',
+        'artists': [
+          {'name': 'Skrillex'},
+        ],
+      });
+      expect(album, isNotNull);
+      expect(album!.anio, '2014');
+      expect(album.esSingle, isFalse);
+      expect(album.lineaSecundaria, '2014');
+
+      final single = Album.fromJson({
+        'id': 's1',
+        'name': 'Bangarang',
+        'album_group': 'single',
+        'release_date': '2011',
+      });
+      expect(single!.esSingle, isTrue);
+      expect(single.lineaSecundaria, 'Single · 2011');
+    });
+  });
+
+  group('Track local', () {
+    test('ida y vuelta conserva lo que hace falta para la lista', () {
+      const original = Track(
+        id: '1',
+        uri: 'spotify:track:1',
+        name: 'Canción',
+        artists: 'Uno, Dos',
+        listaDeArtistas: [
+          ArtistaDePista(id: 'a1', uri: 'spotify:artist:a1', name: 'Uno'),
+        ],
+        album: 'Disco',
+        artSmall: 's',
+        artMedium: 'm',
+        durationMs: 180000,
+        isLocal: false,
+        popularity: 40,
+      );
+      final vuelta = Track.desdeLocal(original.aLocal());
+      expect(vuelta, isNotNull);
+      expect(vuelta!.uri, original.uri);
+      expect(vuelta.name, original.name);
+      expect(vuelta.artists, original.artists);
+      expect(vuelta.listaDeArtistas.single.id, 'a1');
+      expect(vuelta.artSmall, 's');
+      expect(vuelta.durationMs, 180000);
     });
   });
 

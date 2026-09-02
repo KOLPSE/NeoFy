@@ -45,4 +45,31 @@ void main() {
           '3 canciones · 5 min');
     });
   });
+
+  group('listas del artista', () {
+    Playlist lista(String id, String owner) => Playlist(
+          id: id,
+          uri: 'spotify:playlist:$id',
+          name: 'Lista $id',
+          owner: owner,
+          ownerId: 'u$id',
+          art: null,
+          trackCount: 10,
+        );
+
+    test('solo deja las que son del propio artista', () {
+      final suyas = playlistsDelArtista([
+        lista('1', 'Skrillex'),
+        lista('2', 'Spotify'),
+        lista('3', 'skrillex'),
+        lista('4', 'Someone else'),
+      ], 'Skrillex');
+
+      expect(suyas.map((p) => p.id), ['1', '3']);
+    });
+
+    test('no inventa nada si el nombre va vacío', () {
+      expect(playlistsDelArtista([lista('1', 'Skrillex')], ''), isEmpty);
+    });
+  });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/artistas_favoritos_store.dart';
 import '../core/auth.dart';
 import '../core/carpetas_store.dart';
 import '../core/followed_playlists_store.dart';
@@ -18,6 +19,7 @@ import '../core/temas.dart';
 import '../core/updater.dart';
 import '../core/spotify_api.dart';
 import '../core/yt_auth.dart';
+import 'album_screen.dart';
 import 'art_image.dart';
 import 'conectar_youtube.dart';
 import 'cristal.dart';
@@ -26,13 +28,15 @@ import 'artist_screen.dart';
 import 'home_screen.dart';
 import 'liked_screen.dart';
 import 'now_playing_bar.dart';
+import 'idioma_dialog.dart';
 import 'settings_dialog.dart';
 import 'temas_dialog.dart';
 import 'playlist_screen.dart';
 import 'queue_screen.dart';
 import 'search_screen.dart';
+import 'texto_traducido.dart';
 
-enum _View { home, search, queue, liked, playlist, artist }
+enum _View { home, search, queue, liked, playlist, artist, album }
 
 bool hayQuePedirMas({
   required bool quedanPaginas,
@@ -56,6 +60,7 @@ class AppShell extends StatefulWidget {
     required this.sidecar,
     required this.likes,
     required this.followed,
+    required this.favoritos,
     required this.home,
     required this.carpetas,
     required this.ram,
@@ -74,6 +79,7 @@ class AppShell extends StatefulWidget {
   final PlayerController player;
   final LikedStore likes;
   final FollowedPlaylistsStore followed;
+  final ArtistasFavoritosStore favoritos;
   final HomeStore home;
   final CarpetasStore carpetas;
   final ResourceMonitor ram;
@@ -103,9 +109,12 @@ class _AppShellState extends State<AppShell> {
   Playlist? _selected;
 
   Artist? _artista;
+  Album? _album;
+  Artist? _artistaOrigenAlbum;
   bool _loading = false;
   bool _hasMore = true;
   bool _playlistsExpanded = true;
+  bool _artistasExpanded = true;
   String? _error;
 
   final Set<String> _carpetasPlegadas = {};
@@ -187,23 +196,21 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _borrarPlaylist(Playlist pl) async {
     final mia = pl.ownerId.isNotEmpty && pl.ownerId == widget.player.currentUserId;
-    final ok = await showDialog<bool>(
+    final ok = await showDialogTraducido<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(mia ? 'Eliminar la playlist' : 'Quitarla de tu biblioteca'),
-        content: Text(mia
-            ? '«${pl.name}» desaparecerá de tu biblioteca. Spotify la guarda '
-                'unos días y se puede recuperar desde la web.'
-            : '«${pl.name}» es de ${pl.owner.isEmpty ? "otra persona" : pl.owner}: '
-                'se quita de tu biblioteca, pero la original no se toca.'),
+        title: T(mia ? 'Eliminar la playlist' : 'Quitarla de tu biblioteca'),
+        content: T(mia
+            ? 'Vas a eliminar «${pl.name}» de tu biblioteca. Si te arrepientes, Spotify deja recuperarla desde la web durante unos días.'
+            : 'Vas a quitar «${pl.name}» de tu biblioteca. La playlist original (de ${pl.owner.isEmpty ? "otra persona" : pl.owner}) seguirá existiendo; solo desaparece para ti.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: T('Cancelar'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(mia ? 'Eliminar' : 'Quitar'),
+            child: T(mia ? 'Eliminar' : 'Quitar'),
           ),
         ],
       ),
@@ -253,10 +260,10 @@ class _AppShellState extends State<AppShell> {
     String inicial = '',
   }) {
     final controlador = TextEditingController(text: inicial);
-    return showDialog<String>(
+    return showDialogTraducido<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(titulo),
+        title: T(titulo),
         content: TextField(
           controller: controlador,
           autofocus: true,
@@ -269,11 +276,11 @@ class _AppShellState extends State<AppShell> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+            child: T('Cancelar'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(controlador.text),
-            child: Text(boton),
+            child: T(boton),
           ),
         ],
       ),
@@ -307,20 +314,20 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _borrarCarpeta(Carpeta carpeta) async {
-    final ok = await showDialog<bool>(
+    final ok = await showDialogTraducido<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar la carpeta'),
-        content: Text('«${carpeta.nombre}» desaparece, pero sus playlists no '
+        title: T('Eliminar la carpeta'),
+        content: T('«${carpeta.nombre}» desaparece, pero sus playlists no '
             'se borran: vuelven a la lista.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: T('Cancelar'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Eliminar'),
+            child: T('Eliminar'),
           ),
         ],
       ),
@@ -332,13 +339,13 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _moverPlaylist(Playlist pl) async {
     const fuera = '__fuera__';
-    final elegida = await showDialog<String>(
+    final elegida = await showDialogTraducido<String>(
       context: context,
       builder: (context) {
         final carpetas = widget.carpetas.carpetas;
         final actual = widget.carpetas.carpetaDe(pl.id);
         return SimpleDialog(
-          title: const Text('Mover a carpeta'),
+          title: T('Mover a carpeta'),
           children: [
             for (final c in carpetas)
               SimpleDialogOption(
@@ -358,7 +365,7 @@ class _AppShellState extends State<AppShell> {
               onPressed: () => Navigator.of(context).pop(fuera),
               child: Row(
                 children: [
-                  const Expanded(child: Text('Fuera de cualquier carpeta')),
+                  const Expanded(child: T('Fuera de cualquier carpeta')),
                   if (actual == null) const Icon(Icons.check, size: 18),
                 ],
               ),
@@ -373,9 +380,13 @@ class _AppShellState extends State<AppShell> {
 
   void _avisar(String mensaje) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(mensaje), duration: const Duration(seconds: 3)),
-    );
+    unawaited(() async {
+      final t = await traducirTexto(context, mensaje);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t), duration: const Duration(seconds: 3)),
+      );
+    }());
   }
 
   @override
@@ -395,7 +406,8 @@ class _AppShellState extends State<AppShell> {
                 _panelLateral(
                   hayCristal,
                   AnimatedBuilder(
-                  animation: Listenable.merge([widget.player, widget.carpetas]),
+                  animation: Listenable.merge(
+                      [widget.player, widget.carpetas, widget.favoritos]),
                   builder: (context, _) => _Sidebar(
                     playlists: _playlists,
                     carpetas: widget.carpetas.carpetas,
@@ -406,9 +418,16 @@ class _AppShellState extends State<AppShell> {
                     view: _view,
                     selected: _selected,
                     expanded: _playlistsExpanded,
+                    artistasFavoritos: widget.favoritos.artistas,
+                    artistasExpanded: _artistasExpanded,
+                    artistaSeleccionado:
+                        _view == _View.artist ? _artista : null,
                     playingContextUri: widget.player.state.contextUri,
                     onToggleExpanded: () =>
                         setState(() => _playlistsExpanded = !_playlistsExpanded),
+                    onToggleArtistas: () => setState(
+                        () => _artistasExpanded = !_artistasExpanded),
+                    onSelectArtista: _abrirArtista,
                     onToggleCarpeta: (id) => setState(() {
                       if (!_carpetasPlegadas.add(id)) {
                         _carpetasPlegadas.remove(id);
@@ -454,10 +473,7 @@ class _AppShellState extends State<AppShell> {
               librespot: widget.librespot,
               likes: widget.likes,
               home: widget.home,
-              onAbrirArtista: (a) => setState(() {
-                _artista = a;
-                _view = _View.artist;
-              }),
+              onAbrirArtista: _abrirArtista,
             ),
           ),
         ],
@@ -494,10 +510,7 @@ class _AppShellState extends State<AppShell> {
           player: widget.player,
           likes: widget.likes,
           onReauth: widget.onReauth,
-          onAbrirArtista: (a) => setState(() {
-            _artista = a;
-            _view = _View.artist;
-          }),
+              onAbrirArtista: _abrirArtista,
         );
       case _View.search:
         return SearchScreen(
@@ -506,10 +519,12 @@ class _AppShellState extends State<AppShell> {
           playlists: _playlists,
           likes: widget.likes,
           followed: widget.followed,
+          favoritos: widget.favoritos,
           onAbrirPlaylist: (pl) => setState(() {
             _view = _View.playlist;
             _selected = pl;
           }),
+          onAbrirArtista: _abrirArtista,
           onCambioSeguimiento: _alCambiarSeguimiento,
         );
       case _View.queue:
@@ -548,9 +563,47 @@ class _AppShellState extends State<AppShell> {
           api: widget.api,
           player: widget.player,
           likes: widget.likes,
+          favoritos: widget.favoritos,
           artist: a,
+          sidecar: widget.sidecar,
+          onAbrirAlbum: (a) => _abrirAlbum(a, desdeArtista: _artista),
+          onAbrirPlaylist: (pl) => setState(() {
+            _view = _View.playlist;
+            _selected = pl;
+          }),
+          onAbrirArtista: _abrirArtista,
+        );
+      case _View.album:
+        final disco = _album;
+        if (disco == null) return const SizedBox.shrink();
+        return AlbumScreen(
+          key: ValueKey(disco.id),
+          api: widget.api,
+          player: widget.player,
+          likes: widget.likes,
+          favoritos: widget.favoritos,
+          album: disco,
+          sidecar: widget.sidecar,
+          artistaOrigen: _artistaOrigenAlbum,
+          onAbrirArtista: _abrirArtista,
         );
     }
+  }
+
+  void _abrirArtista(Artist a) {
+    setState(() {
+      _artista = a;
+      _artistaOrigenAlbum = null;
+      _view = _View.artist;
+    });
+  }
+
+  void _abrirAlbum(Album a, {Artist? desdeArtista}) {
+    setState(() {
+      _album = a;
+      _artistaOrigenAlbum = desdeArtista;
+      _view = _View.album;
+    });
   }
 }
 
@@ -565,8 +618,13 @@ class _Sidebar extends StatelessWidget {
     required this.view,
     required this.selected,
     required this.expanded,
+    required this.artistasFavoritos,
+    required this.artistasExpanded,
+    required this.artistaSeleccionado,
     required this.playingContextUri,
     required this.onToggleExpanded,
+    required this.onToggleArtistas,
+    required this.onSelectArtista,
     required this.onToggleCarpeta,
     required this.onSelectView,
     required this.onSelectPlaylist,
@@ -596,8 +654,13 @@ class _Sidebar extends StatelessWidget {
   final _View view;
   final Playlist? selected;
   final bool expanded;
+  final List<Artist> artistasFavoritos;
+  final bool artistasExpanded;
+  final Artist? artistaSeleccionado;
   final String? playingContextUri;
   final VoidCallback onToggleExpanded;
+  final VoidCallback onToggleArtistas;
+  final void Function(Artist) onSelectArtista;
   final void Function(String carpetaId) onToggleCarpeta;
   final void Function(_View) onSelectView;
   final void Function(Playlist) onSelectPlaylist;
@@ -681,6 +744,21 @@ class _Sidebar extends StatelessWidget {
             onTap: () => onSelectView(_View.queue),
           ),
           const Divider(height: 16),
+          _CabeceraSeccion(
+            label: 'TUS ARTISTAS FAVORITOS',
+            expanded: artistasExpanded,
+            onTap: onToggleArtistas,
+          ),
+          Plegable(
+            abierto: artistasExpanded,
+            contenidoAbierto: _ListaArtistasFavoritos(
+              artistas: artistasFavoritos,
+              seleccionado: artistaSeleccionado,
+              onSelect: onSelectArtista,
+            ),
+            contenidoCerrado: const SizedBox.shrink(),
+          ),
+          const Divider(height: 16),
           _SectionHeader(
             label: 'TUS PLAYLISTS',
             expanded: expanded,
@@ -729,20 +807,21 @@ class _Sidebar extends StatelessWidget {
                         onSalirParaActualizar: onSalirParaActualizar,
                         bloquesExtra: [
                           BotonDeTemas(temas: temas),
+                          BotonDeIdioma(settings: settings),
                           if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
                           ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
                         ],
                       ),
                     ),
                     icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('Ajustes'),
+                    label: T('Ajustes'),
                   ),
                 ),
                 Expanded(
                   child: TextButton.icon(
                     onPressed: onLogout,
                     icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Salir'),
+                    label: T('Salir'),
                   ),
                 ),
               ],
@@ -836,6 +915,141 @@ class _EntradaPlaylist extends _EntradaSidebar {
   final bool indentada;
 }
 
+class _ListaArtistasFavoritos extends StatefulWidget {
+  const _ListaArtistasFavoritos({
+    required this.artistas,
+    required this.seleccionado,
+    required this.onSelect,
+  });
+
+  final List<Artist> artistas;
+  final Artist? seleccionado;
+  final void Function(Artist) onSelect;
+
+  @override
+  State<_ListaArtistasFavoritos> createState() =>
+      _ListaArtistasFavoritosState();
+}
+
+class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
+  final Set<String> _yaVistos = {};
+  var _primeraPasada = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _yaVistos.addAll(widget.artistas.map((a) => a.id));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _primeraPasada = false;
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ListaArtistasFavoritos old) {
+    super.didUpdateWidget(old);
+    final vivos = {for (final a in widget.artistas) a.id};
+    _yaVistos.removeWhere((id) => !vivos.contains(id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (widget.artistas.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: T(
+          'Tus artistas favoritos se guardan aquí.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+
+    final filas = [
+      for (final a in widget.artistas)
+        EntradaDeLista(
+          key: ValueKey(a.id),
+          animar: !_primeraPasada && !_yaVistos.contains(a.id),
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            selected: widget.seleccionado?.id == a.id,
+            leading: ArtImage(url: a.art, size: 28, radius: 14),
+            title: Text(
+              a.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => widget.onSelect(a),
+          ),
+        ),
+    ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _yaVistos.addAll(widget.artistas.map((a) => a.id));
+    });
+
+    final mueve =
+        EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value;
+    final cuerpo = widget.artistas.length <= 6
+        ? Column(mainAxisSize: MainAxisSize.min, children: filas)
+        : ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: filas,
+            ),
+          );
+
+    return AnimatedSize(
+      duration: mueve ? kDuracionDesplegable : Duration.zero,
+      curve: kCurvaDesplegable,
+      alignment: Alignment.topCenter,
+      child: cuerpo,
+    );
+  }
+}
+
+class _CabeceraSeccion extends StatelessWidget {
+  const _CabeceraSeccion({
+    required this.label,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: T(label,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ),
+            GiroConMuelle(
+              abierto: expanded,
+              child: Icon(
+                Icons.expand_less,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.label,
@@ -861,7 +1075,7 @@ class _SectionHeader extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(label,
+              child: T(label,
                   style: theme.textTheme.labelSmall
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             ),
@@ -876,14 +1090,14 @@ class _SectionHeader extends StatelessWidget {
                   unawaited(onCreateCarpeta());
                 }
               },
-              itemBuilder: (context) => const [
+              itemBuilder: (context) => [
                 PopupMenuItem(
                   value: 'playlist',
-                  child: Text('Nueva playlist'),
+                  child: T('Nueva playlist'),
                 ),
                 PopupMenuItem(
                   value: 'carpeta',
-                  child: Text('Nueva carpeta'),
+                  child: T('Nueva carpeta'),
                 ),
               ],
             ),
@@ -939,7 +1153,7 @@ class _PlaylistTile extends StatelessWidget {
                 color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
             : null,
       ),
-      subtitle: Text('${playlist.trackCount} canciones',
+      subtitle: T('${playlist.trackCount} canciones',
           style: theme.textTheme.bodySmall),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -958,13 +1172,13 @@ class _PlaylistTile extends StatelessWidget {
             },
             itemBuilder: (context) => [
               if (hayCarpetas)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'mover',
-                  child: Text('Mover a carpeta...'),
+                  child: T('Mover a carpeta...'),
                 ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'delete',
-                child: Text('Quitar de tu biblioteca'),
+                child: T('Quitar de tu biblioteca'),
               ),
             ],
           ),
@@ -1014,7 +1228,7 @@ class _CarpetaTile extends StatelessWidget {
         style: theme.textTheme.bodyMedium
             ?.copyWith(fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(
+      subtitle: T(
         cargadas == total
             ? '$total playlists'
             : '$cargadas de $total playlists',
@@ -1038,14 +1252,14 @@ class _CarpetaTile extends StatelessWidget {
                 onBorrar();
               }
             },
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'renombrar',
-                child: Text('Renombrar'),
+                child: T('Renombrar'),
               ),
               PopupMenuItem(
                 value: 'borrar',
-                child: Text('Eliminar carpeta'),
+                child: T('Eliminar carpeta'),
               ),
             ],
           ),
@@ -1076,7 +1290,7 @@ class _NavTile extends StatelessWidget {
         dense: true,
         selected: selected,
         leading: Icon(icon, size: 20),
-        title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: T(label, maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: onTap,
       );
     }
@@ -1108,7 +1322,7 @@ class _NavTile extends StatelessWidget {
                     Icon(icon, size: 20, color: tinta),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
+                      child: T(
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

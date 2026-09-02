@@ -36,7 +36,11 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
   - `metadata_sidecar.dart` — Cliente y supervisor de `metadata-sidecar.exe`.
   - `liked_store.dart` — Qué canciones están en favoritos **y la biblioteca entera**, en un
     único sitio para toda la app. Agrupa las consultas de las filas visibles en lotes de 50
-    cada 120 ms.
+    cada 120 ms. Tras la primera lectura completa se queda en `biblioteca.json`; un me gusta
+    o un quitar actualizan esa caché en caliente, sin volver a pedir las miles de pistas.
+  - `artistas_favoritos_store.dart` — Los artistas que el usuario marca con el corazón del
+    perfil. Vive en local (`artistas_favoritos.json`); no usa el follow de Spotify, que
+    pediría un scope nuevo y un re-login.
   - `home_store.dart` — Datos de la portada (historial y lo más escuchado).
   - `media_keys.dart` — Recibe las teclas multimedia que registra el runner.
   - `reproductor_del_sistema.dart` — Lo que hay que enseñar fuera de la ventana
@@ -276,7 +280,18 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   `/v1/tracks?ids=`, así que los discos hay que pedirlos de uno en uno. Por eso el respaldo
   lleva presupuesto (`discosDeRespaldo`): la pantalla de artista gasta 6 discos, y el
   aleatorio inteligente **1 por artista**, que si no serían 64 peticiones de golpe y el 429
-  del Modo Desarrollo deja la app sin navegar durante horas.
+  del Modo Desarrollo deja la app sin navegar durante horas. El perfil pide álbumes, singles y "destacado en" en tres llamadas a
+  `/artists/{id}/albums` (un `include_groups` cada una) para que cada tira se llene de
+  verdad y no se quede en los 10 primeros mezclados. Las listas del artista no salen de un
+  search suelto: `/search?type=playlist` y luego solo las cuyo `owner.display_name` coincide
+  con el nombre. `/artists/{id}/related-artists` lo retiró Spotify en 2024: si contestara
+  403 o 404, esa tira simplemente no se pinta. La Web API tampoco trae oyentes
+  mensuales; el encabezado usa `followers.total` y, si vienen, hasta tres géneros. El
+  corazón de artista es local, no el follow de Spotify. Si la cuota de buscar/navegar está
+  agotada, el perfil y el disco se leen por el sidecar de librespot (`GET /artist/{id}` y
+  `/album/{id}`), el mismo canal que las playlists ajenas: no cuenta contra el 429. Ahí
+  sí llega la biografía y los relacionados. Las "listas de reproducción de X" siguen
+  yendo por `/search` y se ocultan hasta que vuelva la cuota.
 - **Las carátulas de playlist son WebP y vienen con `width`/`height` a `null`** (las de
   canción son JPEG con 640/300/64 bien puestos). Flutter decodifica WebP sin problema;
   lo que importa es que `pickImage` caiga en la única imagen disponible y no la descarte.
@@ -378,7 +393,10 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   `PlayerController.restaurar()` lo pinta como pausado. Mientras esa reproducción esté
   pendiente, el sondeo **ignora los 204** en vez de dejarlos vaciar el estado, y play,
   siguiente y anterior mandan un `play` con contexto, `offset.uri` y `position_ms` en lugar
-  de un `play` sin cuerpo, que no reanudaría nada. Lo guarda `_recordarReproduccion()` al
+  de un `play` sin cuerpo, que no reanudaría nada. Lo mismo a mitad de sesión: si Connect
+  se queda inactivo y `GET /me/player` vuelve 204, la barra se congela en la última pista
+  (pausada) y el play la retoma; no se cae a "Nada sonando" ni arranca la primera del
+  contexto. Lo guarda `_recordarReproduccion()` al
   cambiar de canción, cada 20 s y al salir por `_quit()`.
 - **El volumen no se puede dejar en un valor por defecto.** `GET /me/player` no informa de
   volumen cuando no hay reproducción activa, así que la barra caía a un 50 fijo aunque el
@@ -636,11 +654,17 @@ por defecto).
 ### Caso aparte: "Canciones que te gustan"
 
 Es la única lista que se carga **entera** (~60 peticiones secuenciales para 3.000 canciones)
-en vez de por scroll infinito, porque el usuario la quiere completa. Lo que la mantiene
-barata no es cargar menos, sino **una ventana deslizante de carátulas**: solo las 25 filas
-por encima y 25 por debajo del centro de la pantalla piden imagen (`TrackTile.showArt`), así
-que da igual que haya 3.000 filas — nunca hay más de ~50 imágenes vivas, ni una avalancha de
-descargas al pasar el scroll rápido. Las 3.000 pistas en memoria cuestan poco más de 1 MB.
+en vez de por scroll infinito, porque el usuario la quiere completa. Esa pasada **solo ocurre
+la primera vez** (o si pulsa refrescar): el resultado se escribe en `biblioteca.json` dentro
+de `appDataDir()`, un megabyte y pico de JSON plano, y al arrancar se lee de ahí. Un corazón
+nuevo se inserta al principio de esa lista; quitarlo la saca. El botón de refrescar sigue
+ahí por si la cuenta cambió fuera de NeoFy.
+
+Lo que la mantiene barata en pantalla no es cargar menos, sino **una ventana deslizante de
+carátulas**: solo las 25 filas por encima y 25 por debajo del centro de la pantalla piden
+imagen (`TrackTile.showArt`), así que da igual que haya 3.000 filas — nunca hay más de ~50
+imágenes vivas, ni una avalancha de descargas al pasar el scroll rápido. Las 3.000 pistas
+en memoria cuestan poco más de 1 MB.
 
 El centro visible se deduce por aritmética del scroll, lo que obliga a que la lista tenga
 `itemExtent` fijo. **Vale 64 y no es arbitrario**: es el alto de un `ListTile` `dense` de dos
@@ -654,7 +678,7 @@ cinco vivas mantendría vivas sus listas y sus imágenes). El efecto secundario 
 salir de una pantalla y volver, su `State` se ha destruido. Cualquier dato que costara
 peticiones tiene que vivir **fuera** de la pantalla o se vuelve a bajar cada vez — le pasó a
 "Canciones que te gustan", que rebajaba sus ~60 páginas en cada visita. Por eso
-`LikedStore` y `HomeStore` cuelgan de `main.dart` y sobreviven a la navegación, y las
+`LikedStore`, `ArtistasFavoritosStore` y `HomeStore` cuelgan de `main.dart` y sobreviven a la navegación, y las
 pantallas solo guardan lo suyo (el scroll, la ventana de carátulas).
 
 ## El audio que se queda mudo

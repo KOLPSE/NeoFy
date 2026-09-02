@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/tema_store.dart';
 import '../core/temas.dart';
 import '../core/temas_incluidos.dart';
+import 'texto_traducido.dart';
 
 class BotonDeTemas extends StatelessWidget {
   const BotonDeTemas({super.key, required this.temas});
@@ -28,9 +29,9 @@ class BotonDeTemas extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Tema', style: theme.textTheme.bodyMedium),
+                  T('Temas', style: theme.textTheme.bodyMedium),
                   const SizedBox(height: 2),
-                  Text(
+                  T(
                     cuantos == 0
                         ? nombre
                         : '$nombre · $cuantos de la comunidad instalado'
@@ -44,7 +45,7 @@ class BotonDeTemas extends StatelessWidget {
             const SizedBox(width: 12),
             OutlinedButton(
               onPressed: () => unawaited(mostrarSelectorDeTemas(context, temas)),
-              child: const Text('Cambiar'),
+              child: T('Cambiar'),
             ),
           ],
         );
@@ -54,7 +55,7 @@ class BotonDeTemas extends StatelessWidget {
 }
 
 Future<void> mostrarSelectorDeTemas(BuildContext context, TemaStore temas) {
-  return showDialog<void>(
+  return showDialogTraducido<void>(
     context: context,
     builder: (context) => _DialogoDeTemas(temas: temas),
   );
@@ -77,15 +78,17 @@ class _DialogoDeTemas extends StatelessWidget {
     try {
       final creada = await crearTemaDeEjemplo();
       await temas.recargar();
+      final t = await traducirTexto(context, 'Plantilla creada en ${creada.path}');
       mensajero?.showSnackBar(
         SnackBar(
-          content: Text('Plantilla creada en ${creada.path}'),
+          content: Text(t),
           action: SnackBarAction(label: 'Abrir', onPressed: _abrirLaCarpeta),
         ),
       );
     } catch (e) {
+      final t = await traducirTexto(context, 'No se pudo crear la plantilla: $e');
       mensajero?.showSnackBar(
-        SnackBar(content: Text('No se pudo crear la plantilla: $e')),
+        SnackBar(content: Text(t)),
       );
     }
   }
@@ -94,7 +97,7 @@ class _DialogoDeTemas extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('Temas'),
+      title: T('Temas'),
       content: SizedBox(
         width: 460,
         child: AnimatedBuilder(
@@ -110,14 +113,15 @@ class _DialogoDeTemas extends StatelessWidget {
                 children: [
                   _FilaDeTema(
                     nombre: 'Automático',
-                    detalle: 'Claro u oscuro según Windows o tu escritorio',
+                    detalle: 'Claro/oscuro según tu escritorio',
+                    traducir: true,
                     muestra: null,
                     elegido: temas.siguiendoAlSistema,
                     onTap: () =>
                         unawaited(temas.seleccionar(kIdTemaDelSistema)),
                   ),
                   const Divider(height: 20),
-                  Text('INCLUIDOS', style: theme.textTheme.labelSmall),
+                  T('INCLUIDOS', style: theme.textTheme.labelSmall),
                   const SizedBox(height: 6),
                   for (final tema in temasIncluidos)
                     _FilaDeTema(
@@ -131,7 +135,7 @@ class _DialogoDeTemas extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text('DE LA COMUNIDAD',
+                        child: T('DE LA COMUNIDAD',
                             style: theme.textTheme.labelSmall),
                       ),
                       IconButton(
@@ -146,7 +150,7 @@ class _DialogoDeTemas extends StatelessWidget {
                   if (deDisco.isEmpty && fallos.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
+                      child: T(
                         'Todavía no hay ninguno. Cada tema es una carpeta con '
                         'un $kNombreDelManifiesto dentro; se recargan solos al '
                         'guardar, sin cerrar NeoFy.',
@@ -194,12 +198,12 @@ class _DialogoDeTemas extends StatelessWidget {
                       OutlinedButton.icon(
                         onPressed: () => unawaited(_abrirLaCarpeta()),
                         icon: const Icon(Icons.folder_open, size: 18),
-                        label: const Text('Abrir la carpeta'),
+                        label: T('Abrir la carpeta'),
                       ),
                       OutlinedButton.icon(
                         onPressed: () => unawaited(_crearEjemplo(context)),
                         icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Crear una plantilla'),
+                        label: T('Crear una plantilla'),
                       ),
                     ],
                   ),
@@ -212,7 +216,7 @@ class _DialogoDeTemas extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cerrar'),
+          child: T('Cerrar'),
         ),
       ],
     );
@@ -227,6 +231,7 @@ class _FilaDeTema extends StatelessWidget {
     required this.elegido,
     required this.onTap,
     this.aviso,
+    this.traducir = false,
   });
 
   final String nombre;
@@ -235,6 +240,16 @@ class _FilaDeTema extends StatelessWidget {
   final bool elegido;
   final VoidCallback onTap;
   final String? aviso;
+  final bool traducir;
+
+  Widget _texto(String s, TextStyle? style, {int? maxLines}) {
+    if (traducir) {
+      return T(s,
+          style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    }
+    return Text(s,
+        style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -253,14 +268,13 @@ class _FilaDeTema extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(nombre, style: theme.textTheme.bodyMedium),
+                  _texto(nombre, theme.textTheme.bodyMedium),
                   if (detalle.isNotEmpty)
-                    Text(
+                    _texto(
                       detalle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant),
+                      maxLines: 2,
                     ),
                   if (aviso != null)
                     Text(

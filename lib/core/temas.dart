@@ -752,6 +752,46 @@ ColorScheme esquemaDeTema(Tema tema) {
   );
 }
 
+/// Feedback al pasar el ratón o pulsar, sin ripple de Material.
+WidgetStateProperty<Color?> overlayDeBotonPlano(ColorScheme esquema) =>
+    WidgetStateProperty.resolveWith((estados) {
+      if (estados.contains(WidgetState.pressed)) {
+        return esquema.primary.withValues(alpha: 0.16);
+      }
+      if (estados.contains(WidgetState.hovered) ||
+          estados.contains(WidgetState.focused)) {
+        return esquema.primary.withValues(alpha: 0.10);
+      }
+      return Colors.transparent;
+    });
+
+WidgetStateProperty<Color?> overlayDeBotonRelleno(ColorScheme esquema) =>
+    WidgetStateProperty.resolveWith((estados) {
+      if (estados.contains(WidgetState.pressed)) {
+        return esquema.onPrimary.withValues(alpha: 0.14);
+      }
+      if (estados.contains(WidgetState.hovered) ||
+          estados.contains(WidgetState.focused)) {
+        return esquema.onPrimary.withValues(alpha: 0.08);
+      }
+      return Colors.transparent;
+    });
+
+WidgetStateProperty<BorderSide?> bordeDeBotonContorneado(ColorScheme esquema) =>
+    WidgetStateProperty.resolveWith((estados) {
+      if (estados.contains(WidgetState.disabled)) {
+        return BorderSide(color: esquema.outline.withValues(alpha: 0.38));
+      }
+      if (estados.contains(WidgetState.pressed)) {
+        return BorderSide(color: esquema.primary, width: 1.5);
+      }
+      if (estados.contains(WidgetState.hovered) ||
+          estados.contains(WidgetState.focused)) {
+        return BorderSide(color: esquema.primary);
+      }
+      return BorderSide(color: esquema.outline);
+    });
+
 ThemeData construirThemeData(Tema tema) {
   final esquema = esquemaDeTema(tema);
   final radio = tema.radio;
@@ -786,8 +826,27 @@ ThemeData construirThemeData(Tema tema) {
 
   final transparente = tema.cristal.activo || tema.fondo.hayAlgoQuePintar;
 
+  final oscuro = tema.esOscuro;
+  final railApagado = Color.lerp(
+    esquema.surface,
+    oscuro ? Colors.white : Colors.black,
+    oscuro ? 0.38 : 0.22,
+  )!;
+  final pulgarEncendido = contrasteSobre(esquema.primary);
+  final pulgarApagado = contrasteSobre(railApagado);
+
   return base.copyWith(
     textTheme: texto,
+    splashFactory: NoSplash.splashFactory,
+    splashColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    hoverColor: esquema.primary.withValues(alpha: 0.06),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        overlayColor: overlayDeBotonPlano(esquema),
+        splashFactory: NoSplash.splashFactory,
+      ),
+    ),
     scaffoldBackgroundColor:
         transparente ? Colors.transparent : esquema.surface,
     canvasColor: transparente ? Colors.transparent : esquema.surface,
@@ -827,25 +886,73 @@ ThemeData construirThemeData(Tema tema) {
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radioBoton),
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radioBoton),
+          ),
         ),
+        overlayColor: overlayDeBotonRelleno(esquema),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radioBoton),
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radioBoton),
+          ),
         ),
+        overlayColor: overlayDeBotonPlano(esquema),
+        side: bordeDeBotonContorneado(esquema),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radioBoton),
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radioBoton),
+          ),
         ),
+        overlayColor: overlayDeBotonPlano(esquema),
       ),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((estados) {
+        if (estados.contains(WidgetState.selected)) return pulgarEncendido;
+        if (estados.contains(WidgetState.disabled)) {
+          return Color.lerp(pulgarApagado, railApagado, 0.45)!;
+        }
+        return pulgarApagado;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((estados) {
+        if (estados.contains(WidgetState.selected)) {
+          return estados.contains(WidgetState.disabled)
+              ? Color.lerp(esquema.primary, esquema.surface, 0.45)!
+              : esquema.primary;
+        }
+        if (estados.contains(WidgetState.disabled)) {
+          return Color.lerp(
+            esquema.surface,
+            oscuro ? Colors.white : Colors.black,
+            oscuro ? 0.18 : 0.10,
+          )!;
+        }
+        return railApagado;
+      }),
+      trackOutlineColor: WidgetStateProperty.resolveWith((estados) {
+        if (estados.contains(WidgetState.selected)) return Colors.transparent;
+        return Color.lerp(esquema.surfaceContainerHigh, esquema.onSurface, 0.40)!;
+      }),
+      overlayColor: WidgetStateProperty.resolveWith((estados) {
+        if (estados.contains(WidgetState.pressed)) {
+          return esquema.primary.withValues(alpha: 0.18);
+        }
+        if (estados.contains(WidgetState.hovered) ||
+            estados.contains(WidgetState.focused)) {
+          return esquema.primary.withValues(alpha: 0.10);
+        }
+        return Colors.transparent;
+      }),
     ),
     sliderTheme: base.sliderTheme.copyWith(
       activeTrackColor: esquema.primary,

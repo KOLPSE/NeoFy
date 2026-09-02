@@ -8,9 +8,15 @@ import 'package:path/path.dart' as p;
 
 import 'models.dart';
 import 'procesos.dart';
+import 'idiomas_spotify.dart';
 
 class MetadataSidecar extends ChangeNotifier {
   static const int puerto = 8900;
+
+  MetadataSidecar({String Function()? localeEfectivo})
+      : _localeEfectivo = localeEfectivo ?? localeSpotifyDesdePc;
+
+  final String Function() _localeEfectivo;
 
   Process? _proc;
   bool _ready = false;
@@ -26,18 +32,17 @@ class MetadataSidecar extends ChangeNotifier {
 
   static File? findBinary() {
     final nombre = 'metadata-sidecar$sufijoEjecutable';
-    final candidates = <String>[
-      p.join(p.dirname(Platform.resolvedExecutable), nombre),
-      p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target', 'release',
-          nombre),
-      p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target', 'debug',
-          nombre),
-    ];
-    for (final c in candidates) {
-      final f = File(c);
-      if (f.existsSync()) return f;
-    }
-    return null;
+    final candidatos = <File>[
+      File(p.join(p.dirname(Platform.resolvedExecutable), nombre)),
+      File(p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target',
+          'release', nombre)),
+      File(p.join(Directory.current.path, 'tool', 'metadata-sidecar', 'target',
+          'debug', nombre)),
+    ].where((f) => f.existsSync()).toList();
+    if (candidatos.isEmpty) return null;
+    candidatos.sort(
+        (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    return candidatos.first;
   }
 
   Future<void> start() async {
@@ -91,16 +96,10 @@ class MetadataSidecar extends ChangeNotifier {
   Future<ApiPage<Track>> playlistItems(String id, {int offset = 0, int limit = 50}) async {
     if (!_ready) throw StateError('El sidecar de metadatos no está listo.');
 
-    final uri = Uri.http('127.0.0.1:$puerto', '/playlist/$id', {
+    final j = await _getJson('/playlist/${idDeSpotify(id)}', query: {
       'offset': '$offset',
       'limit': '$limit',
     });
-    final res = await _http.get(uri).timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) {
-      throw Exception('El sidecar devolvió ${res.statusCode}: ${res.body}');
-    }
-
-    final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     final total = (j['total'] as num?)?.toInt() ?? 0;
     final items = ((j['items'] as List<dynamic>?) ?? const [])
         .map((t) => Track.fromJson(t as Map<String, dynamic>?))
@@ -113,6 +112,37 @@ class MetadataSidecar extends ChangeNotifier {
       hasMore: offset + consumidas < total,
       rawCount: consumidas,
     );
+  }
+
+  Future<PerfilDeArtista> artista(String id) async {
+    final locale = _localeEfectivo();
+    final j = await _getJson('/artist/${idDeSpotify(id)}', query: {
+      'locale': locale,
+    });
+    return PerfilDeArtista.desdeJson(j, locale: locale);
+  }
+
+  Future<List<Track>> albumTracks(String id) async {
+    final j = await _getJson('/album/${idDeSpotify(id)}');
+    final tracks = j['tracks'] as Map<String, dynamic>?;
+    final raw = (tracks?['items'] as List<dynamic>?) ?? const [];
+    return [
+      for (final t in raw) Track.fromJson(t as Map<String, dynamic>?)
+    ].whereType<Track>().toList();
+  }
+
+  Future<Map<String, dynamic>> _getJson(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    if (!_ready) throw StateError('El sidecar de metadatos no está listo.');
+
+    final uri = Uri.http('127.0.0.1:$puerto', path, query);
+    final res = await _http.get(uri).timeout(const Duration(seconds: 60));
+    if (res.statusCode != 200) {
+      throw Exception('El sidecar devolvió ${res.statusCode}: ${res.body}');
+    }
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
   Future<void> stop() async {
@@ -132,4 +162,48 @@ class MetadataSidecar extends ChangeNotifier {
     unawaited(stop());
     super.dispose();
   }
+}
+
+class PerfilDeArtista {
+  const PerfilDeArtista({
+    required this.artista,
+    this.top = const [],
+    this.albumes = const [],
+    this.singles = const [],
+    this.apareceEn = const [],
+    this.relacionados = const [],
+  });
+
+  final Artist artista;
+  final List<Track> top;
+  final List<Album> albumes;
+  final List<Album> singles;
+  final List<Album> apareceEn;
+  final List<Artist> relacionados;
+
+  static PerfilDeArtista desdeJson(Map<String, dynamic> j, {String? locale}) {
+    final artista = Artist.fromJson(j, locale: locale) ??
+        Artist(id: '', uri: '', name: '', art: null);
+    return PerfilDeArtista(
+      artista: artista,
+      top: _pistas(j['top_tracks']),
+      albumes: _albumes(j['albums']),
+      singles: _albumes(j['singles']),
+      apareceEn: _albumes(j['appears_on']),
+      relacionados: [
+        for (final raw in (j['related'] as List<dynamic>?) ?? const [])
+          Artist.fromJson(raw as Map<String, dynamic>?)
+      ].whereType<Artist>().where((a) => a.id.isNotEmpty).toList(),
+    );
+  }
+
+  static List<Track> _pistas(Object? raw) => [
+        for (final t in (raw as List<dynamic>?) ?? const [])
+          Track.fromJson(t as Map<String, dynamic>?)
+      ].whereType<Track>().toList();
+
+  static List<Album> _albumes(Object? raw) => [
+        for (final a in (raw as List<dynamic>?) ?? const [])
+          Album.fromJson(a as Map<String, dynamic>?)
+      ].whereType<Album>().toList();
 }

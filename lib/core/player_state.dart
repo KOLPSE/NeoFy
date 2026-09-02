@@ -76,6 +76,10 @@ class PlayerController extends ChangeNotifier {
   int? _pendingSeekMs;
   DateTime _pendingSeekAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  String? _uriDeArranque;
+  DateTime? _arranqueLocal;
+  bool _yaCorregiArranque = false;
+
   UltimaReproduccion? _porRetomar;
 
   bool get hayAlgoPorRetomar => _porRetomar != null;
@@ -198,15 +202,23 @@ class PlayerController extends ChangeNotifier {
       if (_disposed) return;
       var next = pb ?? Playback.empty;
 
-      if (_porRetomar != null) {
-        if (next.track == null) {
-          lastError = null;
-          return;
+      if (next.track == null) {
+        if (state.track != null) {
+          _porRetomar = paraRecordar();
+          if (state.isPlaying) {
+            state = state.copyWith(isPlaying: false);
+            notifyListeners();
+          }
         }
-        _porRetomar = null;
+        lastError = null;
+        return;
       }
+      _porRetomar = null;
 
-      if (next.track?.uri != state.track?.uri) _pendingSeekMs = null;
+      if (next.track?.uri != state.track?.uri) {
+        _pendingSeekMs = null;
+        _yaCorregiArranque = false;
+      }
 
       next = _conservarVolumenPendiente(next);
       final aceptarProgreso = _aceptarProgresoDelServidor(next);
@@ -245,6 +257,20 @@ class PlayerController extends ChangeNotifier {
   }
 
   bool _aceptarProgresoDelServidor(Playback next) {
+    if (_esRearranqueEspurio(next)) {
+      final ms = _progresoLocalDe(next);
+      if (next.track?.uri != state.track?.uri) {
+        progressMs.value = ms;
+        _lastSyncedProgress = ms;
+        _lastSync = DateTime.now();
+      }
+      if (!_yaCorregiArranque) {
+        _yaCorregiArranque = true;
+        unawaited(seek(ms));
+      }
+      return false;
+    }
+
     final objetivo = _pendingSeekMs;
     if (objetivo == null) return true;
 
@@ -259,6 +285,32 @@ class PlayerController extends ChangeNotifier {
       return true;
     }
     return false;
+  }
+
+  int _progresoLocalDe(Playback next) {
+    if (next.track?.uri == state.track?.uri) return progressMs.value;
+    if (next.track?.uri == _uriDeArranque && _arranqueLocal != null) {
+      return DateTime.now().difference(_arranqueLocal!).inMilliseconds;
+    }
+    return 0;
+  }
+
+  bool _esRearranqueEspurio(Playback next) {
+    if (_pendingSeekMs != null) return false;
+    if (!next.isPlaying) return false;
+    final uri = next.track?.uri;
+    if (uri == null || uri.isEmpty) return false;
+
+    final local = _progresoLocalDe(next);
+    final duracion = next.track?.durationMs ?? 0;
+    if (duracion > 0 && local > duracion - 2000) return false;
+    return local >= 2000 && local <= 12000 && next.progressMs < 1500;
+  }
+
+  void _marcarArranque(String? uri) {
+    _uriDeArranque = uri;
+    _arranqueLocal = DateTime.now();
+    _yaCorregiArranque = false;
   }
 
   void _tick() {
@@ -835,6 +887,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> playContext(String contextUri, {int? offset}) {
     _mandoDelUsuario = true;
     _porRetomar = null;
+    _marcarArranque(null);
     if (libre != null) return libre!.playContext(contextUri, offset: offset);
     _aleatorioInteligente = false;
     _lastContextUri = contextUri;
@@ -854,6 +907,9 @@ class PlayerController extends ChangeNotifier {
   }) {
     _mandoDelUsuario = true;
     _porRetomar = null;
+    _marcarArranque(
+      uris.isEmpty ? null : uris[desde.clamp(0, uris.length - 1)],
+    );
     if (libre != null) return libre!.playLista(uris, desde: desde);
     if (!esInteligente) {
       _aleatorioInteligente = false;
@@ -871,6 +927,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> playTrack(String uri) {
     _mandoDelUsuario = true;
     _porRetomar = null;
+    _marcarArranque(uri);
     if (libre != null) return libre!.playTrack(uri);
     _aleatorioInteligente = false;
     _lastContextUri = null;

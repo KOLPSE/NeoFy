@@ -6,6 +6,7 @@ import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import 'texto_traducido.dart';
 import 'track_tile.dart';
 
 class QueueScreen extends StatefulWidget {
@@ -83,7 +84,7 @@ class _QueueScreenState extends State<QueueScreen> {
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
           child: Row(
             children: [
-              Text('Cola', style: theme.textTheme.headlineSmall),
+              T('Cola', style: theme.textTheme.headlineSmall),
               const Spacer(),
               IconButton(
                 tooltip: 'Actualizar',
@@ -96,7 +97,7 @@ class _QueueScreenState extends State<QueueScreen> {
         if (current != null) ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('SONANDO AHORA',
+            child: T('SONANDO AHORA',
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           ),
@@ -109,7 +110,7 @@ class _QueueScreenState extends State<QueueScreen> {
           const Divider(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('A CONTINUACIÓN',
+            child: T('A CONTINUACIÓN',
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           ),
@@ -127,7 +128,7 @@ class _QueueScreenState extends State<QueueScreen> {
                     )
                   : _queue.isEmpty
                       ? Center(
-                          child: Text('La cola está vacía.',
+                          child: T('La cola está vacía.',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant)),
                         )

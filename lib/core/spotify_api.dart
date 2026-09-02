@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'auth.dart';
+import 'idiomas_spotify.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -20,10 +21,16 @@ class ApiException implements Exception {
 }
 
 class SpotifyApi {
-  SpotifyApi(this.auth, {http.Client? cliente}) : _http = cliente ?? http.Client();
+  SpotifyApi(
+    this.auth, {
+    http.Client? cliente,
+    String Function()? localeEfectivo,
+  })  : _http = cliente ?? http.Client(),
+        _localeEfectivo = localeEfectivo ?? localeSpotifyDesdePc;
 
   final SpotifyAuth auth;
   final http.Client _http;
+  final String Function() _localeEfectivo;
 
   static const _base = 'api.spotify.com';
 
@@ -34,8 +41,12 @@ class SpotifyApi {
   final Map<String, DateTime> _penalizadas = {};
 
   static String _familia(String path) {
-    final tramos = path.split('/').where((t) => t.isNotEmpty).take(2);
-    return '/${tramos.join('/')}';
+    final tramos = path.split('/').where((t) => t.isNotEmpty).toList();
+    if (tramos.isEmpty) return '/';
+    if (tramos.first == 'me' && tramos.length >= 2) {
+      return '/${tramos.take(2).join('/')}';
+    }
+    return '/${tramos.first}';
   }
 
   Duration? esperaDe(String path) {
@@ -81,7 +92,9 @@ class SpotifyApi {
     final token = await auth.accessToken();
     final uri = Uri.https(_base, '/v1$path', query);
     final req = http.Request(method, uri)
-      ..headers['Authorization'] = 'Bearer $token';
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept-Language'] =
+          localeParaAcceptLanguage(_localeEfectivo());
     if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
@@ -361,6 +374,57 @@ class SpotifyApi {
         .toList();
   }
 
+  Future<Artist> artist(String id) async {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    final j = await _request('GET', '/artists/$artistId') as Map<String, dynamic>;
+    return Artist.fromJson(j) ??
+        Artist(id: artistId, uri: 'spotify:artist:$artistId', name: '', art: null);
+  }
+
+  Future<List<Album>> artistAlbums(
+    String id, {
+    String includeGroups = 'album',
+    int max = 20,
+  }) async {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    final salida = <Album>[];
+    var offset = 0;
+    while (salida.length < max) {
+      final j = await _listaConTope('/artists/$artistId/albums', 10, {
+        'include_groups': includeGroups,
+        'offset': '$offset',
+      });
+      final crudos = (j['items'] as List<dynamic>?) ?? const [];
+      if (crudos.isEmpty) break;
+      for (final raw in crudos) {
+        if (raw is! Map<String, dynamic>) continue;
+        final album = Album.fromJson(raw);
+        if (album == null || album.id.isEmpty) continue;
+        if (salida.any((a) => a.id == album.id)) continue;
+        salida.add(album);
+        if (salida.length >= max) break;
+      }
+      offset += crudos.length;
+      if (j['next'] == null) break;
+    }
+    return salida;
+  }
+
+  Future<List<Artist>> relatedArtists(String id) async {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    try {
+      final j = await _request('GET', '/artists/$artistId/related-artists')
+          as Map<String, dynamic>;
+      return ((j['artists'] as List<dynamic>?) ?? const [])
+          .map((a) => Artist.fromJson(a as Map<String, dynamic>?))
+          .whereType<Artist>()
+          .toList();
+    } on ApiException catch (e) {
+      if (e.isForbidden || e.status == 404) return const [];
+      rethrow;
+    }
+  }
+
   Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async {
     try {
       final j = await _request('GET', '/artists/$id/top-tracks',
@@ -484,6 +548,7 @@ class SpotifyApi {
       'type': types.join(','),
       'limit': '${limit.clamp(1, 10)}',
       'offset': '$offset',
+      'locale': _localeEfectivo(),
     }) as Map<String, dynamic>;
 
     ApiPage<Track> trackPage = const ApiPage.empty();
@@ -516,9 +581,26 @@ class SpotifyApi {
       );
     }
 
+    ApiPage<Artist> artistPage = const ApiPage.empty();
+    if (j.containsKey('artists') && j['artists'] is Map<String, dynamic>) {
+      final artists = j['artists'] as Map<String, dynamic>;
+      final raw = (artists['items'] as List<dynamic>?) ?? const [];
+      artistPage = ApiPage(
+        items: raw
+            .map((a) => Artist.fromJson(a as Map<String, dynamic>?))
+            .whereType<Artist>()
+            .where((a) => a.id.isNotEmpty)
+            .toList(),
+        hasMore: artists['next'] != null,
+        rawCount: raw.length,
+        total: (artists['total'] as num?)?.toInt(),
+      );
+    }
+
     return SearchResults(
       tracks: trackPage,
       playlists: playlistPage,
+      artists: artistPage,
     );
   }
 

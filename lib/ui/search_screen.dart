@@ -3,16 +3,20 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../core/artistas_favoritos_store.dart';
 import '../core/followed_playlists_store.dart';
 import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import 'artist_favorite_button.dart';
 import 'playlist_follow_button.dart';
+import 'texto_traducido.dart';
 import 'track_tile.dart';
 
 enum SearchFilter {
   todo('Todo'),
+  artistas('Artistas'),
   canciones('Canciones'),
   playlists('Playlists'),
   masEscuchadas('Más escuchadas');
@@ -29,7 +33,9 @@ class SearchScreen extends StatefulWidget {
     required this.playlists,
     required this.likes,
     required this.followed,
+    required this.favoritos,
     this.onAbrirPlaylist,
+    this.onAbrirArtista,
     this.onCambioSeguimiento,
     this.autofocus = true,
   });
@@ -39,7 +45,9 @@ class SearchScreen extends StatefulWidget {
   final List<Playlist> playlists;
   final LikedStore likes;
   final FollowedPlaylistsStore followed;
+  final ArtistasFavoritosStore favoritos;
   final void Function(Playlist)? onAbrirPlaylist;
+  final void Function(Artist)? onAbrirArtista;
   final void Function(Playlist, bool)? onCambioSeguimiento;
   final bool autofocus;
 
@@ -52,6 +60,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final _scroll = ScrollController();
   final List<Track> _tracks = [];
   final List<Playlist> _playlists = [];
+  final List<Artist> _artistas = [];
 
   SearchFilter _filter = SearchFilter.todo;
   Timer? _debounce;
@@ -70,15 +79,20 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  void _reiniciarResultados() {
+    _tracks.clear();
+    _playlists.clear();
+    _artistas.clear();
+    _offset = 0;
+    _hasMore = _query.isNotEmpty;
+    _error = null;
+  }
+
   void _onChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
       _query = value.trim();
-      _tracks.clear();
-      _playlists.clear();
-      _offset = 0;
-      _hasMore = _query.isNotEmpty;
-      _error = null;
+      _reiniciarResultados();
       unawaited(_search());
     });
   }
@@ -88,11 +102,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce?.cancel();
     setState(() {
       _filter = nuevo;
-      _tracks.clear();
-      _playlists.clear();
-      _offset = 0;
-      _hasMore = _query.isNotEmpty;
-      _error = null;
+      _reiniciarResultados();
     });
     if (_query.isNotEmpty) {
       unawaited(_search());
@@ -107,7 +117,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final List<String> types;
     switch (_filter) {
       case SearchFilter.todo:
-        types = const ['track', 'playlist'];
+        types = const ['artist', 'track', 'playlist'];
+      case SearchFilter.artistas:
+        types = const ['artist'];
       case SearchFilter.canciones:
       case SearchFilter.masEscuchadas:
         types = const ['track'];
@@ -116,16 +128,26 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     try {
-      final res = await widget.api.search(_query, types: types, limit: 10, offset: _offset);
+      final res =
+          await widget.api.search(_query, types: types, limit: 10, offset: _offset);
       if (!mounted || currentId != _searchId) return;
 
       setState(() {
         switch (_filter) {
           case SearchFilter.todo:
+            _artistas.addAll(res.artists.items);
             _tracks.addAll(res.tracks.items);
             _playlists.addAll(res.playlists.items);
-            _offset += max(res.tracks.rawCount, res.playlists.rawCount);
-            _hasMore = res.tracks.hasMore || res.playlists.hasMore;
+            _offset += max(
+              max(res.artists.rawCount, res.tracks.rawCount),
+              res.playlists.rawCount,
+            );
+            _hasMore =
+                res.artists.hasMore || res.tracks.hasMore || res.playlists.hasMore;
+          case SearchFilter.artistas:
+            _artistas.addAll(res.artists.items);
+            _offset += res.artists.rawCount;
+            _hasMore = res.artists.hasMore;
           case SearchFilter.canciones:
             _tracks.addAll(res.tracks.items);
             _offset += res.tracks.rawCount;
@@ -155,8 +177,12 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+    unawaited(() async {
+      final t = await traducirTexto(context, message);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+    }());
   }
 
   Future<void> _addToPlaylist(Track track) async {
@@ -170,7 +196,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  bool get _vacio => _tracks.isEmpty && _playlists.isEmpty;
+  bool get _vacio => _tracks.isEmpty && _playlists.isEmpty && _artistas.isEmpty;
 
   int _calcularTotalItems() {
     final boton = _hasMore ? 1 : 0;
@@ -180,10 +206,19 @@ class _SearchScreenState extends State<SearchScreen> {
         return _tracks.length + boton;
       case SearchFilter.playlists:
         return _playlists.length + boton;
+      case SearchFilter.artistas:
+        return _artistas.length + boton;
       case SearchFilter.todo:
+        final headAr = _artistas.isNotEmpty ? 1 : 0;
         final headPl = _playlists.isNotEmpty ? 1 : 0;
-        final headTr = (_tracks.isNotEmpty && _playlists.isNotEmpty) ? 1 : 0;
-        return headPl + _playlists.length + headTr + _tracks.length + boton;
+        final headTr = _tracks.isNotEmpty ? 1 : 0;
+        return headAr +
+            _artistas.length +
+            headPl +
+            _playlists.length +
+            headTr +
+            _tracks.length +
+            boton;
     }
   }
 
@@ -198,6 +233,9 @@ class _SearchScreenState extends State<SearchScreen> {
       case SearchFilter.playlists:
         if (i >= _playlists.length) return _botonCargarMas();
         return _tilePlaylist(_playlists[i]);
+      case SearchFilter.artistas:
+        if (i >= _artistas.length) return _botonCargarMas();
+        return _tileArtista(_artistas[i]);
       case SearchFilter.todo:
         return _construirItemTodo(context, i, currentUri);
     }
@@ -205,6 +243,15 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _construirItemTodo(BuildContext context, int i, String? currentUri) {
     var idx = i;
+    if (_artistas.isNotEmpty) {
+      if (idx == 0) return const _HeaderSeccion('Artistas');
+      idx -= 1;
+      if (idx < _artistas.length) {
+        return _tileArtista(_artistas[idx]);
+      }
+      idx -= _artistas.length;
+    }
+
     if (_playlists.isNotEmpty) {
       if (idx == 0) return const _HeaderSeccion('Playlists');
       idx -= 1;
@@ -215,10 +262,8 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     if (_tracks.isNotEmpty) {
-      if (_playlists.isNotEmpty) {
-        if (idx == 0) return const _HeaderSeccion('Canciones');
-        idx -= 1;
-      }
+      if (idx == 0) return const _HeaderSeccion('Canciones');
+      idx -= 1;
       if (idx < _tracks.length) {
         return _tileTrack(_tracks[idx], idx, currentUri);
       }
@@ -272,6 +317,28 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _tileArtista(Artist a) {
+    return ArtistSearchTile(
+      artista: a,
+      onTap: () => widget.onAbrirArtista?.call(a),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ArtistFavoriteButton(
+            favoritos: widget.favoritos,
+            artista: a,
+            size: 18,
+          ),
+          Icon(
+            Icons.chevron_right,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _botonCargarMas() {
     return Padding(
       padding: const EdgeInsets.all(12),
@@ -284,7 +351,7 @@ class _SearchScreenState extends State<SearchScreen> {
               )
             : TextButton(
                 onPressed: _search,
-                child: const Text('Ver más resultados'),
+                child: T('Ver más resultados'),
               ),
       ),
     );
@@ -293,11 +360,11 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _cuerpoResultados(ThemeData theme) {
     if (_vacio) {
       return Center(
-        child: Text(
+        child: T(
           _loading
               ? 'Buscando…'
               : _query.isEmpty
-                  ? 'Escribe para buscar en Spotify.'
+                  ? 'Escribe para buscar en NeoFy.'
                   : 'Sin resultados.',
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -332,7 +399,7 @@ class _SearchScreenState extends State<SearchScreen> {
             autofocus: widget.autofocus,
             onChanged: _onChanged,
             decoration: InputDecoration(
-              hintText: 'Buscar canciones, playlists…',
+              hintText: 'Buscar artistas, canciones, playlists…',
               prefixIcon: const Icon(Icons.search),
               border: const OutlineInputBorder(),
               isDense: true,
@@ -342,14 +409,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _controller.clear();
-                        setState(() {
-                          _tracks.clear();
-                          _playlists.clear();
-                          _query = '';
-                          _offset = 0;
-                          _hasMore = false;
-                          _error = null;
-                        });
+                        setState(_reiniciarResultados);
+                        _query = '';
                       },
                     ),
             ),
@@ -364,7 +425,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text(filter.label),
+                    label: T(filter.label),
                     selected: _filter == filter,
                     onSelected: (selected) {
                       if (selected && _filter != filter) {
@@ -400,7 +461,7 @@ class _HeaderSeccion extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
+      child: T(
         titulo,
         style: theme.textTheme.titleSmall?.copyWith(
           color: theme.colorScheme.primary,

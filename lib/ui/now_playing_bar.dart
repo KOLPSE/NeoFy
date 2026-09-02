@@ -14,6 +14,7 @@ import 'like_button.dart';
 import 'linea_de_artistas.dart';
 import 'onda_de_progreso.dart';
 import 'titulo_desplazable.dart';
+import 'texto_traducido.dart';
 
 String formatMs(int ms) {
   final total = (ms / 1000).round();
@@ -47,6 +48,8 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
 
   double? _dragVolume;
 
+  bool _cuotaIgnorada = false;
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -55,7 +58,10 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
         final theme = Theme.of(context);
         final state = widget.player.state;
         final track = state.track;
-        final status = _statusMessage();
+        final cuota = widget.player.api.avisoDeCuota;
+        if (cuota == null) _cuotaIgnorada = false;
+        final status = _statusMessage(cuota);
+        final sePuedeIgnorar = cuota != null && status?.mensaje == cuota;
 
         return Material(
           color: EstiloNeoFy.de(context).hayCristal
@@ -64,7 +70,14 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (status != null) _StatusStrip(message: status),
+              if (status != null)
+                _StatusStrip(
+                  message: status.mensaje,
+                  traducir: status.traducir,
+                  onIgnorar: sePuedeIgnorar
+                      ? () => setState(() => _cuotaIgnorada = true)
+                      : null,
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
@@ -85,11 +98,19 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Flexible(
-                                child: TituloDesplazable(
-                                  texto: track?.name ?? 'Nada sonando',
-                                  estilo: theme.textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
+                                child: track == null
+                                    ? T(
+                                        'Nada sonando',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                      )
+                                    : TituloDesplazable(
+                                        texto: track.name,
+                                        estilo: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                      ),
                               ),
                               if (widget.likes != null &&
                                   track != null &&
@@ -98,6 +119,7 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                                 LikeButton(
                                   likes: widget.likes!,
                                   uri: track.uri,
+                                  pista: track,
                                   size: 20,
                                   caja: 24,
                                 ),
@@ -286,49 +308,90 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     );
   }
 
-  String? _statusMessage() {
-    final cuota = widget.player.api.avisoDeCuota;
-    if (cuota != null) return cuota;
+  _MensajeDeEstado? _statusMessage(String? cuota) {
+    if (cuota != null && !_cuotaIgnorada) {
+      return _MensajeDeEstado(cuota, traducir: true);
+    }
     if (widget.player.premiumChecked && !widget.player.isPremium) {
       final libre = widget.player.libre;
       if (libre != null && !libre.tieneSesionYt) {
-        return 'Sin Premium el audio lo pone YouTube Music: conéctalo en '
-            'Ajustes para que suene la música.';
+        return const _MensajeDeEstado(
+          'Sin Premium el audio suena desde YouTube Music. Conéctalo en Ajustes',
+        );
       }
-      return 'Cuenta sin Premium: el audio lo pone YouTube.';
+      return const _MensajeDeEstado(
+        'Cuenta sin Premium: el audio llega desde YouTube Music.',
+      );
     }
     if (widget.player.libre == null) {
       if (widget.librespot.status == LibrespotStatus.failed) {
-        return widget.librespot.lastError ?? 'El reproductor no arrancó.';
+        final err = widget.librespot.lastError;
+        if (err != null) return _MensajeDeEstado(err, traducir: false);
+        return const _MensajeDeEstado('El reproductor no arrancó.');
       }
       if (widget.player.ourDeviceId == null) {
-        return 'Buscando el reproductor local…';
+        return const _MensajeDeEstado('Buscando el reproductor local…');
       }
     }
     final err = widget.player.lastError;
-    if (err != null) return err;
+    if (err != null && !_esAvisoDeCuota(err)) {
+      return _MensajeDeEstado(err, traducir: false);
+    }
     return null;
   }
 }
 
+class _MensajeDeEstado {
+  const _MensajeDeEstado(this.mensaje, {this.traducir = true});
+
+  final String mensaje;
+  final bool traducir;
+}
+
+bool _esAvisoDeCuota(String mensaje) => mensaje.contains('agotado la cuota');
+
 class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({required this.message});
+  const _StatusStrip({
+    required this.message,
+    required this.traducir,
+    this.onIgnorar,
+  });
 
   final String message;
+  final bool traducir;
+  final VoidCallback? onIgnorar;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final estilo = theme.textTheme.bodySmall
+        ?.copyWith(color: theme.colorScheme.onErrorContainer);
+    final texto = traducir
+        ? T(message,
+            style: estilo, maxLines: 2, overflow: TextOverflow.ellipsis)
+        : Text(message,
+            style: estilo, maxLines: 2, overflow: TextOverflow.ellipsis);
     return Container(
       width: double.infinity,
       color: theme.colorScheme.errorContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Text(
-        message,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onErrorContainer),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+      padding: EdgeInsets.fromLTRB(16, 2, onIgnorar == null ? 16 : 4, 2),
+      child: Row(
+        children: [
+          Expanded(child: texto),
+          if (onIgnorar != null)
+            IconButton(
+              tooltip: 'Ignorar',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              icon: Icon(
+                Icons.close,
+                size: 16,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              onPressed: onIgnorar,
+            ),
+        ],
       ),
     );
   }

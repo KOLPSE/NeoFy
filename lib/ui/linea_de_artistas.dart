@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -84,22 +86,46 @@ class _LineaDeArtistasState extends State<LineaDeArtistas>
 
     return LayoutBuilder(
       builder: (context, restricciones) {
-        final nombres = [
-          for (final a in widget.artistas) a.name,
-        ].join(', ');
-        final medidor = TextPainter(
-          text: TextSpan(text: nombres, style: estilo),
-          maxLines: 1,
-          textDirection: Directionality.of(context),
-        )..layout();
+        final direccion = Directionality.of(context);
+
+        // Se mide cada tramo por separado porque así lo pinta _fila: si se
+        // midiera la línea entera como un solo texto, el ancho real de la Row
+        // (nombre + ", " + nombre…) sale unos píxeles mayor y desborda cuando
+        // hay muchos artistas.
+        (double ancho, double alto) medir(String texto) {
+          final medidor = TextPainter(
+            text: TextSpan(text: texto, style: estilo),
+            textDirection: direccion,
+          )..layout();
+          final medida = (medidor.width, medidor.height);
+          medidor.dispose();
+          return medida;
+        }
+        // La altura también sale de los nombres reales: uno con acentos u otro
+        // alfabeto puede levantar métricas de fuente de reserva más altas que
+        // las de una muestra cualquiera, y si el hueco se queda corto el
+        // ClipRect corta el renglón.
+        var anchoDelTexto = 0.0;
+        var altoDelTexto = 0.0;
+        for (var i = 0; i < widget.artistas.length; i++) {
+          if (i > 0) {
+            final sep = medir(', ');
+            anchoDelTexto += sep.$1;
+            altoDelTexto = math.max(altoDelTexto, sep.$2);
+          }
+          final nombre = medir(widget.artistas[i].name);
+          anchoDelTexto += nombre.$1;
+          altoDelTexto = math.max(altoDelTexto, nombre.$2);
+        }
         final hueco = restricciones.maxWidth;
-        final anchoDelTexto = medidor.width;
-        final altoDelTexto = medidor.height;
-        medidor.dispose();
         final recorrido = anchoDelTexto - hueco;
 
         if (recorrido <= 0.5) {
-          return _fila(estilo);
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: _fila(estilo),
+          );
         }
 
         return MouseRegion(

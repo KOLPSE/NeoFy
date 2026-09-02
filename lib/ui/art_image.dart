@@ -12,7 +12,9 @@ class ArtImage extends StatefulWidget {
     required this.url,
     this.urlGrande,
     required this.size,
+    this.ancho,
     this.radius,
+    this.fit = BoxFit.cover,
   });
 
   final String? url;
@@ -21,7 +23,11 @@ class ArtImage extends StatefulWidget {
 
   final double size;
 
+  final double? ancho;
+
   final double? radius;
+
+  final BoxFit fit;
 
   static const int _escalonPequeno = 64;
 
@@ -34,7 +40,7 @@ class _ArtImageState extends State<ArtImage> {
   String? _elegida;
 
   String? _urlPara(double dpr) {
-    final pixeles = widget.size * dpr;
+    final pixeles = (widget.ancho ?? widget.size) * dpr;
     if (pixeles <= ArtImage._escalonPequeno) return widget.url ?? widget.urlGrande;
     return widget.urlGrande ?? widget.url;
   }
@@ -50,7 +56,8 @@ class _ArtImageState extends State<ArtImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url ||
         oldWidget.urlGrande != widget.urlGrande ||
-        oldWidget.size != widget.size) {
+        oldWidget.size != widget.size ||
+        oldWidget.ancho != widget.ancho) {
       _resolve();
     }
   }
@@ -88,7 +95,11 @@ class _ArtImageState extends State<ArtImage> {
   @override
   Widget build(BuildContext context) {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
-    final target = (widget.size * dpr).round();
+    final ancho = widget.ancho ?? widget.size;
+    final alto = widget.size;
+    final cacheW = (ancho * dpr).round().clamp(1, 1920);
+    final cacheH = (alto * dpr).round().clamp(1, 1080);
+    final cuadrada = (ancho - alto).abs() < 0.5;
 
     final radio = widget.radius ??
         EstiloNeoFy.de(context).radioDeCaratula(widget.size);
@@ -96,8 +107,8 @@ class _ArtImageState extends State<ArtImage> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radio),
       child: SizedBox(
-        width: widget.size,
-        height: widget.size,
+        width: ancho,
+        height: alto,
         child: _future == null
             ? _placeholder(context)
             : FutureBuilder<File?>(
@@ -107,11 +118,11 @@ class _ArtImageState extends State<ArtImage> {
                   if (fichero == null) return _placeholder(context);
                   return Image.file(
                     fichero,
-                    width: widget.size,
-                    height: widget.size,
-                    fit: BoxFit.cover,
-                    cacheWidth: target,
-                    cacheHeight: target,
+                    width: ancho,
+                    height: alto,
+                    fit: widget.fit,
+                    cacheWidth: cacheW,
+                    cacheHeight: cuadrada ? cacheH : null,
                     gaplessPlayback: true,
                     errorBuilder: (context, error, stack) {
                       final url = widget.url;

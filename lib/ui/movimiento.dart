@@ -110,6 +110,69 @@ const Curve kCurvaDesplegable = Cubic(0.2, 0.0, 0.0, 1.0);
 
 const Duration kDuracionDesplegable = Duration(milliseconds: 300);
 
+class EntradaDeLista extends StatefulWidget {
+  const EntradaDeLista({
+    super.key,
+    required this.child,
+    this.animar = true,
+  });
+
+  final Widget child;
+  final bool animar;
+
+  @override
+  State<EntradaDeLista> createState() => _EntradaDeListaState();
+}
+
+class _EntradaDeListaState extends State<EntradaDeLista>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: kDuracionDesplegable,
+    value: widget.animar ? 0 : 1,
+  );
+  late final CurvedAnimation _alto =
+      CurvedAnimation(parent: _c, curve: kCurvaDesplegable);
+  late final CurvedAnimation _opacidad = CurvedAnimation(
+    parent: _c,
+    curve: const Interval(0, 0.7, curve: Curves.linear),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animar) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final mueve =
+            EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value;
+        _c.duration = mueve ? kDuracionDesplegable : Duration.zero;
+        _c.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _alto.dispose();
+    _opacidad.dispose();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizeTransition(
+      sizeFactor: _alto,
+      alignment: Alignment.topCenter,
+      child: FadeTransition(
+        opacity: _opacidad,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 class Plegable extends StatefulWidget {
   const Plegable({
     super.key,

@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 import 'app_config.dart';
 import 'auth.dart';
@@ -8,12 +11,18 @@ import 'models.dart';
 import 'spotify_api.dart';
 
 class LikedStore extends ChangeNotifier {
-  LikedStore({required this.api, required this.auth, this.onReauth});
+  LikedStore({
+    required this.api,
+    required this.auth,
+    this.onReauth,
+    Directory? directorio,
+  }) : _directorio = directorio ?? appDataDir();
 
   final SpotifyApi api;
   final SpotifyAuth auth;
 
   final Future<void> Function()? onReauth;
+  final Directory _directorio;
 
   static const _tamanoLote = 50;
 
@@ -33,9 +42,64 @@ class LikedStore extends ChangeNotifier {
   bool get cargandoBiblioteca => _cargandoBiblioteca;
   bool get bibliotecaCompleta => _bibliotecaCompleta;
 
+  File get _fichero => File(p.join(_directorio.path, 'biblioteca.json'));
+
+  Future<void>? _cargaDisco;
+  Timer? _guardarAplazado;
+
+  Future<void> cargarDesdeDisco() => _cargaDisco ??= _leerDisco();
+
+  Future<void> _leerDisco() async {
+    try {
+      final f = _fichero;
+      if (!await f.exists()) return;
+      final map = jsonDecode(await f.readAsString());
+      if (map is! Map<String, dynamic>) return;
+      final crudas = map['pistas'];
+      if (crudas is! List) return;
+      final pistas = <Track>[
+        for (final raw in crudas)
+          if (raw is Map<String, dynamic>) ?Track.desdeLocal(raw),
+      ];
+      if (pistas.isEmpty) return;
+      biblioteca
+        ..clear()
+        ..addAll(pistas);
+      seedSaved(pistas.map((t) => t.uri));
+      totalBiblioteca = (map['total'] as num?)?.toInt() ?? pistas.length;
+      _bibliotecaCompleta = true;
+      if (!_disposed) notifyListeners();
+    } catch (_) {
+    }
+  }
+
+  void _programarGuardado() {
+    _guardarAplazado?.cancel();
+    _guardarAplazado = Timer(const Duration(milliseconds: 400), () {
+      unawaited(_guardarEnDisco());
+    });
+  }
+
+  Future<void> _guardarEnDisco() async {
+    if (_disposed || !_bibliotecaCompleta) return;
+    try {
+      if (!await _directorio.exists()) {
+        await _directorio.create(recursive: true);
+      }
+      await _fichero.writeAsString(jsonEncode({
+        'total': totalBiblioteca ?? biblioteca.length,
+        'pistas': [for (final t in biblioteca) t.aLocal()],
+      }));
+    } catch (_) {
+    }
+  }
+
   Future<void> cargarBiblioteca({bool forzar = false}) async {
     if (_cargandoBiblioteca) return;
-    if (_bibliotecaCompleta && !forzar) return;
+    if (!forzar) {
+      await cargarDesdeDisco();
+      if (_bibliotecaCompleta) return;
+    }
     if (forzar) {
       biblioteca.clear();
       _offsetBiblioteca = 0;
@@ -55,7 +119,10 @@ class LikedStore extends ChangeNotifier {
         quedan = page.hasMore;
         if (!_disposed) notifyListeners();
       }
-      if (!quedan) _bibliotecaCompleta = true;
+      if (!quedan) {
+        _bibliotecaCompleta = true;
+        await _guardarEnDisco();
+      }
     } catch (e) {
       errorBiblioteca = '$e';
     } finally {
@@ -118,11 +185,12 @@ class LikedStore extends ChangeNotifier {
     }
   }
 
-  Future<void> toggle(String uri) async {
+  Future<void> toggle(String uri, {Track? pista}) async {
     if (!canModify) {
       throw ApiException(403, 'Falta el permiso para editar tus favoritos.');
     }
     final estaba = isSaved(uri) ?? false;
+    _actualizarBiblioteca(uri, guardada: !estaba, pista: pista);
     _aplicar(uri, !estaba);
     try {
       if (estaba) {
@@ -130,10 +198,29 @@ class LikedStore extends ChangeNotifier {
       } else {
         await api.saveTracks([uri]);
       }
+      _programarGuardado();
     } catch (e) {
+      _actualizarBiblioteca(uri, guardada: estaba, pista: pista);
       _aplicar(uri, estaba);
       rethrow;
     }
+  }
+
+  void _actualizarBiblioteca(String uri, {required bool guardada, Track? pista}) {
+    if (!_bibliotecaCompleta && biblioteca.isEmpty) return;
+    Track? existente;
+    for (final t in biblioteca) {
+      if (t.uri == uri) {
+        existente = t;
+        break;
+      }
+    }
+    biblioteca.removeWhere((t) => t.uri == uri);
+    if (guardada) {
+      final t = pista ?? existente;
+      if (t != null) biblioteca.insert(0, t);
+    }
+    totalBiblioteca = biblioteca.length;
   }
 
   void _aplicar(String uri, bool guardada) {
@@ -150,6 +237,7 @@ class LikedStore extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _agrupador?.cancel();
+    _guardarAplazado?.cancel();
     super.dispose();
   }
 }

@@ -10,6 +10,7 @@ import '../core/player_state.dart';
 import '../core/spotify_api.dart';
 import 'art_image.dart';
 import 'playlist_follow_button.dart';
+import 'texto_traducido.dart';
 import 'track_tile.dart';
 
 class PlaylistScreen extends StatefulWidget {
@@ -124,8 +125,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+    unawaited(() async {
+      final t = await traducirTexto(context, message);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+    }());
   }
 
   @override
@@ -151,7 +156,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Text(
+                    T(
                       '${widget.playlist.owner} · ${widget.playlist.trackCount} canciones'
                       '${_viaSidecar ? " · leída vía librespot" : ""}',
                       style: theme.textTheme.bodySmall
@@ -164,7 +169,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         FilledButton.icon(
                           onPressed: () => widget.player.playContext(widget.playlist.uri),
                           icon: const Icon(Icons.play_arrow),
-                          label: const Text('Reproducir'),
+                          label: T('Reproducir'),
                         ),
                         const SizedBox(width: 8),
                         PlaylistFollowButton(

@@ -82,6 +82,7 @@ Playback _sonando({
   bool canSkipPrevious = true,
   bool isPlaying = true,
   String? contextUri = 'spotify:playlist:abc',
+  int progressMs = 1000,
 }) =>
     Playback(
       track: const Track(
@@ -96,7 +97,7 @@ Playback _sonando({
         isLocal: false,
       ),
       isPlaying: isPlaying,
-      progressMs: 1000,
+      progressMs: progressMs,
       deviceId: 'dev',
       deviceName: 'NeoFy',
       volumePercent: 50,
@@ -469,6 +470,27 @@ void main() {
       expect(player.progressMs.value, 56000);
     });
 
+    test('un 204 a mitad de sesión no borra la barra: el play retoma esa pista',
+        () async {
+      player.state = _sonando();
+      player.progressMs.value = 56000;
+      player.ourDeviceId = 'dev';
+      api.estadoRemoto = null;
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(player.state.track?.name, 'Última');
+      expect(player.state.isPlaying, isFalse);
+      expect(player.hayAlgoPorRetomar, isTrue);
+      expect(player.progressMs.value, 56000);
+
+      api.llamadas.clear();
+      await player.togglePlay();
+      expect(api.llamadas,
+          ['play spotify:playlist:abc offset=spotify:track:1 pos=56000']);
+    });
+
     test('si Spotify sí sabe qué suena, manda Spotify', () async {
       abrirCon(guardada());
       api.estadoRemoto = _sonando();
@@ -493,6 +515,54 @@ void main() {
 
     test('sin nada sonando no se apunta nada', () {
       expect(player.paraRecordar(), isNull);
+    });
+  });
+
+  group('el sondeo no reinicia la canción a los pocos segundos', () {
+    test('un progress_ms 0 espurio no tira la barra atrás y se corrige con seek',
+        () async {
+      player.state = _sonando();
+      player.progressMs.value = 4000;
+      player.ourDeviceId = 'dev';
+      api.estadoRemoto = _sonando(progressMs: 0);
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(player.progressMs.value, greaterThanOrEqualTo(4000));
+      expect(player.progressMs.value, lessThan(12000));
+      final seeks = api.llamadas.where((c) => c.startsWith('seek')).toList();
+      expect(seeks, hasLength(1));
+      final ms = int.parse(seeks.single.split(' ').last);
+      expect(ms, greaterThanOrEqualTo(4000));
+      expect(ms, lessThan(12000));
+    });
+
+    test('un seek a 0 del usuario sí se acepta', () async {
+      player.state = _sonando();
+      player.ourDeviceId = 'dev';
+      await player.seek(0);
+      api.llamadas.clear();
+      api.estadoRemoto = _sonando(progressMs: 0);
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(player.progressMs.value, lessThan(1500));
+      expect(api.llamadas.where((c) => c.startsWith('seek')), isEmpty);
+    });
+
+    test('al terminar la pista el 0 del servidor sí es un bucle', () async {
+      player.state = _sonando();
+      player.progressMs.value = 199000;
+      player.ourDeviceId = 'dev';
+      api.estadoRemoto = _sonando(progressMs: 0);
+
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      expect(player.progressMs.value, lessThan(1500));
+      expect(api.llamadas.where((c) => c.startsWith('seek')), isEmpty);
     });
   });
 
