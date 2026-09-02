@@ -682,7 +682,7 @@ class _TiraApaisada extends StatelessWidget {
   }
 }
 
-Future<T> _suave<T>(Future<T> futuro, T vacio) async {
+Future<R> _suave<R>(Future<R> futuro, R vacio) async {
   try {
     return await futuro;
   } catch (_) {

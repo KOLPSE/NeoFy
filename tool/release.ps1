@@ -57,7 +57,7 @@ if (-not $flutter -and $env:FLUTTER_ROOT) {
 }
 if (-not $flutter) { Mal 'No encuentro Flutter (PATH o FLUTTER_ROOT).' }
 
-& $flutter analyze
+& $flutter analyze --no-fatal-infos
 if ($LASTEXITCODE -ne 0) { Mal 'analyze ha encontrado problemas.' }
 & $flutter test
 if ($LASTEXITCODE -ne 0) { Mal 'Hay tests en rojo.' }

@@ -176,13 +176,13 @@ Future<String> traducirTexto(BuildContext context, String espanol) {
 }
 
 /// Los [showDialog] quedan fuera del árbol de la ruta; reenvuelve el traductor.
-Future<T?> showDialogTraducido<T>({
+Future<R?> showDialogTraducido<R>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
 }) {
   final traductor = TraductorScope.of(context);
-  return showDialog<T>(
+  return showDialog<R>(
     context: context,
     barrierDismissible: barrierDismissible,
     builder: (ctx) => TraductorScope(

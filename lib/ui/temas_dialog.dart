@@ -78,6 +78,7 @@ class _DialogoDeTemas extends StatelessWidget {
     try {
       final creada = await crearTemaDeEjemplo();
       await temas.recargar();
+      if (!context.mounted) return;
       final t = await traducirTexto(context, 'Plantilla creada en ${creada.path}');
       mensajero?.showSnackBar(
         SnackBar(
@@ -86,6 +87,7 @@ class _DialogoDeTemas extends StatelessWidget {
         ),
       );
     } catch (e) {
+      if (!context.mounted) return;
       final t = await traducirTexto(context, 'No se pudo crear la plantilla: $e');
       mensajero?.showSnackBar(
         SnackBar(content: Text(t)),
