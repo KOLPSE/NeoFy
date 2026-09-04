@@ -54,8 +54,10 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
   - `models.dart` — Modelos mínimos. `pickImage()` es RAM-crítica.
   - `temas.dart` — El formato de tema (`tema.json` → `Tema` → `ThemeData`), el parseo de
     colores y el `ThemeExtension` que lleva el cristal hasta los widgets. Ver "Temas".
-  - `temas_incluidos.dart` — Los nueve temas de fábrica, escritos con las mismas claves
-    que usaría cualquiera. No hay nada que un tema de la comunidad no pueda hacer.
+  - `temas_incluidos.dart` — Los tres temas de fábrica (Material claro, Material oscuro y
+    Liquid Glass), escritos con las mismas claves que usaría cualquiera. No hay nada que
+    un tema de la comunidad no pueda hacer. Los clásicos se retiraron: `kTemasRetirados`
+    migra los `config.json` viejos a su equivalente de Material.
   - `tema_store.dart` — Catálogo, selección y vigilancia de la carpeta de temas.
 - **`windows/runner/flutter_window.cpp`** — Además de hospedar Flutter, registra las teclas
   multimedia con `RegisterHotKey` y las manda a Dart por el canal
@@ -66,6 +68,14 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
   es un reproductor de audio" en Windows: el panel del centro de control y los botones
   bajo la miniatura de la barra de tareas. Hablan con Dart por `neofy/system_media`.
 - **`lib/ui/`** — `shell.dart` (sidebar + contenido + barra), pantallas y `art_image.dart`.
+  El sidebar se pliega a un rail de iconos (preferencia `sidebarPlegado`): las playlists y
+  los artistas favoritos se ven como carátulas —redonda artista, cuadrada playlist, la
+  convención de Spotify— y el logo de la cabecera es el botón para expandir.
+  `desplegable_en_sitio.dart` es el menú contextual estilo Material Expressive: en vez de un
+  overlay flotante, logo, nombre y subtítulo se sustituyen por las opciones (y el aviso de
+  borrar) en el mismo hueco (preferencia `menusEnElemento`; apagada, vuelve el
+  `PopupMenuButton` de siempre). Se cierra pulsando fuera (`TapRegion`), no hay gestión
+  de overlays.
   `tira_horizontal.dart` es la fila de tarjetas de la portada: con ratón, una lista
   horizontal dentro de una vertical no se puede mover (Flutter no permite arrastrar con el
   ratón y la rueda manda `dy`, que una lista horizontal ignora), así que lleva flechas, la
@@ -263,10 +273,14 @@ El refresh token vive en `%APPDATA%\neofy\tokens.json`; las credenciales de libr
   `jsonDecode` lanzaba un `FormatException` en cada seek. `_looksLikeJson()` lo descarta.
 - **La Web API solo deja leer las canciones de playlists propias.** Las ajenas devuelven
   **403** en `/items` estando en Modo Desarrollo, aunque salgan en `GET /me/playlists` y se
-  puedan reproducir enteras. Comprobado ademas: `GET /playlists/{id}` responde pero **omite
+   puedan reproducir enteras. Comprobado ademas: `GET /playlists/{id}` responde pero **omite
   la clave con las canciones**, `?fields=` no la recupera, las playlists editoriales de
   Spotify dan **404**, y `GET /v1/tracks?ids=` tambien da **403** (los albumes, en cambio,
-  si traen sus pistas). No hay ninguna via oficial: de ahi el sidecar.
+  si traen sus pistas). No hay ninguna via oficial: de ahi el sidecar. Por librespot las
+  editoriales **sí** se leen: el buscador abre en "Más escuchadas" y, con la caja vacía,
+  enseña el "Top 50" del país del idioma de la app (`kTop50PorPais` en
+  `idiomas_spotify.dart`, ids históricos estables; si el del país falla cae al global), y al
+  escribir salta solo a "Todo".
 - **De los endpoints de artista, `top-tracks` ha dejado de dejarse leer.** Cuando se escribió
   la pantalla de artista contestaba 200; el **20-08-2026**, `dart run tool/probe_artist.dart`
   contra la misma cuenta lo daba en **403 "Forbidden" a secas, con `market=from_token` y sin

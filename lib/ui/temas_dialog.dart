@@ -3,21 +3,24 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/settings.dart';
 import '../core/tema_store.dart';
 import '../core/temas.dart';
 import '../core/temas_incluidos.dart';
+import 'personalizacion_tema.dart';
 import 'texto_traducido.dart';
 
 class BotonDeTemas extends StatelessWidget {
-  const BotonDeTemas({super.key, required this.temas});
+  const BotonDeTemas({super.key, required this.temas, required this.settings});
 
   final TemaStore temas;
+  final Settings settings;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AnimatedBuilder(
-      animation: temas,
+      animation: Listenable.merge([temas, settings]),
       builder: (context, _) {
         final activo = temas.porId(temas.idSeleccionado);
         final nombre = activo?.nombre ?? 'Automático (sigue al sistema)';
@@ -36,15 +39,16 @@ class BotonDeTemas extends StatelessWidget {
                         ? nombre
                         : '$nombre · $cuantos de la comunidad instalado'
                             '${cuantos == 1 ? '' : 's'}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 12),
             OutlinedButton(
-              onPressed: () => unawaited(mostrarSelectorDeTemas(context, temas)),
+              onPressed: () => unawaited(
+                  mostrarSelectorDeTemas(context, temas, settings)),
               child: T('Cambiar'),
             ),
           ],
@@ -54,17 +58,22 @@ class BotonDeTemas extends StatelessWidget {
   }
 }
 
-Future<void> mostrarSelectorDeTemas(BuildContext context, TemaStore temas) {
+Future<void> mostrarSelectorDeTemas(
+  BuildContext context,
+  TemaStore temas,
+  Settings settings,
+) {
   return showDialogTraducido<void>(
     context: context,
-    builder: (context) => _DialogoDeTemas(temas: temas),
+    builder: (context) => _DialogoDeTemas(temas: temas, settings: settings),
   );
 }
 
 class _DialogoDeTemas extends StatelessWidget {
-  const _DialogoDeTemas({required this.temas});
+  const _DialogoDeTemas({required this.temas, required this.settings});
 
   final TemaStore temas;
+  final Settings settings;
 
   Future<void> _abrirLaCarpeta() async {
     final carpeta = carpetaDeTemas();
@@ -74,9 +83,11 @@ class _DialogoDeTemas extends StatelessWidget {
   }
 
   Future<void> _crearEjemplo(BuildContext context) async {
+    final activo = temas.porId(temas.idSeleccionado);
+    if (activo == null || !esTemaMaterial(activo.id)) return;
     final mensajero = ScaffoldMessenger.maybeOf(context);
     try {
-      final creada = await crearTemaDeEjemplo();
+      final creada = await crearTemaDeEjemplo(base: activo);
       await temas.recargar();
       if (!context.mounted) return;
       final t = await traducirTexto(context, 'Plantilla creada en ${creada.path}');
@@ -108,6 +119,9 @@ class _DialogoDeTemas extends StatelessWidget {
             final deDisco = temas.temasDeDisco;
             final fallos = temas.fallos;
             final avisos = temas.avisos;
+            final activo = temas.porId(temas.idSeleccionado);
+            final esMaterial =
+                activo != null && esTemaMaterial(activo.id);
             return SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -129,7 +143,7 @@ class _DialogoDeTemas extends StatelessWidget {
                     _FilaDeTema(
                       nombre: tema.nombre,
                       detalle: tema.descripcion,
-                      muestra: tema,
+                      muestra: temas.porId(tema.id) ?? tema,
                       elegido: temas.idSeleccionado == tema.id,
                       onTap: () => unawaited(temas.seleccionar(tema.id)),
                     ),
@@ -192,6 +206,8 @@ class _DialogoDeTemas extends StatelessWidget {
                         ],
                       ),
                     ),
+                  const Divider(height: 24),
+                  PersonalizacionTema(temas: temas, settings: settings),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -202,10 +218,19 @@ class _DialogoDeTemas extends StatelessWidget {
                         icon: const Icon(Icons.folder_open, size: 18),
                         label: T('Abrir la carpeta'),
                       ),
-                      OutlinedButton.icon(
-                        onPressed: () => unawaited(_crearEjemplo(context)),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: T('Crear una plantilla'),
+                      Tooltip(
+                        message: esMaterial
+                            ? 'Guarda los colores actuales como un tema '
+                                'de la comunidad.'
+                            : 'Elige Material oscuro o Material claro para '
+                                'guardar los colores como plantilla.',
+                        child: OutlinedButton.icon(
+                          onPressed: esMaterial
+                              ? () => unawaited(_crearEjemplo(context))
+                              : null,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: T('Crear una plantilla'),
+                        ),
                       ),
                     ],
                   ),

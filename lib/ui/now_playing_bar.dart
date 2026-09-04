@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/temas.dart';
 import 'art_image.dart';
+import 'botones_transporte.dart';
 import 'icono_de_volumen.dart';
 import 'like_button.dart';
 import 'linea_de_artistas.dart';
@@ -156,6 +157,7 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     final player = widget.player;
     final state = player.state;
     final theme = Theme.of(context);
+    final track = state.track;
 
     final modoAleatorio = player.modoAleatorio;
     String shuffleTooltip;
@@ -193,19 +195,21 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
               onPressed: () =>
                   player.ciclarModoAleatorio(likes: widget.likes, home: widget.home),
             ),
-            IconButton(
+            BotonSaltoExpresivo(
               tooltip: 'Anterior',
-              icon: const Icon(Icons.skip_previous),
+              icono: Icons.skip_previous,
+              direccion: -1,
               onPressed: player.previous,
             ),
-            IconButton.filled(
+            BotonPlayExpresivo(
               tooltip: state.isPlaying ? 'Pausar' : 'Reproducir',
-              icon: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow),
+              sonando: state.isPlaying,
               onPressed: player.togglePlay,
             ),
-            IconButton(
+            BotonSaltoExpresivo(
               tooltip: 'Siguiente',
-              icon: const Icon(Icons.skip_next),
+              icono: Icons.skip_next,
+              direccion: 1,
               onPressed: player.next,
             ),
             IconButton(
@@ -233,6 +237,7 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                 ),
                 Expanded(
                   child: BarraDeProgreso(
+                    clavePista: track?.uri,
                     valor: shown.clamp(0, max),
                     maximo: max,
                     enMarcha: state.isPlaying,

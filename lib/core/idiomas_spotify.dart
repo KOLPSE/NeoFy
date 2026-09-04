@@ -165,3 +165,84 @@ List<IdiomaSpotify> idiomasFiltrados(String consulta) {
         i,
   ];
 }
+
+/// "Top 50 Global": la editorial de referencia cuando el país del usuario
+/// no tiene una propia (o la suya falla).
+const kTop50Global = '37i9dQZEVXbMDoHDwVN2tF';
+
+/// Playlists editoriales "Top 50" por país (ISO 3166-1 → id de Spotify).
+///
+/// Ojo: son playlists editoriales y la Web API en modo desarrollo las
+/// niega con 404; solo se pueden leer a través del metadata-sidecar
+/// (librespot), que es como las lee el cliente oficial. Los ids son los
+/// históricos de Spotify, que llevan años estables; si uno dejara de
+/// existir, [playlistTop50ParaLocale] cae a [kTop50Global].
+const kTop50PorPais = <String, String>{
+  'AR': '37i9dQZEVXbMMy2roB9myp',
+  'AT': '37i9dQZEVXbKNHh6NIXu36',
+  'AU': '37i9dQZEVXbJPcfkRz0wJ0',
+  'BE': '37i9dQZEVXbJNSeeHswcKB',
+  'BO': '37i9dQZEVXbJqfMFK4d691',
+  'BR': '37i9dQZEVXbMXbN3EUUhlg',
+  'CA': '37i9dQZEVXbKj23U1GF4IR',
+  'CH': '37i9dQZEVXbJiyhoAPEfMK',
+  'CL': '37i9dQZEVXbL0GavIqMTeb',
+  'CO': '37i9dQZEVXbOa2lmxNORXQ',
+  'CR': '37i9dQZEVXbMZAjGMynsQX',
+  'CZ': '37i9dQZEVXbIP3c3fqVrJY',
+  'DE': '37i9dQZEVXbJiZcmkrIHGU',
+  'DK': '37i9dQZEVXbL3J0k32lWnN',
+  'DO': '37i9dQZEVXbKAbrM8g3ygg',
+  'EC': '37i9dQZEVXbJlM6nvL1nD1',
+  'ES': '37i9dQZEVXbNFJfN1Vw8d9',
+  'FI': '37i9dQZEVXbMxcczTSoGwZ',
+  'FR': '37i9dQZEVXbIPWwFssbupI',
+  'GB': '37i9dQZEVXbLnolsZ8PSNw',
+  'GR': '37i9dQZEVXbJqdarpmTJDL',
+  'GT': '37i9dQZEVXbLy5tBFyQvd4',
+  'HK': '37i9dQZEVXbLwpL8TjsxGG',
+  'HN': '37i9dQZEVXbJp9wcIM9Eo5',
+  'HU': '37i9dQZEVXbNHwMxAkvmF8',
+  'ID': '37i9dQZEVXbObFQZ3JLcXt',
+  'IE': '37i9dQZEVXbKM896FDX8L1',
+  'IL': '37i9dQZEVXbJ6IpvItkve3',
+  'IN': '37i9dQZEVXbLZ52XmnySJg',
+  'IS': '37i9dQZEVXbKMzVsSGQ49S',
+  'IT': '37i9dQZEVXbIQnj7RRhdSX',
+  'JP': '37i9dQZEVXbKXQ4mDTEBXq',
+  'KR': '37i9dQZEVXbNxXF4SkHj9F',
+  'LT': '37i9dQZEVXbMx56Rdq5lwc',
+  'LU': '37i9dQZEVXbKGcyg6TFGx6',
+  'LV': '37i9dQZEVXbJWuzDrTxbKS',
+  'MA': '37i9dQZEVXbJU9eQpX8gPT',
+  'MX': '37i9dQZEVXbO3OYFal6FJd',
+  'MY': '37i9dQZEVXbJlfUljuZExa',
+  'NI': '37i9dQZEVXbISk8kxnzfCq',
+  'NL': '37i9dQZEVXbKCF6dqVpDkS',
+  'NO': '37i9dQZEVXbJvfa0Yxg7E7',
+  'NZ': '37i9dQZEVXbM8SIrkCiyPal',
+  'PA': '37i9dQZEVXbKypXHVwk1f0',
+  'PE': '37i9dQZEVXbJfdy5b0KP7W',
+  'PH': '37i9dQZEVXbNBz9cRCSFkY',
+  'PL': '37i9dQZEVXbN6itCcaLqTt',
+  'PT': '37i9dQZEVXbKyJS56d1pgi',
+  'PY': '37i9dQZEVXbNOUPGj7tW6T',
+  'RO': '37i9dQZEVXbNZbJ6TZELC8',
+  'SE': '37i9dQZEVXbLoATJ81JYXz',
+  'SG': '37i9dQZEVXbK4gjvS1FjPY',
+  'SK': '37i9dQZEVXbKIVTPX9a2Sb',
+  'SV': '37i9dQZEVXbLrQBcXqUtaC',
+  'TH': '37i9dQZEVXbMnz8KIWSVf9',
+  'TR': '37i9dQZEVXbIVYVBNw9D5K',
+  'TW': '37i9dQZEVXbMnZEatlMSiu',
+  'UA': '37i9dQZEVXbKkidEfWYRuD',
+  'US': '37i9dQZEVXbLRQDuF5jeBp',
+  'UY': '37i9dQZEVXbMJJi3wgRbAy',
+  'VN': '37i9dQZEVXbLdGSmz6xilI',
+  'ZA': '37i9dQZEVXbMH2jvi6jvjk',
+};
+
+/// El "Top 50" que toca según el idioma de la app (`es_ES` → España).
+/// Sin país conocido, el global.
+String playlistTop50ParaLocale(String locale) =>
+    kTop50PorPais[paisDeLocale(locale)] ?? kTop50Global;

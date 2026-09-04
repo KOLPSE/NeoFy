@@ -10,6 +10,8 @@ const double kLongitudDeOnda = 40;
 
 const double kGrosorDeOnda = 4;
 
+const double kGrosorDeOndaHover = 9;
+
 const double kAmplitudDeOnda = 3;
 
 const double kHuecoTrasElPulgar = 6;
@@ -18,11 +20,17 @@ const double kAnchoDelPulgar = 4;
 
 const double kAltoDelPulgar = 16;
 
+const double kAltoDelPulgarHover = 24;
+
 const double kAlcanceDeLaOnda = 150;
 
 const double kApagadoJuntoAlPulgar = 26;
 
 const double kAltoDeLaBarra = 22;
+
+/// Distancia vertical al centro del trazo para activar el hover del pulgar.
+/// Más allá, la zona sigue siendo clicable para el seek, pero no crece.
+const double kCercaDelTrazo = 6;
 
 const double kMargenLateral = 10;
 
@@ -43,6 +51,7 @@ class BarraDeProgreso extends StatefulWidget {
     required this.enMarcha,
     required this.onCambio,
     required this.onFinDelCambio,
+    this.clavePista,
   });
 
   final double valor;
@@ -50,6 +59,10 @@ class BarraDeProgreso extends StatefulWidget {
   final bool enMarcha;
   final ValueChanged<double>? onCambio;
   final ValueChanged<double>? onFinDelCambio;
+
+  /// Identifica la canción que suena. Al cambiar, la barra vuelve al
+  /// principio con una animación en vez de saltar de golpe.
+  final Object? clavePista;
 
   @override
   State<BarraDeProgreso> createState() => _BarraDeProgresoState();
@@ -60,9 +73,11 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   late final AnimationController _fase;
   late final AnimationController _amplitud;
   late final AnimationController _pintada;
+  late final AnimationController _sobre;
 
   bool _arrastrando = false;
   bool _rebobinando = false;
+  bool _encima = false;
   late double _objetivo = _fraccionDelWidget;
 
   @override
@@ -81,6 +96,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
       vsync: this,
       value: _fraccionDelWidget,
     );
+    _sobre = AnimationController.unbounded(vsync: this);
   }
 
   double get _fraccionDelWidget => widget.maximo <= 0
@@ -90,22 +106,48 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   @override
   void didUpdateWidget(covariant BarraDeProgreso viejo) {
     super.didUpdateWidget(viejo);
-    _sincronizar();
+    _sincronizar(cambioDePista: _cambioDePista(viejo));
     _revisarLaOnda();
   }
+
+  bool _cambioDePista(BarraDeProgreso viejo) =>
+      widget.clavePista != null &&
+      viejo.clavePista != null &&
+      widget.clavePista != viejo.clavePista;
 
   @override
   void dispose() {
     _fase.stop();
     _amplitud.stop();
     _pintada.stop();
+    _sobre.stop();
     _fase.dispose();
     _amplitud.dispose();
     _pintada.dispose();
+    _sobre.dispose();
     super.dispose();
   }
 
-  void _sincronizar() {
+  void _asentarSobre() {
+    final movimiento = EstiloNeoFy.de(context).movimiento;
+    final destino = movimiento.seMueve && !modoRendimiento.value
+        ? (_arrastrando ? 1.15 : (_encima ? 1.0 : 0.0))
+        : 0.0;
+    if (!movimiento.seMueve || modoRendimiento.value) {
+      _sobre.value = 0;
+      return;
+    }
+    _sobre.animateWith(
+      SpringSimulation(
+        _arrastrando ? movimiento.espacialRapido : movimiento.espacialNormal,
+        _sobre.value,
+        destino,
+        _sobre.velocity,
+      ),
+    );
+  }
+
+  void _sincronizar({bool cambioDePista = false}) {
     final nueva = _fraccionDelWidget;
     final anterior = _objetivo;
     _objetivo = nueva;
@@ -114,7 +156,23 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
         anterior >= kSeAcabaLaCancion &&
         nueva <= kVuelveAEmpezar;
 
-    if (acabaDeTerminar && !_rebobinando) {
+    // Al cambiar de canción la barra estaba donde el usuario la dejara y la
+    // nueva empieza de cero: ese salto es el "popeo" que se veía. Se
+    // rebobina con el mismo muelle que al terminar una canción.
+    final empiezaDeCero = cambioDePista &&
+        !_arrastrando &&
+        nueva <= kVuelveAEmpezar &&
+        _pintada.value > kVuelveAEmpezar;
+
+    // El reproductor a veces pone el progreso a 0 un fotograma antes de
+    // cambiar el URI, y a veces apaga `enMarcha` en ese mismo fotograma.
+    // Si esperamos al URI o a que siga sonando, `_pintada` ya está en 0 y
+    // el rebobinado no tiene de dónde partir.
+    final saltoAlCero = !_arrastrando &&
+        nueva <= 0.02 &&
+        _pintada.value > kVuelveAEmpezar;
+
+    if ((acabaDeTerminar || empiezaDeCero || saltoAlCero) && !_rebobinando) {
       _rebobinar();
       return;
     }
@@ -166,7 +224,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
     _fase.stop();
     _pintada
         .animateWith(
-          SpringSimulation(movimiento.espacialRapido, _pintada.value, 0, -1.4),
+          SpringSimulation(movimiento.espacialNormal, _pintada.value, 0, 0),
         )
         .whenCompleteOrCancel(() {
       if (!mounted) return;
@@ -255,37 +313,63 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
           }
         }
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: (d) {
-            _arrastrando = true;
-            if (_pintada.isAnimating) _pintada.stop();
-            _revisarLaOnda();
-            avisar(d.localPosition, fin: false);
-          },
-          onHorizontalDragUpdate: (d) => avisar(d.localPosition, fin: false),
-          onHorizontalDragEnd: (_) {
-            _arrastrando = false;
-            _revisarLaOnda();
-            widget.onFinDelCambio?.call(widget.valor);
-            _lanzarAvance();
-          },
-          onTapUp: (d) {
-            avisar(d.localPosition, fin: false);
-            avisar(d.localPosition, fin: true);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: kMargenLateral),
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_fase, _amplitud, _pintada]),
-              builder: (context, _) => CustomPaint(
-                size: Size(ancho, kAltoDeLaBarra),
-                painter: PintorDeOnda(
-                  fraccion: _pintada.value.clamp(0.0, 1.0),
-                  fase: _fase.value,
-                  amplitud: _amplitud.value,
-                  activo: esquema.primary,
-                  pista: esquema.outlineVariant,
+        return SizedBox(
+          height: kAltoDeLaBarra,
+          child: MouseRegion(
+            onHover: (e) {
+              // Solo crece el pulgar si el cursor está cerca del trazo; el
+              // resto de la zona alta sigue sirviendo para hacer seek.
+              final cerca =
+                  (e.localPosition.dy - kAltoDeLaBarra / 2).abs() <=
+                      kCercaDelTrazo;
+              if (cerca == _encima) return;
+              _encima = cerca;
+              _asentarSobre();
+            },
+            onExit: (_) {
+              if (!_encima) return;
+              _encima = false;
+              _asentarSobre();
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (d) {
+                _arrastrando = true;
+                if (_pintada.isAnimating) _pintada.stop();
+                _asentarSobre();
+                _revisarLaOnda();
+                avisar(d.localPosition, fin: false);
+              },
+              onHorizontalDragUpdate: (d) =>
+                  avisar(d.localPosition, fin: false),
+              onHorizontalDragEnd: (_) {
+                _arrastrando = false;
+                _asentarSobre();
+                _revisarLaOnda();
+                widget.onFinDelCambio?.call(widget.valor);
+                _lanzarAvance();
+              },
+              onTapUp: (d) {
+                avisar(d.localPosition, fin: false);
+                avisar(d.localPosition, fin: true);
+              },
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: kMargenLateral),
+                child: AnimatedBuilder(
+                  animation: Listenable.merge(
+                      [_fase, _amplitud, _pintada, _sobre]),
+                  builder: (context, _) => CustomPaint(
+                    size: Size(ancho, kAltoDeLaBarra),
+                    painter: PintorDeOnda(
+                      fraccion: _pintada.value.clamp(0.0, 1.0),
+                      fase: _fase.value,
+                      amplitud: _amplitud.value,
+                      sobre: _sobre.value.clamp(0.0, 1.2),
+                      activo: esquema.primary,
+                      pista: esquema.outlineVariant,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -311,6 +395,7 @@ class PintorDeOnda extends CustomPainter {
     required this.fraccion,
     required this.fase,
     required this.amplitud,
+    required this.sobre,
     required this.activo,
     required this.pista,
   });
@@ -318,8 +403,15 @@ class PintorDeOnda extends CustomPainter {
   final double fraccion;
   final double fase;
   final double amplitud;
+  final double sobre;
   final Color activo;
   final Color pista;
+
+  /// El trazo no cambia con el hover: solo crece el pulgar.
+  double get _grosor => kGrosorDeOnda;
+
+  double get _altoPulgar =>
+      kAltoDelPulgar + (kAltoDelPulgarHover - kAltoDelPulgar) * sobre;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -329,13 +421,13 @@ class PintorDeOnda extends CustomPainter {
 
     final trazoActivo = Paint()
       ..color = activo
-      ..strokeWidth = kGrosorDeOnda
+      ..strokeWidth = _grosor
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
     final trazoPista = Paint()
       ..color = pista
-      ..strokeWidth = kGrosorDeOnda
+      ..strokeWidth = _grosor
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
@@ -377,7 +469,7 @@ class PintorDeOnda extends CustomPainter {
           Rect.fromCenter(
             center: Offset(recorrido, medio),
             width: kAnchoDelPulgar,
-            height: kAltoDelPulgar,
+            height: _altoPulgar,
           ),
           const Radius.circular(kAnchoDelPulgar / 2),
         ),
@@ -387,16 +479,16 @@ class PintorDeOnda extends CustomPainter {
   }
 
   double _alturaDeLaOnda(double alto) {
-    final cabe = (alto - kGrosorDeOnda) / 2;
+    final cabe = (alto - _grosor) / 2;
     return kAmplitudDeOnda < cabe ? kAmplitudDeOnda : cabe;
   }
-
 
   @override
   bool shouldRepaint(PintorDeOnda viejo) =>
       viejo.fraccion != fraccion ||
       viejo.fase != fase ||
       viejo.amplitud != amplitud ||
+      viejo.sobre != sobre ||
       viejo.activo != activo ||
       viejo.pista != pista;
 }

@@ -36,7 +36,10 @@ class ArtCache {
 
   static File? ficheroSiEstaEnDisco(String url) {
     final f = _fileFor(url);
-    return f.existsSync() ? f : null;
+    try {
+      if (f.existsSync() && f.lengthSync() > 0) return f;
+    } catch (_) {}
+    return null;
   }
 
   static Future<Uint8List?> bytes(String url) async {

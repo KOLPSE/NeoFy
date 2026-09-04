@@ -5,6 +5,7 @@ import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/auth.dart';
 import 'package:neofy/core/followed_playlists_store.dart';
 import 'package:neofy/core/liked_store.dart';
+import 'package:neofy/core/metadata_sidecar.dart';
 import 'package:neofy/core/models.dart';
 import 'package:neofy/core/player_state.dart';
 import 'package:neofy/core/spotify_api.dart';
@@ -109,6 +110,7 @@ void main() {
   late LikedStore likes;
   late FollowedPlaylistsStore followed;
   late ArtistasFavoritosStore favoritos;
+  late MetadataSidecar sidecar;
 
   setUp(() {
     api = _MockSpotifyApi();
@@ -121,6 +123,9 @@ void main() {
       obtenerUserId: () => player.currentUserId,
     );
     favoritos = ArtistasFavoritosStore();
+    // Sin arrancar: ready es false, así que con la caja vacía la pantalla
+    // enseña el hint clásico en vez del Top 50.
+    sidecar = MetadataSidecar(localeEfectivo: () => 'es_ES');
   });
 
   tearDown(() {
@@ -144,6 +149,8 @@ void main() {
           likes: likes,
           followed: followed,
           favoritos: favoritos,
+          sidecar: sidecar,
+          localeEfectivo: 'es_ES',
           onAbrirPlaylist: onAbrirPlaylist,
           onCambioSeguimiento: onCambioSeguimiento,
           autofocus: autofocus,
@@ -169,8 +176,35 @@ void main() {
     expect(find.widgetWithText(ChoiceChip, 'Playlists'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'Más escuchadas'), findsOneWidget);
 
-    final todoChip = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Todo'));
+    final masEscuchadasChip = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, 'Más escuchadas'));
+    expect(masEscuchadasChip.selected, isTrue);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('al escribir con la caja vacía salta de Más escuchadas a Todo', (tester) async {
+    api.searchResult = const SearchResults(
+      artists: ApiPage(items: [_artista1], hasMore: false, rawCount: 1),
+      tracks: ApiPage(items: [_track1], hasMore: false, rawCount: 1),
+      playlists: ApiPage(items: [_playlist1], hasMore: false, rawCount: 1),
+    );
+
+    await tester.pumpWidget(crearApp());
+
+    var chip = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, 'Más escuchadas'));
+    expect(chip.selected, isTrue);
+
+    await buscar(tester, 'lofi');
+
+    chip = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, 'Más escuchadas'));
+    final todoChip =
+        tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Todo'));
+    expect(chip.selected, isFalse);
     expect(todoChip.selected, isTrue);
+    expect(api.llamadasSearch.first['types'], ['artist', 'track', 'playlist']);
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -285,10 +319,11 @@ void main() {
 
     await tester.pumpWidget(crearApp());
 
+    // Con la caja vacía "Más escuchadas" enseña el Top 50; para filtrar una
+    // búsqueda hay que escribir primero y elegirlo después.
+    await buscar(tester, 'hits');
     await tester.tap(find.widgetWithText(ChoiceChip, 'Más escuchadas'));
     await tester.pumpAndSettle();
-
-    await buscar(tester, 'hits');
 
     final tiles = tester.widgetList<TrackTile>(find.byType(TrackTile)).toList();
     expect(tiles.length, 2);

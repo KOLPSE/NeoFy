@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../core/artistas_favoritos_store.dart';
 import '../core/followed_playlists_store.dart';
+import '../core/idiomas_spotify.dart';
 import '../core/liked_store.dart';
+import '../core/metadata_sidecar.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
@@ -34,6 +36,8 @@ class SearchScreen extends StatefulWidget {
     required this.likes,
     required this.followed,
     required this.favoritos,
+    required this.sidecar,
+    required this.localeEfectivo,
     this.onAbrirPlaylist,
     this.onAbrirArtista,
     this.onCambioSeguimiento,
@@ -46,6 +50,16 @@ class SearchScreen extends StatefulWidget {
   final LikedStore likes;
   final FollowedPlaylistsStore followed;
   final ArtistasFavoritosStore favoritos;
+
+  /// De aquí salen los "éxitos del idioma" que se muestran con la caja
+  /// vacía: la Web API en modo desarrollo no sirve las editoriales, así
+  /// que el Top 50 del país se lee por librespot.
+  final MetadataSidecar sidecar;
+
+  /// Locale vigente (`es_ES`…); decide el Top 50 del país. Se compara en
+  /// cada build para recargar la lista si el usuario cambia de idioma.
+  final String localeEfectivo;
+
   final void Function(Playlist)? onAbrirPlaylist;
   final void Function(Artist)? onAbrirArtista;
   final void Function(Playlist, bool)? onCambioSeguimiento;
@@ -62,7 +76,9 @@ class _SearchScreenState extends State<SearchScreen> {
   final List<Playlist> _playlists = [];
   final List<Artist> _artistas = [];
 
-  SearchFilter _filter = SearchFilter.todo;
+  // La pantalla abre en "Más escuchadas": con la caja vacía enseña el
+  // Top 50 del idioma, y al escribir salta sola a "Todo".
+  SearchFilter _filter = SearchFilter.masEscuchadas;
   Timer? _debounce;
   String _query = '';
   bool _loading = false;
@@ -71,12 +87,45 @@ class _SearchScreenState extends State<SearchScreen> {
   int _offset = 0;
   int _searchId = 0;
 
+  List<Track>? _top50;
+  String? _errorTop50;
+  bool _cargandoTop50 = false;
+  String _localeDelTop50 = '';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.sidecar.addListener(_alCambiarSidecar);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _asegurarTop50());
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchScreen viejo) {
+    super.didUpdateWidget(viejo);
+    if (viejo.sidecar != widget.sidecar) {
+      viejo.sidecar.removeListener(_alCambiarSidecar);
+      widget.sidecar.addListener(_alCambiarSidecar);
+    }
+    if (viejo.localeEfectivo != widget.localeEfectivo &&
+        widget.localeEfectivo != _localeDelTop50) {
+      _top50 = null;
+      _asegurarTop50();
+    }
+  }
+
   @override
   void dispose() {
+    widget.sidecar.removeListener(_alCambiarSidecar);
     _debounce?.cancel();
     _controller.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _alCambiarSidecar() {
+    // El sidecar se arranca en paralelo al login; cuando queda listo ya
+    // se pueden pedir los éxitos.
+    if (widget.sidecar.ready && _top50 == null && mounted) _asegurarTop50();
   }
 
   void _reiniciarResultados() {
@@ -89,12 +138,54 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onChanged(String value) {
+    final q = value.trim();
+    // Al escribir se busca en todo; al vaciar la caja vuelve el Top 50.
+    final filtro = q.isEmpty
+        ? SearchFilter.masEscuchadas
+        : (_filter == SearchFilter.masEscuchadas && _query.isEmpty
+            ? SearchFilter.todo
+            : _filter);
+    if (filtro != _filter) setState(() => _filter = filtro);
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
-      _query = value.trim();
+      _query = q;
       _reiniciarResultados();
       unawaited(_search());
     });
+  }
+
+  Future<void> _asegurarTop50() async {
+    if (!mounted ||
+        !widget.sidecar.ready ||
+        _top50 != null ||
+        _cargandoTop50) {
+      return;
+    }
+    setState(() {
+      _cargandoTop50 = true;
+      _errorTop50 = null;
+    });
+    final locale = widget.localeEfectivo;
+    try {
+      ApiPage<Track> pagina;
+      try {
+        pagina = await widget.sidecar
+            .playlistItems(playlistTop50ParaLocale(locale), limit: 50);
+      } catch (_) {
+        // Si la editorial del país falla (id retirado, región sin lista),
+        // queda el global.
+        pagina = await widget.sidecar.playlistItems(kTop50Global, limit: 50);
+      }
+      if (!mounted) return;
+      setState(() {
+        _top50 = pagina.items;
+        _localeDelTop50 = locale;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _errorTop50 = '$e');
+    } finally {
+      if (mounted) setState(() => _cargandoTop50 = false);
+    }
   }
 
   void _cambiarFiltro(SearchFilter nuevo) {
@@ -357,15 +448,105 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  /// Con la caja vacía y "Más escuchadas" activo: el Top 50 del país del
+  /// idioma, pedido al sidecar. Sin sidecar, la pantalla clásica.
+  Widget _cuerpoTop50(ThemeData theme) {
+    if (!widget.sidecar.ready) {
+      return Center(
+        child: T(
+          'Escribe para buscar en NeoFy.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+    if (_errorTop50 != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                _errorTop50!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _asegurarTop50,
+              child: T('Reintentar'),
+            ),
+          ],
+        ),
+      );
+    }
+    final top = _top50;
+    if (top == null) {
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (top.isEmpty) {
+      return Center(
+        child: T(
+          'Escribe para buscar en NeoFy.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return ValueListenableBuilder<String?>(
+      valueListenable: widget.player.currentUri,
+      builder: (context, currentUri, _) => ListView.builder(
+        controller: _scroll,
+        itemCount: top.length + 1,
+        itemBuilder: (context, i) {
+          if (i == 0) return const _HeaderSeccion('Lo más escuchado en tu idioma');
+          final t = top[i - 1];
+          return TrackTile(
+            track: t,
+            likes: widget.likes,
+            leadingNumber: i,
+            isCurrent: currentUri != null && currentUri == t.uri,
+            actions: TrackActions(
+              onPlay: () => widget.player.playLista(
+                [for (final r in top) r.uri],
+                desde: i - 1,
+              ),
+              onQueue: () async {
+                await widget.player.addToQueue(t.uri);
+                _toast('Añadida a la cola');
+              },
+              onAddToPlaylist: () => _addToPlaylist(t),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _cuerpoResultados(ThemeData theme) {
+    if (_query.isEmpty) {
+      if (_filter == SearchFilter.masEscuchadas) return _cuerpoTop50(theme);
+      return Center(
+        child: T(
+          'Escribe para buscar en NeoFy.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
     if (_vacio) {
       return Center(
         child: T(
-          _loading
-              ? 'Buscando…'
-              : _query.isEmpty
-                  ? 'Escribe para buscar en NeoFy.'
-                  : 'Sin resultados.',
+          _loading ? 'Buscando…' : 'Sin resultados.',
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -409,8 +590,11 @@ class _SearchScreenState extends State<SearchScreen> {
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _controller.clear();
-                        setState(_reiniciarResultados);
-                        _query = '';
+                        setState(() {
+                          _reiniciarResultados();
+                          _query = '';
+                          _filter = SearchFilter.masEscuchadas;
+                        });
                       },
                     ),
             ),

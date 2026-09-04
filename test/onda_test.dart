@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/settings.dart';
@@ -9,6 +10,7 @@ Widget _barra({
   required Tema tema,
   required bool enMarcha,
   double valor = 400,
+  Object? clavePista,
 }) {
   return MaterialApp(
     theme: construirThemeData(tema),
@@ -22,6 +24,7 @@ Widget _barra({
             enMarcha: enMarcha,
             onCambio: (_) {},
             onFinDelCambio: (_) {},
+            clavePista: clavePista,
           ),
         ),
       ),
@@ -29,15 +32,19 @@ Widget _barra({
   );
 }
 
-double _fraccionPintada(WidgetTester t) {
+PintorDeOnda _pintor(WidgetTester t) {
   final pintado = t.widget<CustomPaint>(
     find.descendant(
       of: find.byType(BarraDeProgreso),
       matching: find.byType(CustomPaint),
     ),
   );
-  return (pintado.painter! as PintorDeOnda).fraccion;
+  return pintado.painter! as PintorDeOnda;
 }
+
+double _fraccionPintada(WidgetTester t) => _pintor(t).fraccion;
+
+double _sobrePintada(WidgetTester t) => _pintor(t).sobre;
 
 void main() {
   tearDown(() => modoRendimiento.value = false);
@@ -72,7 +79,7 @@ void main() {
 
   testWidgets('los temas de línea siguen usando el Slider de siempre',
       (t) async {
-    await t.pumpWidget(_barra(tema: temaOscuro, enMarcha: true));
+    await t.pumpWidget(_barra(tema: temaLiquidGlass, enMarcha: true));
     expect(find.byType(Slider), findsOneWidget);
   });
 
@@ -133,6 +140,31 @@ void main() {
         reason: 'y tiene que llegar hasta el principio');
   });
 
+  testWidgets('al cambiar de canción la barra rebobina suave, no popea',
+      (t) async {
+    await t.pumpWidget(_barra(
+        tema: temaMaterialOscuro, enMarcha: true, valor: 600, clavePista: 'a'));
+    await t.pump(const Duration(milliseconds: 100));
+    expect(_fraccionPintada(t), greaterThan(0.5),
+        reason: 'la canción anterior va por la mitad');
+
+    // Canción nueva que empieza de cero: es el "popeo" del downbar.
+    await t.pumpWidget(_barra(
+        tema: temaMaterialOscuro, enMarcha: true, valor: 0, clavePista: 'b'));
+    await t.pump(const Duration(milliseconds: 16));
+
+    expect(
+      _fraccionPintada(t),
+      greaterThan(0.3),
+      reason: 'un fotograma después del cambio la barra tiene que estar '
+          'volviendo con el muelle; en cero sería el salto de antes',
+    );
+
+    await t.pump(const Duration(milliseconds: 900));
+    expect(_fraccionPintada(t), closeTo(0, 0.02),
+        reason: 'y termina llegando al principio de la nueva canción');
+  });
+
   testWidgets('un salto hacia atrás normal no dispara el rebobinado',
       (t) async {
     await t.pumpWidget(
@@ -148,6 +180,55 @@ void main() {
       closeTo(0.1, 0.001),
       reason: 'solo se rebobina al terminar la canción, no cada vez que el '
           'usuario retrocede',
+    );
+  });
+
+  testWidgets(
+      'si el progreso cae a 0 antes de cambiar el URI, rebobina igual',
+      (t) async {
+    await t.pumpWidget(_barra(
+        tema: temaMaterialOscuro,
+        enMarcha: true,
+        valor: 600,
+        clavePista: 'misma'));
+    await t.pump(const Duration(milliseconds: 100));
+    expect(_fraccionPintada(t), greaterThan(0.5));
+
+    // El reproductor pone 0 y sigue el mismo URI un fotograma.
+    await t.pumpWidget(_barra(
+        tema: temaMaterialOscuro,
+        enMarcha: true,
+        valor: 0,
+        clavePista: 'misma'));
+    await t.pump(const Duration(milliseconds: 16));
+
+    expect(
+      _fraccionPintada(t),
+      greaterThan(0.3),
+      reason: 'sin esto la barra popea a cero y cuando llega el URI nuevo '
+          'ya no hay de dónde rebobinar',
+    );
+  });
+
+  testWidgets('al pasar el ratón la onda se ensancha', (t) async {
+    await t.pumpWidget(
+        _barra(tema: temaMaterialOscuro, enMarcha: false, valor: 400));
+    await t.pump();
+    expect(_sobrePintada(t), 0);
+
+    final raton = await t.createGesture(kind: PointerDeviceKind.mouse);
+    await raton.addPointer(location: Offset.zero);
+    addTearDown(raton.removePointer);
+    await t.pump();
+    await raton.moveTo(t.getCenter(find.byType(BarraDeProgreso)));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 160));
+
+    expect(
+      _sobrePintada(t),
+      greaterThan(0.4),
+      reason: 'el muelle tiene que haber ensanchado la línea; si sigue en 0 '
+          'el hover no está llegando al pintor',
     );
   });
 

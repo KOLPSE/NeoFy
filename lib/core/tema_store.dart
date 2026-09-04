@@ -46,16 +46,43 @@ class TemaStore extends ChangeNotifier {
     for (final tema in _deDisco) {
       if (tema.id == id) return tema;
     }
-    return temaIncluidoPorId(id);
+    final incluido = temaIncluidoPorId(id);
+    return incluido?.personalizado(config.temaColores[id]);
+  }
+
+  /// Retoques de color guardados para un tema incluido ('primario',
+  /// 'fondo', 'panel' → '#RRGGBB'). Vacío si lleva los de fábrica.
+  Map<String, String> retoquesDe(String idTema) =>
+      Map.unmodifiable(config.temaColores[idTema] ?? const {});
+
+  Future<void> personalizar(String idTema, String clave, String? colorHex) async {
+    final retoques = config.temaColores[idTema] ??= {};
+    if (colorHex == null) {
+      retoques.remove(clave);
+      if (retoques.isEmpty) config.temaColores.remove(idTema);
+    } else {
+      retoques[clave] = colorHex;
+    }
+    notifyListeners();
+    await config.save();
+  }
+
+  Future<void> restablecerColores(String idTema) async {
+    if (config.temaColores.remove(idTema) == null) return;
+    notifyListeners();
+    await config.save();
   }
 
   bool get siguiendoAlSistema => porId(idSeleccionado) == null;
 
-  Tema get temaParaClaro =>
-      siguiendoAlSistema ? temaClaro : porId(idSeleccionado)!;
+  Tema get temaParaClaro => siguiendoAlSistema
+      ? temaMaterialClaro.personalizado(config.temaColores[temaMaterialClaro.id])
+      : porId(idSeleccionado)!;
 
-  Tema get temaParaOscuro =>
-      siguiendoAlSistema ? temaOscuro : porId(idSeleccionado)!;
+  Tema get temaParaOscuro => siguiendoAlSistema
+      ? temaMaterialOscuro
+          .personalizado(config.temaColores[temaMaterialOscuro.id])
+      : porId(idSeleccionado)!;
 
   ThemeMode get modo {
     if (siguiendoAlSistema) return ThemeMode.system;
@@ -67,9 +94,19 @@ class TemaStore extends ChangeNotifier {
   ThemeData get themeDataOscuro => construirThemeData(temaParaOscuro);
 
   Future<void> cargar() async {
+    await _migrarTemaRetirado();
     await recargar(notificar: false);
     await _cargarFuentes();
     notifyListeners();
+  }
+
+  /// Los temas clásicos se retiraron; un `config.json` viejo puede seguir
+  /// apuntando a uno. Se cambia por su equivalente de Material y se guarda.
+  Future<void> _migrarTemaRetirado() async {
+    final sustituto = kTemasRetirados[config.tema];
+    if (sustituto == null) return;
+    config.tema = sustituto;
+    await config.save();
   }
 
   Future<void> recargar({bool notificar = true}) async {

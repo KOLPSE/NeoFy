@@ -8,9 +8,14 @@ import 'idiomas_spotify.dart';
 
 final ValueNotifier<bool> modoRendimiento = ValueNotifier(false);
 
+/// Preferencia "menús en el elemento" en caliente: los [DesplegableEnSitio]
+/// la escuchan directamente, sin necesidad de un [Settings] a mano.
+final ValueNotifier<bool> menusEnElemento = ValueNotifier(true);
+
 class Settings extends ChangeNotifier {
   Settings(this.config) {
     modoRendimiento.value = config.performanceMode;
+    menusEnElemento.value = config.menusEnElemento;
     _aplicar();
   }
 
@@ -27,6 +32,22 @@ class Settings extends ChangeNotifier {
   String get discordClientId => config.discordClientId;
   String get idiomaPreferido => config.idiomaPreferido;
   String get localeEfectivo => localeSpotifyEfectivo(config.idiomaPreferido);
+  bool get sidebarPlegado => config.sidebarPlegado;
+
+  Future<void> setMenusEnElemento(bool activo) async {
+    if (config.menusEnElemento == activo) return;
+    menusEnElemento.value = activo;
+    config.menusEnElemento = activo;
+    notifyListeners();
+    await config.save();
+  }
+
+  Future<void> setSidebarPlegado(bool plegado) async {
+    if (config.sidebarPlegado == plegado) return;
+    config.sidebarPlegado = plegado;
+    notifyListeners();
+    await config.save();
+  }
 
   Future<void> setPerformanceMode(bool activo) async {
     if (modoRendimiento.value == activo) return;

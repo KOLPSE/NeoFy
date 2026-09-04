@@ -225,48 +225,69 @@ class PanelDeCristal extends StatelessWidget {
               borderRadius: radio,
               child: BackdropFilter(
                 filter: _filtroDeCristal(cristal),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: esquema.surfaceContainer
-                              .withValues(alpha: cristal.opacidad),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: _altoDelReflejo,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.white.withValues(alpha: cristal.brillo),
-                                Colors.transparent,
-                              ],
+                child: LayoutBuilder(
+                  builder: (context, cons) {
+                    // El fondo y el borde van en Positioned.fill, así que el
+                    // Stack se mide por este hijo. Si el padre (el sidebar)
+                    // trae altura acotada, la imponemos aquí: si no, Ajustes
+                    // y Salir se quedan pegados al final de las playlists.
+                    // No estirar a lo ancho: el cajón recorta un cristal
+                    // de 244 y solo pasa a 72 cuando ya está plegado.
+                    Widget cuerpo = Material(
+                      color: Colors.transparent,
+                      child: child,
+                    );
+                    if (cons.maxHeight.isFinite) {
+                      cuerpo = SizedBox(
+                        height: cons.maxHeight,
+                        child: cuerpo,
+                      );
+                    }
+                    return Stack(
+                      children: [
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: esquema.surfaceContainer
+                                  .withValues(alpha: cristal.opacidad),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                    Material(color: Colors.transparent, child: child),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          painter: _RimDeCristal(
-                            radio: radio,
-                            intensidad: cristal.borde,
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: _altoDelReflejo,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.white
+                                        .withValues(alpha: cristal.brillo),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
+                        cuerpo,
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _RimDeCristal(
+                                radio: radio,
+                                intensidad: cristal.borde,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

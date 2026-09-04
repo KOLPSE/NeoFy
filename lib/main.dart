@@ -136,6 +136,10 @@ class _SpotifyNativeAppState extends State<SpotifyNativeApp> {
         theme: widget.temas.themeDataClaro,
         darkTheme: widget.temas.themeDataOscuro,
         themeMode: widget.temas.modo,
+        // Sin esto, cambiar un color con el diálogo de Temas abierto
+        // revienta: AnimatedTheme notifica a overlays que ya no son
+        // descendientes (assertion en framework.dart).
+        themeAnimationDuration: Duration.zero,
         builder: (context, hijo) =>
             FondoDelTema(child: hijo ?? const SizedBox.shrink()),
         home: RootScreen(config: widget.config, temas: widget.temas),

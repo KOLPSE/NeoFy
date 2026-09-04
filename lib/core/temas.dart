@@ -9,7 +9,7 @@ import 'app_config.dart';
 
 const int kFormatoDeTema = 1;
 
-const String kIdTemaPorDefecto = 'oscuro';
+const String kIdTemaPorDefecto = 'material-oscuro';
 
 const String kNombreDelManifiesto = 'tema.json';
 
@@ -351,6 +351,66 @@ class Tema {
   Formas get escalaDeFormas => formas ?? Formas.desdeRadio(radio);
 
   bool get esOscuro => brillo == BrilloDeTema.oscuro;
+
+  /// Mismo tema con otra paleta. Lo que no se toca se deriva como en
+  /// `desdeJson`: el contraste sobre el primario y, si cambia el fondo,
+  /// superficie, texto tenue y borde.
+  Tema conPaleta(Paleta nueva) => Tema(
+        id: id,
+        nombre: nombre,
+        autor: autor,
+        version: version,
+        descripcion: descripcion,
+        brillo: brillo,
+        colores: nueva,
+        cristal: cristal,
+        fondo: fondo,
+        tipografia: tipografia,
+        radio: radio,
+        radioBoton: radioBoton,
+        radioCaratula: radioCaratula,
+        navegacion: navegacion,
+        movimiento: movimiento,
+        progreso: progreso,
+        formas: formas,
+        carpeta: carpeta,
+        incluido: incluido,
+      );
+
+  /// Aplica los retoques del usuario ('primario', 'fondo', 'panel' en
+  /// '#RRGGBB') sobre la paleta de fábrica. Sin retoques devuelve `this`.
+  Tema personalizado(Map<String, String>? retoques) {
+    if (retoques == null || retoques.isEmpty) return this;
+    final primario = parsearColor(retoques['primario']);
+    final fondoNuevo = parsearColor(retoques['fondo']);
+    final panelNuevo = parsearColor(retoques['panel']);
+    if (primario == null && fondoNuevo == null && panelNuevo == null) {
+      return this;
+    }
+    final c = colores;
+    final oscuro = esOscuro;
+    final fondo = fondoNuevo ?? c.fondo;
+    final cambiaFondo = fondoNuevo != null && fondoNuevo != c.fondo;
+    return conPaleta(Paleta(
+      primario: primario ?? c.primario,
+      sobrePrimario:
+          primario != null ? contrasteSobre(primario) : c.sobrePrimario,
+      fondo: fondo,
+      superficie: cambiaFondo
+          ? Color.lerp(fondo, oscuro ? Colors.white : Colors.black, 0.06)!
+          : c.superficie,
+      panel: panelNuevo ??
+          (cambiaFondo
+              ? Color.lerp(fondo, oscuro ? Colors.white : Colors.black,
+                  oscuro ? 0.055 : 0.045)!
+              : c.panel),
+      texto: c.texto,
+      textoTenue:
+          cambiaFondo ? Color.lerp(c.texto, fondo, 0.38)! : c.textoTenue,
+      borde: cambiaFondo ? Color.lerp(fondo, c.texto, 0.16)! : c.borde,
+      error: c.error,
+    ));
+  }
 
   String? rutaDeRecurso(String relativo) {
     final base = carpeta;

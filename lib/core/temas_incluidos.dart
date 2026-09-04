@@ -8,165 +8,19 @@ import 'temas.dart';
 
 const String kIdTemaDelSistema = 'sistema';
 
-const Tema temaClaro = Tema(
-  id: 'claro',
-  nombre: 'Claro',
-  autor: 'NeoFy',
-  descripcion: 'El de siempre, en claro. Blanco limpio y el verde de NeoFy.',
-  brillo: BrilloDeTema.claro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF1DB954),
-    sobrePrimario: Color(0xFFFFFFFF),
-    fondo: Color(0xFFFFFFFF),
-    superficie: Color(0xFFF4F4F4),
-    panel: Color(0xFFF0F0F0),
-    texto: Color(0xFF121212),
-    textoTenue: Color(0xFF5B5B5B),
-    borde: Color(0xFFE1E1E1),
-    error: Color(0xFFB3261E),
-  ),
-);
-
-const Tema temaOscuro = Tema(
-  id: 'oscuro',
-  nombre: 'Oscuro',
-  autor: 'NeoFy',
-  descripcion: 'El de siempre. Negro casi puro y el verde de NeoFy.',
-  brillo: BrilloDeTema.oscuro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF1DB954),
-    sobrePrimario: Color(0xFF06210F),
-    fondo: Color(0xFF121212),
-    superficie: Color(0xFF1C1C1C),
-    panel: Color(0xFF0A0A0A),
-    texto: Color(0xFFF2F2F2),
-    textoTenue: Color(0xFFA8A8A8),
-    borde: Color(0xFF2A2A2A),
-    error: Color(0xFFFF6B6B),
-  ),
-);
-
-const Tema temaVerdeClaro = Tema(
-  id: 'verde-claro',
-  nombre: 'Verde claro',
-  autor: 'NeoFy',
-  descripcion: 'Menta sobre papel. Todo el fondo tirando a verde.',
-  brillo: BrilloDeTema.claro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF128C43),
-    sobrePrimario: Color(0xFFFFFFFF),
-    fondo: Color(0xFFF2FBF5),
-    superficie: Color(0xFFE6F5EB),
-    panel: Color(0xFFDCEFE3),
-    texto: Color(0xFF0C2A18),
-    textoTenue: Color(0xFF4A6B58),
-    borde: Color(0xFFC6E2D0),
-    error: Color(0xFFB3261E),
-  ),
-);
-
-const Tema temaVerdeOscuro = Tema(
-  id: 'verde-oscuro',
-  nombre: 'Verde oscuro',
-  autor: 'NeoFy',
-  descripcion: 'Bosque de noche. Verde encendido sobre fondo verde apagado.',
-  brillo: BrilloDeTema.oscuro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF1ED760),
-    sobrePrimario: Color(0xFF04160B),
-    fondo: Color(0xFF0B1710),
-    superficie: Color(0xFF12241A),
-    panel: Color(0xFF071009),
-    texto: Color(0xFFE8F7EE),
-    textoTenue: Color(0xFF93B7A2),
-    borde: Color(0xFF1E3A29),
-    error: Color(0xFFFF6B6B),
-  ),
-);
-
-const Tema temaAzulClaro = Tema(
-  id: 'azul-claro',
-  nombre: 'Azul claro',
-  autor: 'NeoFy',
-  descripcion: 'Cielo de mediodía. Azules fríos y mucho aire.',
-  brillo: BrilloDeTema.claro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF1D6FE0),
-    sobrePrimario: Color(0xFFFFFFFF),
-    fondo: Color(0xFFF5F8FF),
-    superficie: Color(0xFFE9F0FD),
-    panel: Color(0xFFDEE9FB),
-    texto: Color(0xFF101B2E),
-    textoTenue: Color(0xFF4C5E7A),
-    borde: Color(0xFFC9DAF4),
-    error: Color(0xFFB3261E),
-  ),
-);
-
-const Tema temaAzulOscuro = Tema(
-  id: 'azul-oscuro',
-  nombre: 'Azul oscuro',
-  autor: 'NeoFy',
-  descripcion: 'Medianoche. Azul eléctrico sobre azul marino.',
-  brillo: BrilloDeTema.oscuro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFF4C8DFF),
-    sobrePrimario: Color(0xFF04101F),
-    fondo: Color(0xFF0A1020),
-    superficie: Color(0xFF121C33),
-    panel: Color(0xFF060A16),
-    texto: Color(0xFFE9EFFC),
-    textoTenue: Color(0xFF97A8C6),
-    borde: Color(0xFF1E2C4A),
-    error: Color(0xFFFF6B6B),
-  ),
-);
-
-const Tema temaRojoClaro = Tema(
-  id: 'rojo-claro',
-  nombre: 'Rojo claro',
-  autor: 'NeoFy',
-  descripcion: 'Carmín sobre crema. Cálido sin llegar a cansar.',
-  brillo: BrilloDeTema.claro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFFC62B3E),
-    sobrePrimario: Color(0xFFFFFFFF),
-    fondo: Color(0xFFFFF6F6),
-    superficie: Color(0xFFFBE9EA),
-    panel: Color(0xFFF8DEE0),
-    texto: Color(0xFF2B1013),
-    textoTenue: Color(0xFF7A5054),
-    borde: Color(0xFFF0CBCE),
-    error: Color(0xFF8C1D28),
-  ),
-);
-
-const Tema temaRojoOscuro = Tema(
-  id: 'rojo-oscuro',
-  nombre: 'Rojo oscuro',
-  autor: 'NeoFy',
-  descripcion: 'Sala oscura con luz roja. Contraste alto, fondo cálido.',
-  brillo: BrilloDeTema.oscuro,
-  incluido: true,
-  colores: Paleta(
-    primario: Color(0xFFFF5A67),
-    sobrePrimario: Color(0xFF1E0507),
-    fondo: Color(0xFF170B0D),
-    superficie: Color(0xFF241315),
-    panel: Color(0xFF100708),
-    texto: Color(0xFFFBE9EA),
-    textoTenue: Color(0xFFC09499),
-    borde: Color(0xFF3A1E22),
-    error: Color(0xFFFF8A94),
-  ),
-);
+/// Temas retirados en la 1.3.0 y a qué incluido migra cada uno. Un
+/// `config.json` viejo puede traer cualquiera de estos ids; al cargar se
+/// cambia por el suyo y se guarda, para que la migración ocurra una vez.
+const Map<String, String> kTemasRetirados = {
+  'claro': 'material-claro',
+  'oscuro': 'material-oscuro',
+  'verde-claro': 'material-claro',
+  'verde-oscuro': 'material-oscuro',
+  'azul-claro': 'material-claro',
+  'azul-oscuro': 'material-oscuro',
+  'rojo-claro': 'material-claro',
+  'rojo-oscuro': 'material-oscuro',
+};
 
 const Tema temaLiquidGlass = Tema(
   id: 'liquid-glass',
@@ -278,14 +132,6 @@ const Tema temaMaterialOscuro = Tema(
 );
 
 const List<Tema> temasIncluidos = [
-  temaOscuro,
-  temaClaro,
-  temaVerdeOscuro,
-  temaVerdeClaro,
-  temaAzulOscuro,
-  temaAzulClaro,
-  temaRojoOscuro,
-  temaRojoClaro,
   temaMaterialOscuro,
   temaMaterialClaro,
   temaLiquidGlass,
@@ -298,12 +144,27 @@ Tema? temaIncluidoPorId(String id) {
   return null;
 }
 
-Future<Directory> crearTemaDeEjemplo({Tema base = temaOscuro}) async {
-  final raiz = carpetaDeTemas();
-  var destino = Directory(p.join(raiz.path, 'mi-tema'));
+/// Los únicos temas con editor de color en la app. Liquid Glass y los de
+/// la comunidad se editan a mano en el `tema.json`; más adelante se
+/// ampliará la personalización.
+bool esTemaMaterial(String id) => id.startsWith('material-');
+
+/// Escribe un tema de la comunidad partiendo de [base]. Con un Material
+/// personalizado, [base] ya lleva acento, fondo y paneles aplicados, así
+/// que la plantilla sale con esos colores y no con los de fábrica.
+///
+/// [en] es para tests; en la app se escribe en la carpeta de temas.
+Future<Directory> crearTemaDeEjemplo({
+  Tema base = temaMaterialOscuro,
+  String nombre = 'Mi tema',
+  Directory? en,
+}) async {
+  final raiz = en ?? carpetaDeTemas();
+  final slug = idDesdeNombre(nombre);
+  var destino = Directory(p.join(raiz.path, slug));
   var intento = 2;
   while (destino.existsSync()) {
-    destino = Directory(p.join(raiz.path, 'mi-tema-$intento'));
+    destino = Directory(p.join(raiz.path, '$slug-$intento'));
     intento++;
   }
   await destino.create(recursive: true);
@@ -311,7 +172,7 @@ Future<Directory> crearTemaDeEjemplo({Tema base = temaOscuro}) async {
   final id = p.basename(destino.path);
   final json = base.aJson()
     ..['id'] = id
-    ..['nombre'] = 'Mi tema'
+    ..['nombre'] = nombre
     ..['autor'] = 'tu nombre'
     ..['version'] = '1.0.0'
     ..['descripcion'] = 'Cámbiame y guarda: NeoFy lo recarga solo.';

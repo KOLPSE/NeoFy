@@ -29,13 +29,10 @@ void main() {
 
   testWidgets('pinta desde fichero, nunca desde bytes en memoria',
       (tester) async {
-    await tester.runAsync(() async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(body: ArtImage(url: url, size: 40)),
-      ));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump();
-    });
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ArtImage(url: url, size: 40)),
+    ));
+    await tester.pump();
 
     final imagen = tester.widget<Image>(find.byType(Image));
 
@@ -43,6 +40,24 @@ void main() {
 
     expect(resize.imageProvider, isA<FileImage>());
     expect(resize.imageProvider, isNot(isA<MemoryImage>()));
+  });
+
+  testWidgets('si el jpeg ya está en disco, pinta en el primer frame',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ArtImage(url: url, size: 40)),
+    ));
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is FutureBuilder), findsNothing);
+  });
+
+  test('las miniaturas de 28, 32 y 40 comparten cubeta de caché', () {
+    expect(ArtImage.pixelsDeCache(28, 1), 64);
+    expect(ArtImage.pixelsDeCache(32, 1), 64);
+    expect(ArtImage.pixelsDeCache(40, 1), 64);
+    expect(ArtImage.pixelsDeCache(32, 2), ArtImage.pixelsDeCache(40, 2));
+    expect(ArtImage.pixelsDeCache(56, 1), 56);
   });
 
   group('elige la variante por píxeles reales, no por tamaño lógico', () {

@@ -11,7 +11,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.2.0';
+const String kVersion = '1.3.0';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
@@ -102,6 +102,17 @@ class AppConfig {
   /// Vacío = sigue el idioma del PC. Formato Spotify: `es_ES`, `en_US`…
   String idiomaPreferido;
 
+  /// Colores propios para los temas de Material: id del tema → clave de la
+  /// paleta ('primario', 'fondo', 'panel') → color '#RRGGBB'.
+  Map<String, Map<String, String>> temaColores;
+
+  /// Los menús se abren ocupando el rectángulo del elemento en vez de
+  /// flotar encima (estilo Material Expressive).
+  bool menusEnElemento;
+
+  /// La barra lateral se muestra como rail de iconos en vez de panel ancho.
+  bool sidebarPlegado;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
@@ -112,7 +123,10 @@ class AppConfig {
     this.discordClientId = kDiscordClientId,
     this.tema = kTemaPorDefecto,
     this.idiomaPreferido = kIdiomaSistema,
-  });
+    Map<String, Map<String, String>>? temaColores,
+    this.menusEnElemento = true,
+    this.sidebarPlegado = false,
+  }) : temaColores = temaColores ?? {};
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
 
@@ -131,6 +145,16 @@ class AppConfig {
         discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
         tema: (map['tema'] as String?) ?? kTemaPorDefecto,
         idiomaPreferido: (map['idiomaPreferido'] as String?) ?? kIdiomaSistema,
+        temaColores: {
+          for (final entrada
+              in ((map['temaColores'] as Map?) ?? const {}).entries)
+            entrada.key.toString(): {
+              for (final color in (entrada.value as Map).entries)
+                color.key.toString(): color.value.toString(),
+            },
+        },
+        menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
+        sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
       );
     } catch (_) {
       return AppConfig();
@@ -148,6 +172,9 @@ class AppConfig {
       'discordClientId': discordClientId,
       'tema': tema,
       'idiomaPreferido': idiomaPreferido,
+      if (temaColores.isNotEmpty) 'temaColores': temaColores,
+      'menusEnElemento': menusEnElemento,
+      'sidebarPlegado': sidebarPlegado,
     }));
   }
 }

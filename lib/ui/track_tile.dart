@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/liked_store.dart';
 import '../core/models.dart';
 import 'art_image.dart';
+import 'desplegable_en_sitio.dart';
 import 'like_button.dart';
 import 'now_playing_bar.dart' show formatMs;
 import 'texto_traducido.dart';
@@ -46,71 +47,77 @@ class TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
-      dense: true,
-      onTap: actions.onPlay,
-      contentPadding: contentPadding,
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (leadingNumber != null)
-            SizedBox(
-              width: 28,
-              child: Text(
-                '$leadingNumber',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.right,
-              ),
-            ),
-          const SizedBox(width: 8),
-          ArtImage(url: showArt ? track.artSmall : null, size: 40),
-        ],
-      ),
-      title: Text(
-        track.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: isCurrent
-            ? theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
-            : null,
-      ),
-      subtitle: Text(
-        track.artists,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (likes != null && track.uri.isNotEmpty)
-            LikeButton(likes: likes!, uri: track.uri, pista: track),
-          Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, size: 18),
-            tooltip: 'Más opciones',
-            onSelected: (value) {
-              switch (value) {
-                case 'queue':
-                  actions.onQueue?.call();
-                case 'add':
-                  actions.onAddToPlaylist?.call();
-                case 'remove':
-                  actions.onRemove?.call();
-              }
-            },
-            itemBuilder: (context) => [
-              if (actions.onQueue != null)
-                PopupMenuItem(value: 'queue', child: T('Añadir a la cola')),
-              if (actions.onAddToPlaylist != null)
-                PopupMenuItem(value: 'add', child: T('Añadir a una playlist')),
-              if (actions.onRemove != null)
-                PopupMenuItem(value: 'remove', child: T('Quitar de esta playlist')),
-            ],
+    return DesplegableEnSitio(
+      icono: Icons.more_vert,
+      tooltip: 'Más opciones',
+      opciones: [
+        if (actions.onQueue != null)
+          OpcionEnSitio(
+            icono: Icons.queue_music,
+            texto: 'Añadir a la cola',
+            onTap: actions.onQueue!,
           ),
-        ],
+        if (actions.onAddToPlaylist != null)
+          OpcionEnSitio(
+            icono: Icons.playlist_add,
+            texto: 'Añadir a una playlist',
+            onTap: actions.onAddToPlaylist!,
+          ),
+        if (actions.onRemove != null)
+          OpcionEnSitio(
+            icono: Icons.remove_circle_outline,
+            texto: 'Quitar de esta playlist',
+            onTap: actions.onRemove!,
+            destructiva: true,
+            confirmacion: '¿Quitar «${track.name}» de esta playlist?',
+            textoConfirmar: 'Quitar',
+          ),
+      ],
+      constructor: (context, disparador) => ListTile(
+        dense: true,
+        onTap: actions.onPlay,
+        contentPadding: contentPadding,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (leadingNumber != null)
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '$leadingNumber',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            const SizedBox(width: 8),
+            ArtImage(url: showArt ? track.artSmall : null, size: 40),
+          ],
+        ),
+        title: Text(
+          track.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: isCurrent
+              ? theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
+              : null,
+        ),
+        subtitle: Text(
+          track.artists,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (likes != null && track.uri.isNotEmpty)
+              LikeButton(likes: likes!, uri: track.uri, pista: track),
+            Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall),
+            disparador,
+          ],
+        ),
       ),
     );
   }

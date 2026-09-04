@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -23,6 +24,7 @@ import 'album_screen.dart';
 import 'art_image.dart';
 import 'conectar_youtube.dart';
 import 'cristal.dart';
+import 'desplegable_en_sitio.dart';
 import 'movimiento.dart';
 import 'artist_screen.dart';
 import 'home_screen.dart';
@@ -49,6 +51,7 @@ bool hayQuePedirMas({
   if (!seccionAbierta) return false;
   return !desborda;
 }
+
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -195,27 +198,6 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _borrarPlaylist(Playlist pl) async {
-    final mia = pl.ownerId.isNotEmpty && pl.ownerId == widget.player.currentUserId;
-    final ok = await showDialogTraducido<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: T(mia ? 'Eliminar la playlist' : 'Quitarla de tu biblioteca'),
-        content: T(mia
-            ? 'Vas a eliminar «${pl.name}» de tu biblioteca. Si te arrepientes, Spotify deja recuperarla desde la web durante unos días.'
-            : 'Vas a quitar «${pl.name}» de tu biblioteca. La playlist original (de ${pl.owner.isEmpty ? "otra persona" : pl.owner}) seguirá existiendo; solo desaparece para ti.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: T('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: T(mia ? 'Eliminar' : 'Quitar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
     try {
       await widget.api.unfollowPlaylist(pl.id);
       if (!mounted) return;
@@ -314,25 +296,6 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _borrarCarpeta(Carpeta carpeta) async {
-    final ok = await showDialogTraducido<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: T('Eliminar la carpeta'),
-        content: T('«${carpeta.nombre}» desaparece, pero sus playlists no '
-            'se borran: vuelven a la lista.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: T('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: T('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
     _carpetasPlegadas.remove(carpeta.id);
     await widget.carpetas.borrarCarpeta(carpeta.id);
   }
@@ -402,63 +365,74 @@ class _AppShellState extends State<AppShell> {
         children: [
           Expanded(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _panelLateral(
                   hayCristal,
                   AnimatedBuilder(
-                  animation: Listenable.merge(
-                      [widget.player, widget.carpetas, widget.favoritos]),
-                  builder: (context, _) => _Sidebar(
-                    playlists: _playlists,
-                    carpetas: widget.carpetas.carpetas,
-                    carpetasPlegadas: _carpetasPlegadas,
-                    scroll: _scroll,
-                    loading: _loading,
-                    error: _error,
-                    view: _view,
-                    selected: _selected,
-                    expanded: _playlistsExpanded,
-                    artistasFavoritos: widget.favoritos.artistas,
-                    artistasExpanded: _artistasExpanded,
-                    artistaSeleccionado:
-                        _view == _View.artist ? _artista : null,
-                    playingContextUri: widget.player.state.contextUri,
-                    onToggleExpanded: () =>
-                        setState(() => _playlistsExpanded = !_playlistsExpanded),
-                    onToggleArtistas: () => setState(
-                        () => _artistasExpanded = !_artistasExpanded),
-                    onSelectArtista: _abrirArtista,
-                    onToggleCarpeta: (id) => setState(() {
-                      if (!_carpetasPlegadas.add(id)) {
-                        _carpetasPlegadas.remove(id);
-                      }
-                    }),
-                    onSelectView: (v) => setState(() {
-                      _view = v;
-                      _selected = null;
-                    }),
-                    onSelectPlaylist: (pl) => setState(() {
-                      _view = _View.playlist;
-                      _selected = pl;
-                    }),
-                    onLogout: widget.onLogout,
-                    onCreatePlaylist: _crearPlaylist,
-                    onCreateCarpeta: _crearCarpeta,
-                    onDeletePlaylist: _borrarPlaylist,
-                    onRenombrarCarpeta: _renombrarCarpeta,
-                    onBorrarCarpeta: _borrarCarpeta,
-                    onMoverPlaylist: _moverPlaylist,
-                    ram: widget.ram,
-                    settings: widget.settings,
-                    temas: widget.temas,
-                    updater: widget.updater,
-                    onSalirParaActualizar: widget.onSalirParaActualizar,
-                    onReiniciarAudio: widget.onReiniciarAudio,
-                    ytAuth: widget.ytAuth,
-                    sinPremium: widget.player.premiumChecked &&
-                        !widget.player.isPremium,
+                    animation: Listenable.merge([
+                      widget.carpetas,
+                      widget.favoritos,
+                      widget.settings,
+                    ]),
+                    builder: (context, _) => _EscuchaReproductor(
+                      player: widget.player,
+                      builder: (context, playingContextUri, sinPremium) =>
+                          _Sidebar(
+                        playlists: _playlists,
+                        carpetas: widget.carpetas.carpetas,
+                        carpetasPlegadas: _carpetasPlegadas,
+                        scroll: _scroll,
+                        loading: _loading,
+                        error: _error,
+                        view: _view,
+                        selected: _selected,
+                        expanded: _playlistsExpanded,
+                        artistasFavoritos: widget.favoritos.artistas,
+                        artistasExpanded: _artistasExpanded,
+                        artistaSeleccionado:
+                            _view == _View.artist ? _artista : null,
+                        playingContextUri: playingContextUri,
+                        plegado: widget.settings.sidebarPlegado,
+                        onTogglePlegado: () => unawaited(widget.settings
+                            .setSidebarPlegado(
+                                !widget.settings.sidebarPlegado)),
+                        onToggleExpanded: () => setState(
+                            () => _playlistsExpanded = !_playlistsExpanded),
+                        onToggleArtistas: () => setState(
+                            () => _artistasExpanded = !_artistasExpanded),
+                        onSelectArtista: _abrirArtista,
+                        onToggleCarpeta: (id) => setState(() {
+                          if (!_carpetasPlegadas.add(id)) {
+                            _carpetasPlegadas.remove(id);
+                          }
+                        }),
+                        onSelectView: (v) => setState(() {
+                          _view = v;
+                          _selected = null;
+                        }),
+                        onSelectPlaylist: (pl) => setState(() {
+                          _view = _View.playlist;
+                          _selected = pl;
+                        }),
+                        onLogout: widget.onLogout,
+                        onCreatePlaylist: _crearPlaylist,
+                        onCreateCarpeta: _crearCarpeta,
+                        onDeletePlaylist: _borrarPlaylist,
+                        onRenombrarCarpeta: _renombrarCarpeta,
+                        onBorrarCarpeta: _borrarCarpeta,
+                        onMoverPlaylist: _moverPlaylist,
+                        ram: widget.ram,
+                        settings: widget.settings,
+                        temas: widget.temas,
+                        updater: widget.updater,
+                        onSalirParaActualizar: widget.onSalirParaActualizar,
+                        onReiniciarAudio: widget.onReiniciarAudio,
+                        ytAuth: widget.ytAuth,
+                        sinPremium: sinPremium,
+                      ),
+                    ),
                   ),
-                ),
                 ),
                 if (!hayCristal) const VerticalDivider(width: 1),
                 Expanded(child: _content()),
@@ -482,15 +456,17 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _panelLateral(bool hayCristal, Widget hijo) {
-    if (hayCristal) {
-      return PanelDeCristal(
-        margen: const EdgeInsets.fromLTRB(10, 10, 0, 10),
-        child: hijo,
-      );
-    }
+    // Altura infinita (acotada por el Row con stretch): el Column del
+    // sidebar reparte el hueco y Ajustes/Salir quedan pegados al now playing.
+    // No usar SizedBox.expand: el Row no es flex y el panel se comería el
+    // contenido. El ancho lo pone el cajón (244 / 72). El cristal va
+    // *dentro* del cajón, a 244 fijos, para no recrear el BackdropFilter
+    // en cada fotograma del pliegue.
+    final lleno = SizedBox(height: double.infinity, child: hijo);
+    if (hayCristal) return lleno;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
-      child: hijo,
+      child: lleno,
     );
   }
 
@@ -520,6 +496,8 @@ class _AppShellState extends State<AppShell> {
           likes: widget.likes,
           followed: widget.followed,
           favoritos: widget.favoritos,
+          sidecar: widget.sidecar,
+          localeEfectivo: widget.settings.localeEfectivo,
           onAbrirPlaylist: (pl) => setState(() {
             _view = _View.playlist;
             _selected = pl;
@@ -607,6 +585,227 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
+/// Cajón que anima el ancho entre expandido y rail.
+///
+/// Nunca pinta los dos menús a la vez, y el expandido nunca se enseña
+/// recortado: partir "NeoFy" / "Inicio" se leía fatal. Al plegar se pasa
+/// al rail al instante (columna de 72) y el panel se estrecha a su
+/// alrededor. Al desplegar, el rail aguanta hasta que el ancho ya cabe
+/// el menú largo. Sin `Opacity` sobre el árbol: ese saveLayer iba a tirones.
+class _CajonLateral extends StatefulWidget {
+  const _CajonLateral({
+    required this.plegado,
+    required this.expandido,
+    required this.rail,
+  });
+
+  final bool plegado;
+  final Widget expandido;
+  final Widget rail;
+
+  @override
+  State<_CajonLateral> createState() => _CajonLateralState();
+}
+
+class _CajonLateralState extends State<_CajonLateral>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ancho;
+  final _claveRail = GlobalKey();
+
+  static const _margenCristal = EdgeInsets.fromLTRB(10, 10, 0, 10);
+
+  double get _destino =>
+      widget.plegado ? _Sidebar.anchoRail : _Sidebar.anchoExpandido;
+
+  @override
+  void initState() {
+    super.initState();
+    _ancho = AnimationController.unbounded(
+      vsync: this,
+      value: _destino,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_CajonLateral old) {
+    super.didUpdateWidget(old);
+    if (old.plegado != widget.plegado) {
+      _asentar();
+      return;
+    }
+    // Un hot reload a mitad del pliegue dejaba el expandido a 72 px.
+    if (!_ancho.isAnimating && (_ancho.value - _destino).abs() > 0.5) {
+      _ancho.value = _destino;
+    }
+  }
+
+  void _asentar() {
+    final movimiento = EstiloNeoFy.de(context).movimiento;
+    if (!movimiento.seMueve || modoRendimiento.value) {
+      _ancho.value = _destino;
+      return;
+    }
+    unawaited(_ancho.animateTo(
+      _destino,
+      duration: kDuracionDesplegable,
+      curve: kCurvaDesplegable,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _ancho.dispose();
+    super.dispose();
+  }
+
+  Widget _railColumna() => SizedBox(
+        width: _Sidebar.anchoRail,
+        height: double.infinity,
+        child: KeyedSubtree(key: _claveRail, child: widget.rail),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final cristal = EstiloNeoFy.de(context).hayCristal;
+    return AnimatedBuilder(
+      animation: _ancho,
+      child: widget.expandido,
+      builder: (context, expandido) {
+        final w = (_ancho.isAnimating ? _ancho.value : _destino)
+            .clamp(_Sidebar.anchoRail, _Sidebar.anchoExpandido);
+        // Durante toda la animación se ve el rail (iconos, sin texto que
+        // partir). El menú largo solo entra ya a 244.
+        final pintarRail = widget.plegado || _ancho.isAnimating;
+        final hijoExpandido = expandido ?? widget.expandido;
+
+        Widget interior;
+        if (pintarRail) {
+          interior = Align(
+            alignment: Alignment.topLeft,
+            child: _railColumna(),
+          );
+          if (!widget.plegado) {
+            interior = Stack(
+              fit: StackFit.expand,
+              children: [
+                interior,
+                TickerMode(
+                  enabled: false,
+                  child: Offstage(
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: _Sidebar.anchoExpandido,
+                      maxWidth: _Sidebar.anchoExpandido,
+                      child: hijoExpandido,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+        } else {
+          interior = RepaintBoundary(child: hijoExpandido);
+        }
+
+        if (!cristal) {
+          return SizedBox(
+            width: w,
+            child: ClipRect(child: interior),
+          );
+        }
+
+        final anchoCristal = _ancho.isAnimating
+            ? _Sidebar.anchoExpandido
+            : (pintarRail ? _Sidebar.anchoRail : _Sidebar.anchoExpandido);
+        return SizedBox(
+          width: _margenCristal.horizontal + w,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: _margenCristal.horizontal + anchoCristal,
+              maxWidth: _margenCristal.horizontal + anchoCristal,
+              child: PanelDeCristal(
+                margen: _margenCristal,
+                child: SizedBox(
+                  width: anchoCristal,
+                  height: double.infinity,
+                  child: interior,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// El sondeo del reproductor avisa cada pocos segundos. El sidebar solo
+/// necesita el contexto que está sonando y si hay que mostrar YouTube.
+class _EscuchaReproductor extends StatefulWidget {
+  const _EscuchaReproductor({
+    required this.player,
+    required this.builder,
+  });
+
+  final PlayerController player;
+  final Widget Function(
+    BuildContext context,
+    String? playingContextUri,
+    bool sinPremium,
+  ) builder;
+
+  @override
+  State<_EscuchaReproductor> createState() => _EscuchaReproductorState();
+}
+
+class _EscuchaReproductorState extends State<_EscuchaReproductor> {
+  String? _uri;
+  bool _sinPremium = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _leer();
+    widget.player.addListener(_alReproductor);
+  }
+
+  @override
+  void didUpdateWidget(_EscuchaReproductor old) {
+    super.didUpdateWidget(old);
+    if (old.player != widget.player) {
+      old.player.removeListener(_alReproductor);
+      widget.player.addListener(_alReproductor);
+      _alReproductor();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.player.removeListener(_alReproductor);
+    super.dispose();
+  }
+
+  void _leer() {
+    _uri = widget.player.state.contextUri;
+    _sinPremium =
+        widget.player.premiumChecked && !widget.player.isPremium;
+  }
+
+  void _alReproductor() {
+    final uri = widget.player.state.contextUri;
+    final sin = widget.player.premiumChecked && !widget.player.isPremium;
+    if (uri == _uri && sin == _sinPremium) return;
+    _uri = uri;
+    _sinPremium = sin;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.builder(context, _uri, _sinPremium);
+}
+
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.playlists,
@@ -622,6 +821,8 @@ class _Sidebar extends StatelessWidget {
     required this.artistasExpanded,
     required this.artistaSeleccionado,
     required this.playingContextUri,
+    required this.plegado,
+    required this.onTogglePlegado,
     required this.onToggleExpanded,
     required this.onToggleArtistas,
     required this.onSelectArtista,
@@ -645,6 +846,9 @@ class _Sidebar extends StatelessWidget {
     required this.sinPremium,
   });
 
+  static const double anchoExpandido = 244;
+  static const double anchoRail = 72;
+
   final List<Playlist> playlists;
   final List<Carpeta> carpetas;
   final Set<String> carpetasPlegadas;
@@ -658,6 +862,8 @@ class _Sidebar extends StatelessWidget {
   final bool artistasExpanded;
   final Artist? artistaSeleccionado;
   final String? playingContextUri;
+  final bool plegado;
+  final VoidCallback onTogglePlegado;
   final VoidCallback onToggleExpanded;
   final VoidCallback onToggleArtistas;
   final void Function(Artist) onSelectArtista;
@@ -692,144 +898,330 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final playing = _playing;
+    return _CajonLateral(
+      plegado: plegado,
+      expandido: _contenidoExpandido(context),
+      rail: _contenidoRail(context),
+    );
+  }
 
-    return SizedBox(
-      width: 244,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.graphic_eq, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'NeoFy',
-                      style: theme.textTheme.titleSmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+  void _abrirAjustes(BuildContext context) {
+    unawaited(mostrarAjustes(
+      context,
+      monitor: ram,
+      settings: settings,
+      updater: updater,
+      onSalirParaActualizar: onSalirParaActualizar,
+      bloquesExtra: [
+        BotonDeTemas(temas: temas, settings: settings),
+        BotonDeIdioma(settings: settings),
+        if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
+        ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
+      ],
+    ));
+  }
+
+  /// Las playlists en lista plana, en el mismo orden que el panel: primero
+  /// las de las carpetas y luego las sueltas. Es lo que ve el rail.
+  List<Playlist> _playlistsPlanas() {
+    final porId = {for (final pl in playlists) pl.id: pl};
+    final enCarpeta = <String>{for (final c in carpetas) ...c.playlistIds};
+    return [
+      for (final c in carpetas)
+        for (final id in c.playlistIds) ?porId[id],
+      for (final pl in playlists)
+        if (!enCarpeta.contains(pl.id)) pl,
+    ];
+  }
+
+  Widget _contenidoExpandido(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 8, 8),
+          child: Tooltip(
+            message: 'Contraer barra lateral',
+            child: Pulsable(
+              escalaSobre: 1.03,
+              escalaPulsada: 0.96,
+              child: InkWell(
+                onTap: onTogglePlegado,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.graphic_eq,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'NeoFy',
+                          style: theme.textTheme.titleSmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-          _NavTile(
-            icon: Icons.home,
-            label: 'Inicio',
-            selected: view == _View.home,
-            onTap: () => onSelectView(_View.home),
-          ),
-          _NavTile(
-            icon: Icons.search,
-            label: 'Buscar',
-            selected: view == _View.search,
-            onTap: () => onSelectView(_View.search),
-          ),
-          _NavTile(
-            icon: Icons.favorite,
-            label: 'Canciones que te gustan',
-            selected: view == _View.liked,
-            onTap: () => onSelectView(_View.liked),
-          ),
-          _NavTile(
-            icon: Icons.queue_music,
-            label: 'Cola',
-            selected: view == _View.queue,
-            onTap: () => onSelectView(_View.queue),
-          ),
-          const Divider(height: 16),
-          _CabeceraSeccion(
-            label: 'TUS ARTISTAS FAVORITOS',
-            expanded: artistasExpanded,
-            onTap: onToggleArtistas,
-          ),
-          Plegable(
-            abierto: artistasExpanded,
-            contenidoAbierto: _ListaArtistasFavoritos(
-              artistas: artistasFavoritos,
-              seleccionado: artistaSeleccionado,
-              onSelect: onSelectArtista,
+        ),
+        _NavTile(
+          icon: Icons.home,
+          label: 'Inicio',
+          selected: view == _View.home,
+          onTap: () => onSelectView(_View.home),
+        ),
+        _NavTile(
+          icon: Icons.search,
+          label: 'Buscar',
+          selected: view == _View.search,
+          onTap: () => onSelectView(_View.search),
+        ),
+        _NavTile(
+          icon: Icons.favorite,
+          label: 'Canciones que te gustan',
+          selected: view == _View.liked,
+          onTap: () => onSelectView(_View.liked),
+        ),
+        _NavTile(
+          icon: Icons.queue_music,
+          label: 'Cola',
+          selected: view == _View.queue,
+          onTap: () => onSelectView(_View.queue),
+        ),
+        const SizedBox(height: 8),
+        // Un único hijo flexible en todo el Column. Antes había dos
+        // hermanos flex (artistas y playlists) y el reparto los partía a
+        // medias: el de artistas, al ser `loose`, devolvía la mitad que no
+        // usaba y ese sobrante no lo recuperaba nadie. Ese era el hueco que
+        // dejaba Ajustes y Salir colgando a media altura.
+        Expanded(child: _zonaDeListas(context)),
+        const SizedBox(height: 4),
+        Divider(
+          height: 1,
+          thickness: 1,
+          indent: 16,
+          endIndent: 16,
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+        const SizedBox(height: 4),
+        _NavTile(
+          icon: Icons.tune,
+          label: 'Ajustes',
+          selected: false,
+          onTap: () => _abrirAjustes(context),
+        ),
+        _NavTile(
+          icon: Icons.logout,
+          label: 'Salir',
+          selected: false,
+          onTap: () => unawaited(onLogout()),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// Artistas favoritos y playlists. Los artistas no son flex a propósito:
+  /// se les pone un tope y las playlists se quedan con todo lo que sobre,
+  /// que es lo que mantiene el pie del panel abajo.
+  Widget _zonaDeListas(BuildContext context) {
+    final theme = Theme.of(context);
+    final playing = _playing;
+
+    return LayoutBuilder(
+      builder: (context, cons) {
+        final tope = cons.maxHeight.isFinite
+            ? math.min(240.0, cons.maxHeight * 0.45)
+            : 240.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CabeceraSeccion(
+              label: 'TUS ARTISTAS FAVORITOS',
+              expanded: artistasExpanded,
+              onTap: onToggleArtistas,
             ),
-            contenidoCerrado: const SizedBox.shrink(),
-          ),
-          const Divider(height: 16),
-          _SectionHeader(
-            label: 'TUS PLAYLISTS',
-            expanded: expanded,
-            onTap: onToggleExpanded,
-            onCreatePlaylist: onCreatePlaylist,
-            onCreateCarpeta: onCreateCarpeta,
-          ),
-          Expanded(
-            child: Plegable(
-              abierto: expanded,
-              contenidoAbierto: error != null && playlists.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(error!,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.error)),
-                    )
-                  : _listaDePlaylists(context),
-              contenidoCerrado: playing == null
-                  ? const SizedBox.shrink()
-                  : _PlaylistTile(
-                      playlist: playing,
-                      selected:
-                          view == _View.playlist && selected?.id == playing.id,
-                      playing: true,
-                      hayCarpetas: carpetas.isNotEmpty,
-                      onTap: () => onSelectPlaylist(playing),
-                      onDelete: () => onDeletePlaylist(playing),
-                      onMover: () => onMoverPlaylist(playing),
-                    ),
+            Plegable(
+              abierto: artistasExpanded,
+              contenidoAbierto: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: tope),
+                child: _ListaArtistasFavoritos(
+                  artistas: artistasFavoritos,
+                  seleccionado: artistaSeleccionado,
+                  onSelect: onSelectArtista,
+                ),
+              ),
+              contenidoCerrado: const SizedBox.shrink(),
             ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () => unawaited(
-                      mostrarAjustes(
-                        context,
-                        monitor: ram,
-                        settings: settings,
-                        updater: updater,
-                        onSalirParaActualizar: onSalirParaActualizar,
-                        bloquesExtra: [
-                          BotonDeTemas(temas: temas),
-                          BotonDeIdioma(settings: settings),
-                          if (sinPremium) ConectarYouTubeMusic(auth: ytAuth),
-                          ReiniciarAudioDeNeoFy(onReiniciar: onReiniciarAudio),
-                        ],
+            const SizedBox(height: 8),
+            _SectionHeader(
+              label: 'TUS PLAYLISTS',
+              expanded: expanded,
+              onTap: onToggleExpanded,
+              onCreatePlaylist: onCreatePlaylist,
+              onCreateCarpeta: onCreateCarpeta,
+            ),
+            Expanded(
+              child: Plegable(
+                abierto: expanded,
+                contenidoAbierto: error != null && playlists.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(error!,
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: theme.colorScheme.error)),
+                      )
+                    : _listaDePlaylists(context),
+                contenidoCerrado: playing == null
+                    ? const SizedBox.shrink()
+                    : _PlaylistTile(
+                        playlist: playing,
+                        selected: view == _View.playlist &&
+                            selected?.id == playing.id,
+                        playing: true,
+                        hayCarpetas: carpetas.isNotEmpty,
+                        onTap: () => onSelectPlaylist(playing),
+                        onDelete: () => onDeletePlaylist(playing),
+                        onMover: () => onMoverPlaylist(playing),
                       ),
-                    ),
-                    icon: const Icon(Icons.tune, size: 18),
-                    label: T('Ajustes'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _contenidoRail(BuildContext context) {
+    final theme = Theme.of(context);
+    final artistas = artistasFavoritos;
+    final listas = _playlistsPlanas();
+    final nArt = artistas.length;
+    final nPl = listas.length;
+    final sepArt = nArt > 0 ? 1 : 0;
+    final sepPl = nPl > 0 ? 1 : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 14),
+        Center(
+          child: Tooltip(
+            message: 'Expandir barra lateral',
+            child: Pulsable(
+              escalaSobre: 1.08,
+              escalaPulsada: 0.92,
+              child: InkWell(
+                onTap: onTogglePlegado,
+                customBorder: const CircleBorder(),
+                child: SizedBox(
+                  width: anchoRail,
+                  height: 44,
+                  child: Center(
+                    child: Icon(Icons.graphic_eq,
+                        color: theme.colorScheme.primary),
                   ),
                 ),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: onLogout,
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: T('Salir'),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        _IconoRail(
+          icon: Icons.home,
+          label: 'Inicio',
+          selected: view == _View.home,
+          onTap: () => onSelectView(_View.home),
+        ),
+        _IconoRail(
+          icon: Icons.search,
+          label: 'Buscar',
+          selected: view == _View.search,
+          onTap: () => onSelectView(_View.search),
+        ),
+        _IconoRail(
+          icon: Icons.favorite,
+          label: 'Canciones que te gustan',
+          selected: view == _View.liked,
+          onTap: () => onSelectView(_View.liked),
+        ),
+        _IconoRail(
+          icon: Icons.queue_music,
+          label: 'Cola',
+          selected: view == _View.queue,
+          onTap: () => onSelectView(_View.queue),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            addAutomaticKeepAlives: false,
+            itemCount: sepArt + nArt + sepPl + nPl,
+            itemBuilder: (context, i) {
+              var idx = i;
+              if (nArt > 0) {
+                if (idx == 0) {
+                  return const _SeparadorRail(
+                    icono: Icons.person_outline,
+                    etiqueta: 'Artistas favoritos',
+                  );
+                }
+                idx--;
+                if (idx < nArt) {
+                  final a = artistas[idx];
+                  return _CaratulaRail(
+                    key: ValueKey('artista-${a.id}'),
+                    url: a.art,
+                    nombre: a.name,
+                    redonda: true,
+                    seleccionada:
+                        view == _View.artist && artistaSeleccionado?.id == a.id,
+                    sonando: false,
+                    onTap: () => onSelectArtista(a),
+                  );
+                }
+                idx -= nArt;
+              }
+              if (idx == 0 && nPl > 0) {
+                return const _SeparadorRail(
+                  icono: Icons.playlist_play,
+                  etiqueta: 'Playlists',
+                );
+              }
+              if (nPl > 0) idx--;
+              final pl = listas[idx];
+              return _CaratulaRail(
+                key: ValueKey('playlist-${pl.id}'),
+                url: pl.art,
+                nombre: pl.name,
+                redonda: false,
+                seleccionada: view == _View.playlist && selected?.id == pl.id,
+                sonando: pl.uri == playingContextUri,
+                onTap: () => onSelectPlaylist(pl),
+              );
+            },
+          ),
+        ),
+        _IconoRail(
+          icon: Icons.tune,
+          label: 'Ajustes',
+          selected: false,
+          onTap: () => _abrirAjustes(context),
+        ),
+        _IconoRail(
+          icon: Icons.logout,
+          label: 'Salir',
+          selected: false,
+          onTap: () => unawaited(onLogout()),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 
@@ -859,6 +1251,7 @@ class _Sidebar extends StatelessWidget {
     }
     return ListView.builder(
       controller: scroll,
+      addAutomaticKeepAlives: false,
       itemCount: entradas.length + (loading ? 1 : 0),
       itemBuilder: (context, i) {
         if (i >= entradas.length) {
@@ -900,6 +1293,39 @@ class _Sidebar extends StatelessWidget {
 }
 
 sealed class _EntradaSidebar {}
+
+/// Marca visual entre bloques del rail: un icono pequeño con tooltip para
+/// que, comprimido, se sepa si lo de debajo son artistas o playlists.
+class _SeparadorRail extends StatelessWidget {
+  const _SeparadorRail({required this.icono, required this.etiqueta});
+
+  final IconData icono;
+  final String etiqueta;
+
+  @override
+  Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+      child: Tooltip(
+        message: etiqueta,
+        child: Column(
+          children: [
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: 18,
+              endIndent: 18,
+              color: esquema.outlineVariant.withValues(alpha: 0.55),
+            ),
+            const SizedBox(height: 6),
+            Icon(icono, size: 14, color: esquema.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _EntradaCarpeta extends _EntradaSidebar {
   _EntradaCarpeta(this.carpeta, {required this.cargadas});
@@ -965,25 +1391,7 @@ class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
       );
     }
 
-    final filas = [
-      for (final a in widget.artistas)
-        EntradaDeLista(
-          key: ValueKey(a.id),
-          animar: !_primeraPasada && !_yaVistos.contains(a.id),
-          child: ListTile(
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            selected: widget.seleccionado?.id == a.id,
-            leading: ArtImage(url: a.art, size: 28, radius: 14),
-            title: Text(
-              a.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => widget.onSelect(a),
-          ),
-        ),
-    ];
+    final filas = widget.artistas;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _yaVistos.addAll(widget.artistas.map((a) => a.id));
@@ -991,21 +1399,45 @@ class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
 
     final mueve =
         EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value;
-    final cuerpo = widget.artistas.length <= 6
-        ? Column(mainAxisSize: MainAxisSize.min, children: filas)
-        : ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView(
+    return LayoutBuilder(
+      builder: (context, cons) {
+        const altoFila = 48.0;
+        final tope = cons.maxHeight.isFinite ? cons.maxHeight : 240.0;
+        final alto = math.min(filas.length * altoFila, tope);
+        return AnimatedSize(
+          duration: mueve ? kDuracionDesplegable : Duration.zero,
+          curve: kCurvaDesplegable,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: alto,
+            child: ListView.builder(
               padding: EdgeInsets.zero,
-              children: filas,
+              itemExtent: altoFila,
+              addAutomaticKeepAlives: false,
+              itemCount: filas.length,
+              itemBuilder: (context, i) {
+                final a = filas[i];
+                return EntradaDeLista(
+                  key: ValueKey(a.id),
+                  animar: !_primeraPasada && !_yaVistos.contains(a.id),
+                  child: ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    selected: widget.seleccionado?.id == a.id,
+                    leading: ArtImage(url: a.art, size: 28, radius: 14),
+                    title: Text(
+                      a.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => widget.onSelect(a),
+                  ),
+                );
+              },
             ),
-          );
-
-    return AnimatedSize(
-      duration: mueve ? kDuracionDesplegable : Duration.zero,
-      curve: kCurvaDesplegable,
-      alignment: Alignment.topCenter,
-      child: cuerpo,
+          ),
+        );
+      },
     );
   }
 }
@@ -1068,48 +1500,45 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: T(label,
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Nueva playlist o carpeta',
-              icon: Icon(Icons.add, size: 18, color: theme.colorScheme.onSurfaceVariant),
-              padding: EdgeInsets.zero,
-              onSelected: (v) {
-                if (v == 'playlist') {
-                  unawaited(onCreatePlaylist());
-                } else {
-                  unawaited(onCreateCarpeta());
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'playlist',
-                  child: T('Nueva playlist'),
-                ),
-                PopupMenuItem(
-                  value: 'carpeta',
-                  child: T('Nueva carpeta'),
-                ),
-              ],
-            ),
-            GiroConMuelle(
-              abierto: expanded,
-              child: Icon(
-                Icons.expand_less,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
+    return DesplegableEnSitio(
+      icono: Icons.add,
+      tooltip: 'Nueva playlist o carpeta',
+      colorIcono: theme.colorScheme.onSurfaceVariant,
+      paddingOpciones: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      opciones: [
+        OpcionEnSitio(
+          icono: Icons.playlist_add,
+          texto: 'Nueva playlist',
+          onTap: () => unawaited(onCreatePlaylist()),
+        ),
+        OpcionEnSitio(
+          icono: Icons.create_new_folder_outlined,
+          texto: 'Nueva carpeta',
+          onTap: () => unawaited(onCreateCarpeta()),
+        ),
+      ],
+      constructor: (context, disparador) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: T(label,
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               ),
-            ),
-          ],
+              disparador,
+              GiroConMuelle(
+                abierto: expanded,
+                child: Icon(
+                  Icons.expand_less,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1140,51 +1569,48 @@ class _PlaylistTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tile = ListTile(
-      dense: true,
-      selected: selected,
-      leading: ArtImage(url: playlist.art, size: 32),
-      title: Text(
-        playlist.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: playing
-            ? theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
-            : null,
-      ),
-      subtitle: T('${playlist.trackCount} canciones',
-          style: theme.textTheme.bodySmall),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (playing)
-            Icon(Icons.volume_up, size: 16, color: theme.colorScheme.primary),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz, size: 16),
-            tooltip: 'Opciones',
-            onSelected: (v) {
-              if (v == 'mover') {
-                onMover();
-              } else {
-                onDelete();
-              }
-            },
-            itemBuilder: (context) => [
-              if (hayCarpetas)
-                PopupMenuItem(
-                  value: 'mover',
-                  child: T('Mover a carpeta...'),
-                ),
-              PopupMenuItem(
-                value: 'delete',
-                child: T('Quitar de tu biblioteca'),
-              ),
-            ],
+    final tile = DesplegableEnSitio(
+      opciones: [
+        if (hayCarpetas)
+          OpcionEnSitio(
+            icono: Icons.drive_file_move_outlined,
+            texto: 'Mover a carpeta...',
+            onTap: onMover,
           ),
-        ],
+        OpcionEnSitio(
+          icono: Icons.remove_circle_outline,
+          texto: 'Quitar de tu biblioteca',
+          onTap: onDelete,
+          destructiva: true,
+          confirmacion: '¿Quitar «${playlist.name}» de tu biblioteca?',
+          textoConfirmar: 'Quitar',
+        ),
+      ],
+      constructor: (context, disparador) => ListTile(
+        dense: true,
+        selected: selected,
+        leading: ArtImage(url: playlist.art, size: 32),
+        title: Text(
+          playlist.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: playing
+              ? theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
+              : null,
+        ),
+        subtitle: T('${playlist.trackCount} canciones',
+            style: theme.textTheme.bodySmall),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (playing)
+              Icon(Icons.volume_up, size: 16, color: theme.colorScheme.primary),
+            disparador,
+          ],
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
     if (!indentada) return tile;
     return Padding(padding: const EdgeInsets.only(left: 20), child: tile);
@@ -1213,59 +1639,57 @@ class _CarpetaTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final total = carpeta.playlistIds.length;
-    return ListTile(
-      dense: true,
-      selected: false,
-      leading: Icon(
-        plegada ? Icons.folder : Icons.folder_open,
-        size: 20,
-        color: theme.colorScheme.primary,
+    return DesplegableEnSitio(
+      opciones: [
+        OpcionEnSitio(
+          icono: Icons.edit_outlined,
+          texto: 'Renombrar',
+          onTap: onRenombrar,
+        ),
+        OpcionEnSitio(
+          icono: Icons.delete_outline,
+          texto: 'Eliminar carpeta',
+          onTap: onBorrar,
+          destructiva: true,
+          confirmacion:
+              '«${carpeta.nombre}» desaparece, pero sus playlists vuelven a la lista.',
+          textoConfirmar: 'Eliminar',
+        ),
+      ],
+      constructor: (context, disparador) => ListTile(
+        dense: true,
+        selected: false,
+        leading: Icon(
+          plegada ? Icons.folder : Icons.folder_open,
+          size: 20,
+          color: theme.colorScheme.primary,
+        ),
+        title: Text(
+          carpeta.nombre,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        subtitle: T(
+          cargadas == total
+              ? '$total playlists'
+              : '$cargadas de $total playlists',
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              plegada ? Icons.expand_more : Icons.expand_less,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            disparador,
+          ],
+        ),
+        onTap: onTap,
       ),
-      title: Text(
-        carpeta.nombre,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium
-            ?.copyWith(fontWeight: FontWeight.w600),
-      ),
-      subtitle: T(
-        cargadas == total
-            ? '$total playlists'
-            : '$cargadas de $total playlists',
-        style: theme.textTheme.bodySmall,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            plegada ? Icons.expand_more : Icons.expand_less,
-            size: 16,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz, size: 16),
-            tooltip: 'Opciones',
-            onSelected: (v) {
-              if (v == 'renombrar') {
-                onRenombrar();
-              } else {
-                onBorrar();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'renombrar',
-                child: T('Renombrar'),
-              ),
-              PopupMenuItem(
-                value: 'borrar',
-                child: T('Eliminar carpeta'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      onTap: onTap,
     );
   }
 }
@@ -1333,6 +1757,150 @@ class _NavTile extends StatelessWidget {
                             ),
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Destino del rail plegado: el indicador en píldora de Material 3 con el
+/// icono centrado y el nombre en el tooltip.
+class _IconoRail extends StatelessWidget {
+  const _IconoRail({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+    final enPildora = EstiloNeoFy.de(context).navegacionEnPildora;
+    final tinta = selected
+        ? (enPildora ? esquema.onSecondaryContainer : esquema.primary)
+        : esquema.onSurfaceVariant;
+
+    final indicador = SizedBox(
+      width: 56,
+      height: 32,
+      child: enPildora
+          ? PildoraDeNavegacion(
+              seleccionado: selected,
+              color: esquema.secondaryContainer,
+              child: Center(child: Icon(icon, size: 20, color: tinta)),
+            )
+          : AnimatedContainer(
+              duration: kDuracionDesplegable,
+              curve: kCurvaDesplegable,
+              decoration: BoxDecoration(
+                color: selected
+                    ? esquema.secondaryContainer
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Center(child: Icon(icon, size: 20, color: tinta)),
+            ),
+    );
+
+    return Tooltip(
+      message: label,
+      child: Pulsable(
+        escalaSobre: 1.06,
+        escalaPulsada: 0.94,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Center(child: indicador),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Carátula de artista (redonda) o playlist (cuadrada) en el rail plegado,
+/// con la convención de Spotify para distinguirlas de un vistazo.
+class _CaratulaRail extends StatelessWidget {
+  const _CaratulaRail({
+    super.key,
+    required this.url,
+    required this.nombre,
+    required this.redonda,
+    required this.seleccionada,
+    required this.sonando,
+    required this.onTap,
+  });
+
+  final String? url;
+  final String nombre;
+  final bool redonda;
+  final bool seleccionada;
+  final bool sonando;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+    final estilo = EstiloNeoFy.de(context);
+
+    return Tooltip(
+      message: redonda ? 'Artista · $nombre' : 'Playlist · $nombre',
+      child: Pulsable(
+        escalaSobre: 1.08,
+        escalaPulsada: 0.92,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Center(
+              child: AnimatedContainer(
+                duration: kDuracionDesplegable,
+                curve: kCurvaDesplegable,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: seleccionada
+                      ? esquema.secondaryContainer
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(
+                      redonda ? 28 : estilo.radio + 4),
+                ),
+                child: Stack(
+                  children: [
+                    ArtImage(
+                      url: url,
+                      size: 40,
+                      radius: redonda ? 20 : estilo.radioDeCaratula(40),
+                    ),
+                    if (sonando)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: esquema.surface,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(Icons.volume_up,
+                                size: 12, color: esquema.primary),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
