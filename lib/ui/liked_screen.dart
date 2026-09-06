@@ -88,6 +88,23 @@ class _LikedScreenState extends State<LikedScreen> {
   }
 
   Future<void> _play({int? offset}) async {
+    final likes = widget.likes;
+    // Misma lista que ve el usuario: tras unlike/like el índice del contexto
+    // remoto de Spotify queda desfasado y suena otra pista.
+    if (likes.biblioteca.isNotEmpty) {
+      final desde =
+          (offset ?? 0).clamp(0, likes.biblioteca.length - 1);
+      // La API de play admite como mucho ~100 uris por llamada.
+      const maxUris = 100;
+      final fin = (desde + maxUris > likes.biblioteca.length)
+          ? likes.biblioteca.length
+          : desde + maxUris;
+      final uris = [
+        for (var i = desde; i < fin; i++) likes.biblioteca[i].uri,
+      ];
+      await widget.player.playLista(uris, desde: 0);
+      return;
+    }
     final userId = widget.player.currentUserId;
     if (userId == null) {
       _toast('Todavía no sé el id de tu cuenta; espera un momento.');
@@ -229,6 +246,7 @@ class _LikedScreenState extends State<LikedScreen> {
           return ValueListenableBuilder<int>(
             valueListenable: _centro,
             builder: (context, centro, _) => TrackTile(
+              key: ValueKey(t.uri),
               track: t,
               likes: likes,
               leadingNumber: i + 1,
