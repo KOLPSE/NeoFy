@@ -343,13 +343,25 @@ class SpotifyApi {
     Map<String, String>? extra,
   ]) async {
     try {
-      return await _request('GET', path,
-          query: {'limit': '$limit', ...?extra}) as Map<String, dynamic>;
+      return await _mapaOVacio(path, limit, extra);
     } on ApiException catch (e) {
       if (e.status != 400) rethrow;
-      return await _request('GET', path,
-          query: {'limit': '10', ...?extra}) as Map<String, dynamic>;
+      return await _mapaOVacio(path, 10, extra);
     }
+  }
+
+  /// recently-played responde 204 (cuerpo vacío) si no hay historial; el resto
+  /// de listas siempre trae JSON. Un cast a Map sobre null tumba toda la
+  /// portada con un TypeError ilegible.
+  Future<Map<String, dynamic>> _mapaOVacio(
+    String path,
+    int limit,
+    Map<String, String>? extra,
+  ) async {
+    final raw = await _request('GET', path,
+        query: {'limit': '$limit', ...?extra});
+    if (raw is Map<String, dynamic>) return raw;
+    return const {};
   }
 
   Future<List<Track>> topTracks({

@@ -11,7 +11,7 @@ bool get hayClientId => kDefaultClientId.isNotEmpty;
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.3.1';
+const String kVersion = '1.3.2';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 

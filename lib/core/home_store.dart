@@ -36,10 +36,13 @@ class HomeStore extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      // Spotify a veces contesta [] en short_term y sí rellena medium/long.
+      // recently-played puede venir vacío si solo se escucha por la vía libre
+      // (YouTube), que no escribe el historial de Spotify.
       final res = await Future.wait([
         api.recentlyPlayed(limit: 20),
-        api.topTracks(limit: 20),
-        api.topArtists(limit: 20),
+        _topConRespaldo((r, n) => api.topTracks(timeRange: r, limit: n)),
+        _topConRespaldo((r, n) => api.topArtists(timeRange: r, limit: n)),
       ]);
       recientes = res[0] as List<Track>;
       masEscuchadas = res[1] as List<Track>;
@@ -53,6 +56,18 @@ class HomeStore extends ChangeNotifier {
       _cargando = false;
       notifyListeners();
     }
+  }
+
+  static const _rangosTop = ['short_term', 'medium_term', 'long_term'];
+
+  Future<List<T>> _topConRespaldo<T>(
+    Future<List<T>> Function(String rango, int limite) pedir,
+  ) async {
+    for (final rango in _rangosTop) {
+      final lista = await pedir(rango, 20);
+      if (lista.isNotEmpty) return lista;
+    }
+    return const [];
   }
 
   Future<List<Album>> _cargarNovedades() async {

@@ -32,20 +32,32 @@ const _artista = Artist(
 );
 
 class _FakeApi extends SpotifyApi {
-  _FakeApi(super.auth, {this.novedadesFalla = false});
+  _FakeApi(
+    super.auth, {
+    this.novedadesFalla = false,
+    this.shortTermVacio = false,
+  });
 
   final bool novedadesFalla;
+  final bool shortTermVacio;
+  final List<String> rangosPedidos = [];
 
   @override
   Future<List<Track>> recentlyPlayed({int limit = 20}) async => const [_pista];
 
   @override
-  Future<List<Track>> topTracks({String timeRange = 'short_term', int limit = 20}) async =>
-      const [_pista];
+  Future<List<Track>> topTracks({String timeRange = 'short_term', int limit = 20}) async {
+    rangosPedidos.add('tracks:$timeRange');
+    if (shortTermVacio && timeRange == 'short_term') return const [];
+    return const [_pista];
+  }
 
   @override
-  Future<List<Artist>> topArtists({String timeRange = 'short_term', int limit = 20}) async =>
-      const [_artista];
+  Future<List<Artist>> topArtists({String timeRange = 'short_term', int limit = 20}) async {
+    rangosPedidos.add('artists:$timeRange');
+    if (shortTermVacio && timeRange == 'short_term') return const [];
+    return const [_artista];
+  }
 
   @override
   Future<List<Track>> artistTopTracks(String id, {int discosDeRespaldo = 6}) async => const [];
@@ -80,5 +92,23 @@ void main() {
 
     expect(home.error, isNull);
     expect(home.recientes, isNotEmpty);
+  });
+
+  test('si short_term viene vacío, usa medium_term', () async {
+    final api = _FakeApi(_FakeAuth(), shortTermVacio: true);
+    final home = HomeStore(api: api, auth: _FakeAuth());
+
+    await home.cargar();
+
+    expect(home.error, isNull);
+    expect(home.masEscuchadas, isNotEmpty);
+    expect(home.artistas, isNotEmpty);
+    expect(api.rangosPedidos, containsAll([
+      'tracks:short_term',
+      'tracks:medium_term',
+      'artists:short_term',
+      'artists:medium_term',
+    ]));
+    expect(api.rangosPedidos, isNot(contains('tracks:long_term')));
   });
 }

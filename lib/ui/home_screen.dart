@@ -41,6 +41,14 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(widget.home.cargar());
   }
 
+  Future<void> _reauthYRecargar() async {
+    await widget.onReauth();
+    // Tras el login el State de esta pantalla se reutiliza: initState no
+    // vuelve a correr y, si la primera carga salió por falta de permisos,
+    // aquí seguiría el hueco vacío para siempre.
+    await widget.home.cargar(forzar: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -51,6 +59,12 @@ class _HomeScreenState extends State<HomeScreen> {
       animation: widget.home,
       builder: (context, _) {
         final home = widget.home;
+        // Permisos llegaron después (reauth desde otra pantalla, scopes
+        // tardíos): dispara la carga que initState no pudo hacer. Si ya
+        // falló, no insistir en cada rebuild — el botón de actualizar sí.
+        if (!home.cargado && !home.cargando && home.error == null) {
+          unawaited(home.cargar());
+        }
         if (home.cargando && home.vacio) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -222,7 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: widget.onReauth,
+                onPressed: () => unawaited(_reauthYRecargar()),
                 icon: const Icon(Icons.refresh),
                 label: T('Volver a iniciar sesión'),
               ),
