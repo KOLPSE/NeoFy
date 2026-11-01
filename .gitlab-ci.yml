@@ -1,0 +1,295 @@
+# Pipeline de NeoFy (Spotify nativo) en GitLab.
+#
+# Equivalente a los antiguos .github/workflows/ci.yml y linux.yml.
+#
+# Tags de los runners:
+#   ubuntu  -> la VM de Ubuntu  (analiza, tests, bundle de Linux)
+#   windows -> la VM de Windows (analiza, tests, instalador .exe)
+#   arch    -> la VM de Arch     (paquete pacman + repositorio)
+#   publish -> el propio servidor (sube las releases a GitHub)
+
+stages:
+  - check
+  - build
+  - publish
+
+variables:
+  GIT_DEPTH: "0"
+  FLUTTER_SUPPRESS_ANALYTICS: "true"
+  PUB_CACHE: "$CI_PROJECT_DIR/.pub-cache"
+
+# --------------------------------------------------------------------- checks
+check:windows:
+  stage: check
+  tags:
+    - windows
+  shell: pwsh
+  script:
+    - flutter pub get
+    - flutter analyze
+    - flutter test
+    - |
+      # Que no se cuele ningun Client ID: el pipeline es publico en GitHub y
+      # una clave de Spotify en el repositorio seria una fuga.
+      $fuente = Get-Content lib/core/app_config.dart -Raw
+      if ($fuente -notmatch "kDefaultClientId\s*=\s*''") {
+        Write-Error "kDefaultClientId no esta vacio: no publiques un Client ID."
+        exit 1
+      }
+      Write-Host "kDefaultClientId vacio, correcto."
+  cache:
+    key: "neofy-flutter-win"
+    paths:
+      - .pub-cache
+    policy: pull-push
+
+check:ubuntu:
+  stage: check
+  tags:
+    - ubuntu
+  before_script:
+    - sudo apt-get update
+    - sudo apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev
+  script:
+    - flutter pub get
+    - flutter analyze
+    - flutter test
+  cache:
+    key: "neofy-flutter-ubuntu"
+    paths:
+      - .pub-cache
+    policy: pull-push
+
+# --------------------------------------------------------------------- builds
+# El bundle de Linux se compila aqui y se pasa al job de Arch, que lo empaqueta
+# y lo prueba dentro de Arch de verdad.
+build:linux:
+  stage: build
+  tags:
+    - ubuntu
+  rules:
+    - if: $CI_COMMIT_TAG
+  needs:
+    - job: check:ubuntu
+  before_script:
+    - sudo apt-get update
+    - sudo apt-get install -y --no-install-recommends
+      clang cmake ninja-build pkg-config libgtk-3-dev
+      libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev
+  script:
+    - flutter pub get
+    - ./tool/build_sidecars.sh
+    - ./tool/build_linux_bundle.sh
+    - |
+      # Que el tarball este completo: si falta un binario, la app arranca y
+      # se rompe a mitad de uso, que es peor que no arrancar.
+      tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
+      for f in neofy librespot metadata-sidecar yt-dlp
+               xyz.neogex.neofy.desktop LICENSE
+               data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
+        grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
+      done
+      tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz -C /tmp
+      /tmp/NeoFy-*-linux-x86_64/yt-dlp --version
+      echo "El tarball esta completo."
+  artifacts:
+    name: "neofy-linux-$CI_COMMIT_TAG"
+    paths:
+      - dist/NeoFy-*-linux-x86_64.tar.gz
+    expire_in: 3 days
+
+build:arch:
+  stage: build
+  tags:
+    - arch
+  rules:
+    - if: $CI_COMMIT_TAG
+  needs:
+    - job: build:linux
+      artifacts: true
+  before_script:
+    # mpv y python se omiten: mpv lo resuelve el PKGBUILD y python no hace falta.
+    # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
+    # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
+    - pacman -Syu --noconfirm --needed
+      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido
+      webkit2gtk-4.1
+      base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
+  script:
+    - |
+      set -euo pipefail
+      tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
+      cd NeoFy-*-linux-x86_64
+      fallo=0
+      for bin in neofy librespot metadata-sidecar; do
+        faltan="$(ldd "$bin" 2>&1 | grep 'not found' || true)"
+        if [ -n "$faltan" ]; then
+          echo "ERROR: $bin no encuentra:"; echo "$faltan"; fallo=1
+        else
+          echo "ok $bin"
+        fi
+      done
+      for so in lib/*.so; do
+        faltan="$(LD_LIBRARY_PATH="$PWD/lib" ldd "$so" 2>&1 | grep 'not found' || true)"
+        if [ -n "$faltan" ]; then
+          echo "ERROR: $so no encuentra:"; echo "$faltan"; fallo=1
+        fi
+      done
+      [ "$fallo" = 0 ] || exit 1
+      echo "Todos los binarios resuelven sus dependencias en Arch."
+
+    - |
+      set -euo pipefail
+      version="$(grep -oP "kVersion\s*=\s*'\K[^']+" lib/core/app_config.dart)"
+      pkgver="$(grep -oP '^pkgver=\K.*' linux/packaging/PKGBUILD)"
+      echo "kVersion=$version  pkgver=$pkgver"
+      [ "$version" = "$pkgver" ] || {
+        echo "ERROR: linux/packaging/PKGBUILD tiene pkgver=$pkgver pero kVersion es $version"
+        exit 1
+      }
+
+    - |
+      set -euo pipefail
+      useradd -m builder
+      mkdir -p /tmp/pkg
+      cp linux/packaging/PKGBUILD /tmp/pkg/
+      cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
+      sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
+      sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
+      chown -R builder /tmp/pkg
+      sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
+      ls -la /tmp/pkg/*.pkg.tar.zst
+
+    - |
+      set -euo pipefail
+      install -dm755 /tmp/srcinfo
+      cp linux/packaging/PKGBUILD /tmp/srcinfo/
+      chown -R builder /tmp/srcinfo
+      sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
+
+    - |
+      set -euo pipefail
+      pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+      test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
+      test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
+      test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
+      test -x /opt/neofy/yt-dlp         || { echo "ERROR: falta yt-dlp"; exit 1; }
+      /opt/neofy/yt-dlp --version       || { echo "ERROR: yt-dlp no arranca"; exit 1; }
+      test -d /opt/neofy/data           || { echo "ERROR: falta data/"; exit 1; }
+      test -L /usr/bin/neofy            || { echo "ERROR: /usr/bin/neofy no es un enlace"; exit 1; }
+      test -f /usr/share/applications/xyz.neogex.neofy.desktop || { echo "ERROR: falta el .desktop"; exit 1; }
+      test -f /usr/share/icons/hicolor/256x256/apps/neofy.png  || { echo "ERROR: falta el icono"; exit 1; }
+      [ "$(readlink -f /usr/bin/neofy)" = /opt/neofy/neofy ] || {
+        echo "ERROR: el enlace apunta a $(readlink -f /usr/bin/neofy)"; exit 1; }
+      echo "Instalado correctamente."
+
+    - |
+      set -euo pipefail
+      export HOME=/root
+      dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
+      pid=$!
+      sleep 25
+      if ! kill -0 "$pid" 2>/dev/null; then
+        echo "ERROR: neofy se ha caido durante el arranque"
+        cat /tmp/neofy.log
+        exit 1
+      fi
+      kill "$pid" 2>/dev/null || true
+      echo "Sigue viva pasados 25 s."
+      if grep -q 'sin libmpv' /tmp/neofy.log; then
+        echo "ERROR: la app ha arrancado sin la via libre: falta libmpv"
+        echo "ERROR: revisa que 'mpv' siga en depends= de linux/packaging/PKGBUILD"
+        cat /tmp/neofy.log
+        exit 1
+      fi
+      echo "Y con la via libre operativa."
+
+    - |
+      set -euo pipefail
+      pacman -R --noconfirm neofy-bin
+      test ! -e /opt/neofy || { echo "ERROR: quedan restos en /opt/neofy"; exit 1; }
+      echo "Desinstala limpio."
+  artifacts:
+    name: "neofy-arch-$CI_COMMIT_TAG"
+    paths:
+      - /tmp/pkg/*.pkg.tar.zst
+    expire_in: 3 days
+
+# -------------------------------------------------------------------- publish
+publish:github:
+  stage: publish
+  tags:
+    - publish
+  rules:
+    - if: $CI_COMMIT_TAG
+  needs:
+    - job: build:linux
+      artifacts: true
+    - job: build:arch
+      artifacts: true
+  variables:
+    GH_TOKEN: $GITHUB_TOKEN
+  script:
+    - |
+      set -euo pipefail
+      TAG="${CI_COMMIT_TAG}"
+      REPO="KOLPSE/NeoFy"
+
+      gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
+        || gh release create "$TAG" --repo "$REPO" \
+             --title "NeoFy ${TAG#v}" --notes-file RELEASE_NOTES.md
+
+      gh release upload "$TAG" dist/NeoFy-*-linux-x86_64.tar.gz --repo "$REPO" --clobber
+      echo "Release $TAG actualizada en $REPO"
+
+    - |
+      set -euo pipefail
+      TAG="${CI_COMMIT_TAG}"
+      REPO="KOLPSE/NeoFy"
+      pkg="$(ls /tmp/pkg/neofy-bin-*.pkg.tar.zst)"
+      nombre="$(basename "$pkg")"
+
+      gh release upload "$TAG" "$pkg" --repo "$REPO" --clobber
+      echo "  $nombre subido a $TAG"
+
+      # El repositorio pacman va en una release fija llamada "repo", para que
+      # la url de pacman.conf siga siendo valida version tras version.
+      cd /tmp/pkg
+      repo-add neofy.db.tar.gz "$nombre"
+      # repo-add deja neofy.db y neofy.files como enlaces simbolicos y una
+      # release de GitHub no guarda enlaces: se suben como ficheros reales.
+      rm -f neofy.db neofy.files
+      cp neofy.db.tar.gz neofy.db
+      cp neofy.files.tar.gz neofy.files
+
+      cat > /tmp/notas-repo.md <<'NOTAS'
+      Esta release **no contiene una version de NeoFy**: es el repositorio
+      pacman para Arch. Su etiqueta no cambia nunca, para que la url que se
+      pone en `pacman.conf` siga siendo valida version tras version. Las
+      versiones de verdad estan en la lista de releases.
+
+      En `/etc/pacman.conf`, al final:
+
+          [neofy]
+          SigLevel = Optional TrustAll
+          Server = https://github.com/KOLPSE/NeoFy/releases/download/repo
+
+      Y despues:
+
+          sudo pacman -Sy neofy-bin
+
+      A partir de ahi se actualiza con el resto del sistema en cada
+      `sudo pacman -Syu`.
+      NOTAS
+      sed -i 's/^          //' /tmp/notas-repo.md
+
+      if ! gh release view repo >/dev/null 2>&1; then
+        gh release create repo --latest=false \
+          --title 'Repositorio pacman para Arch (no es una version)' \
+          --notes-file /tmp/notas-repo.md
+      fi
+
+      gh release upload repo \
+        "$nombre" neofy.db neofy.files neofy.db.tar.gz neofy.files.tar.gz \
+        --clobber
+      echo "  repositorio pacman actualizado con $nombre"
