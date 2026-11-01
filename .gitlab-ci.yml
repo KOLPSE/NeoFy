@@ -23,7 +23,6 @@ check:windows:
   stage: check
   tags:
     - windows
-  shell: pwsh
   script:
     - flutter pub get
     - flutter analyze
