@@ -110,7 +110,7 @@ build:arch:
     # mpv y python se omiten: mpv lo resuelve el PKGBUILD y python no hace falta.
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
-    - sudo pacman -Syu --noconfirm --needed
+    - sudo pacman -S --noconfirm --needed
       gtk3 libayatana-appindicator libayatana-indicator ayatana-ido
       webkit2gtk-4.1
       base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
