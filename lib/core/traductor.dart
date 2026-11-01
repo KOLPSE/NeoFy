@@ -13,15 +13,18 @@ import 'models.dart';
 /// Traduce textos de la UI (español → idioma elegido) y biografías al vuelo.
 class Traductor extends ChangeNotifier {
   Traductor({
-    required String Function() localeEfectivo,
+    required this.localeEfectivo,
     this.simulado = false,
     Directory? directorio,
-  })  : _localeEfectivo = localeEfectivo,
-        _directorio = directorio ?? appDataDir() {
+  })  : _directorio = directorio ?? appDataDir() {
     unawaited(_cargarCache());
   }
 
-  final String Function() _localeEfectivo;
+  /// Callable que devuelve el idioma que hay en uso ahora mismo.
+  ///
+  /// Es un campo y no un parametro suelto para poder leerlo en cualquier
+  /// momento: el idioma puede cambiarse en caliente.
+  final String Function() localeEfectivo;
   final Directory _directorio;
   final GoogleTranslator _motor = GoogleTranslator();
   final Map<String, String> _cache = {};
@@ -30,7 +33,7 @@ class Traductor extends ChangeNotifier {
 
   File get _fichero => File(p.join(_directorio.path, 'traducciones.json'));
 
-  String get locale => _localeEfectivo();
+  String get locale => localeEfectivo();
 
   /// Código ISO 639-1 del idioma objetivo (`es`, `en`, `fr`…).
   String get idiomaObjetivo => codigoIdiomaDeLocale(locale);

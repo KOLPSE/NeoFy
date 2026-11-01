@@ -110,7 +110,7 @@ build:arch:
     # mpv y python se omiten: mpv lo resuelve el PKGBUILD y python no hace falta.
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
-    - pacman -Syu --noconfirm --needed
+    - sudo pacman -Syu --noconfirm --needed
       gtk3 libayatana-appindicator libayatana-indicator ayatana-ido
       webkit2gtk-4.1
       base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
@@ -149,26 +149,26 @@ build:arch:
 
     - |
       set -euo pipefail
-      useradd -m builder
+      sudo useradd -m builder
       mkdir -p /tmp/pkg
       cp linux/packaging/PKGBUILD /tmp/pkg/
       cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
       sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
       sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
-      chown -R builder /tmp/pkg
+      sudo chown -R builder /tmp/pkg
       sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
       ls -la /tmp/pkg/*.pkg.tar.zst
 
     - |
       set -euo pipefail
-      install -dm755 /tmp/srcinfo
+      sudo install -dm755 /tmp/srcinfo
       cp linux/packaging/PKGBUILD /tmp/srcinfo/
-      chown -R builder /tmp/srcinfo
+      sudo chown -R builder /tmp/srcinfo
       sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
 
     - |
       set -euo pipefail
-      pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+      sudo pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
       test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
       test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
       test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
@@ -205,7 +205,7 @@ build:arch:
 
     - |
       set -euo pipefail
-      pacman -R --noconfirm neofy-bin
+      sudo pacman -R --noconfirm neofy-bin
       test ! -e /opt/neofy || { echo "ERROR: quedan restos en /opt/neofy"; exit 1; }
       echo "Desinstala limpio."
   artifacts:
