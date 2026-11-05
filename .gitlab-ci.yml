@@ -95,11 +95,37 @@ build:linux:
     - sudo apt-get install -y --no-install-recommends
       clang cmake ninja-build pkg-config libgtk-3-dev
       libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev libsecret-1-dev
+      libmpv2 xvfb xauth
   script:
     - flutter pub get
     - ./tool/build_sidecars.sh
     - ./tool/build_linux_bundle.sh
     - bash ./tool/build_appimage.sh
+    - |
+      # Arranque aislado del AppImage extraído, sin sesión ni datos reales.
+      set -euo pipefail
+      image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      testdir="$(mktemp -d)"
+      trap 'rm -rf "$testdir"' EXIT
+      cd "$testdir"
+      "$image" --appimage-extract >/dev/null
+      mkdir home
+      set +e
+      timeout 45s xvfb-run -a env HOME="$testdir/home" XDG_CONFIG_HOME="$testdir/home/config" \
+        XDG_CACHE_HOME="$testdir/home/cache" "$testdir/squashfs-root/AppRun" >appimage.log 2>&1
+      result=$?
+      set -e
+      if [ "$result" -ne 124 ]; then
+        cat appimage.log
+        echo "El AppImage terminó antes de tiempo (estado $result)" >&2
+        exit 1
+      fi
+      if grep -q 'sin libmpv' appimage.log; then
+        cat appimage.log
+        echo 'El AppImage no encuentra libmpv' >&2
+        exit 1
+      fi
+      echo 'El AppImage arrancó y permaneció activo durante la prueba.'
     - |
       # Que el tarball este completo: si falta un binario, la app arranca y
       # se rompe a mitad de uso, que es peor que no arrancar.

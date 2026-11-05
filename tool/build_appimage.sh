@@ -33,9 +33,11 @@ DESKTOP
 export APPIMAGE_EXTRACT_AND_RUN=1
 export ARCH=x86_64
 export OUTPUT="$PWD/dist/NeoFy-$version-linux-x86_64.AppImage"
+mpv="$(ldconfig -p | awk '/libmpv\.so\.2 / {path=$NF} END {print path}')"
+[ -n "$mpv" ] || { echo 'Falta libmpv2 para el AppImage' >&2; exit 1; }
 "$linuxdeploy" --appdir "$appdir" --desktop-file "$PWD/dist/neofy-appimage.desktop" \
   --icon-file "$PWD/linux/packaging/icons/256x256/neofy.png" --executable "$appdir/usr/bin/neofy" \
   --executable "$appdir/usr/bin/librespot" \
-  --executable "$appdir/usr/bin/metadata-sidecar" --output appimage
+  --executable "$appdir/usr/bin/metadata-sidecar" --library "$mpv" --output appimage
 chmod +x "$OUTPUT"
 sha256sum "$OUTPUT"
