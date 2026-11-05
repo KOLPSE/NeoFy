@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:media_kit/media_kit.dart' hide Track;
 import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
@@ -42,7 +43,7 @@ import 'ui/cristal.dart';
 import 'ui/login_screen.dart';
 import 'ui/shell.dart';
 
-const _lockPort = 53330;
+final _lockPort = kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1' ? 53331 : 53330;
 
 Future<bool> _acquireSingleInstance() async {
   try {
@@ -81,11 +82,13 @@ Future<void> main(List<String> args) async {
   }
 
   await windowManager.ensureInitialized();
-  const options = WindowOptions(
+  final options = WindowOptions(
     size: Size(1000, 680),
     minimumSize: Size(820, 560),
     center: true,
-    title: 'NeoFy',
+    title: kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1'
+        ? 'NeoFy (debug)'
+        : 'NeoFy',
   );
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();

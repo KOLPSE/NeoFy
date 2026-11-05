@@ -33,6 +33,7 @@ dependencies:
   media_kit_libs_linux: ^1.2.1
   desktop_webview_window: ^0.3.0
   translator: ^1.0.4+1
+  flutter_secure_storage: ^11.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

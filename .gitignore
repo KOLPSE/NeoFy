@@ -43,3 +43,10 @@ CLAUDE.md
 config.json
 tokens.json
 credentials.json
+
+# Clave de compilación local de NeoReport
+.neoreport-key.json
+
+# Herramientas descargadas para empaquetar AppImage
+tool/.appimage-cache/
+.ci-tools/

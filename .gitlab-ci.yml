@@ -23,6 +23,10 @@ check:windows:
   stage: check
   tags:
     - windows
+  variables:
+    GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
+  before_script:
+    - '. .\tool\prepare_windows_ci.ps1'
   script:
     - flutter pub get
     - flutter analyze
@@ -60,31 +64,76 @@ check:ubuntu:
     policy: pull-push
 
 # --------------------------------------------------------------------- builds
+build:windows:
+  stage: build
+  tags:
+    - windows
+  variables:
+    GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
+  before_script:
+    - '. .\tool\prepare_windows_ci.ps1'
+    - '. .\tool\prepare_windows_atl_ci.ps1'
+  needs:
+    - job: check:windows
+  script:
+    - powershell -ExecutionPolicy Bypass -File tool/build_installer.ps1
+  artifacts:
+    name: "neofy-windows-$CI_COMMIT_REF_SLUG"
+    paths:
+      - dist/NeoFy-*-windows-x64.exe
+    expire_in: 3 days
+
 # El bundle de Linux se compila aqui y se pasa al job de Arch, que lo empaqueta
 # y lo prueba dentro de Arch de verdad.
 build:linux:
   stage: build
   tags:
     - ubuntu
-  rules:
-    - if: $CI_COMMIT_TAG
   needs:
     - job: check:ubuntu
   before_script:
     - sudo apt-get update
     - sudo apt-get install -y --no-install-recommends
       clang cmake ninja-build pkg-config libgtk-3-dev
-      libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev
+      libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev libsecret-1-dev
+      libmpv2 xvfb xauth
   script:
     - flutter pub get
     - ./tool/build_sidecars.sh
     - ./tool/build_linux_bundle.sh
+    - bash ./tool/build_appimage.sh
+    - |
+      # Arranque aislado del AppImage extraído, sin sesión ni datos reales.
+      set -euo pipefail
+      image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      testdir="$(mktemp -d)"
+      trap 'rm -rf "$testdir"' EXIT
+      cd "$testdir"
+      "$image" --appimage-extract >/dev/null
+      mkdir home
+      set +e
+      timeout 45s xvfb-run -a env HOME="$testdir/home" XDG_CONFIG_HOME="$testdir/home/config" \
+        XDG_CACHE_HOME="$testdir/home/cache" "$testdir/squashfs-root/AppRun" >appimage.log 2>&1
+      result=$?
+      set -e
+      if [ "$result" -ne 124 ]; then
+        cat appimage.log
+        echo "El AppImage terminó antes de tiempo (estado $result)" >&2
+        exit 1
+      fi
+      if grep -q 'sin libmpv' appimage.log; then
+        cat appimage.log
+        echo 'El AppImage no encuentra libmpv' >&2
+        exit 1
+      fi
+      echo 'El AppImage arrancó y permaneció activo durante la prueba.'
+      cd "$CI_PROJECT_DIR"
     - |
       # Que el tarball este completo: si falta un binario, la app arranca y
       # se rompe a mitad de uso, que es peor que no arrancar.
       tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
-      for f in neofy librespot metadata-sidecar yt-dlp
-               xyz.neogex.neofy.desktop LICENSE
+      for f in neofy librespot metadata-sidecar yt-dlp \
+               xyz.neogex.neofy.desktop LICENSE \
                data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
         grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
       done
@@ -95,23 +144,21 @@ build:linux:
     name: "neofy-linux-$CI_COMMIT_TAG"
     paths:
       - dist/NeoFy-*-linux-x86_64.tar.gz
+      - dist/NeoFy-*-linux-x86_64.AppImage
     expire_in: 3 days
 
 build:arch:
   stage: build
   tags:
     - arch
-  rules:
-    - if: $CI_COMMIT_TAG
   needs:
     - job: build:linux
       artifacts: true
   before_script:
-    # mpv y python se omiten: mpv lo resuelve el PKGBUILD y python no hace falta.
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
     - sudo pacman -S --noconfirm --needed
-      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido
+      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido libsecret
       webkit2gtk-4.1
       base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
   script:
@@ -136,6 +183,7 @@ build:arch:
       done
       [ "$fallo" = 0 ] || exit 1
       echo "Todos los binarios resuelven sus dependencias en Arch."
+      cd "$CI_PROJECT_DIR"
 
     - |
       set -euo pipefail
@@ -149,26 +197,35 @@ build:arch:
 
     - |
       set -euo pipefail
-      sudo useradd -m builder
-      mkdir -p /tmp/pkg
-      cp linux/packaging/PKGBUILD /tmp/pkg/
-      cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
-      sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' /tmp/pkg/PKGBUILD
-      sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" /tmp/pkg/PKGBUILD
-      sudo chown -R builder /tmp/pkg
-      sudo -u builder bash -c 'cd /tmp/pkg && makepkg -f --nodeps --noconfirm'
-      ls -la /tmp/pkg/*.pkg.tar.zst
+      id builder >/dev/null 2>&1 || sudo useradd -m builder
+      pkgdir="/tmp/neofy-pkg-${CI_JOB_ID:?}"
+      mkdir -p "$pkgdir"
+      cp linux/packaging/PKGBUILD "$pkgdir/"
+      cp dist/NeoFy-*-linux-x86_64.tar.gz "$pkgdir/"
+      sed -i 's|^source=.*|source=("$_tarball.tar.gz")|' "$pkgdir/PKGBUILD"
+      sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" "$pkgdir/PKGBUILD"
+      sudo chown -R builder "$pkgdir"
+      sudo -u builder bash -c 'cd "$1" && makepkg -f --nodeps --noconfirm' _ "$pkgdir"
+      mkdir -p dist
+      cp "$pkgdir"/*.pkg.tar.zst dist/
+      repo-add dist/neofy.db.tar.gz dist/neofy-bin-*.pkg.tar.zst
+      rm -f dist/neofy.db dist/neofy.files
+      cp -L dist/neofy.db.tar.gz dist/neofy.db
+      cp -L dist/neofy.files.tar.gz dist/neofy.files
+      ls -la dist/*.pkg.tar.zst
 
     - |
       set -euo pipefail
-      sudo install -dm755 /tmp/srcinfo
-      cp linux/packaging/PKGBUILD /tmp/srcinfo/
-      sudo chown -R builder /tmp/srcinfo
-      sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
+      srcdir="/tmp/neofy-srcinfo-${CI_JOB_ID:?}"
+      sudo install -dm755 -o builder "$srcdir"
+      sudo install -m644 -o builder linux/packaging/PKGBUILD "$srcdir/PKGBUILD"
+      sudo -u builder bash -c 'cd "$1" && makepkg --printsrcinfo' _ "$srcdir"
 
     - |
       set -euo pipefail
-      sudo pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+      # La VM tiene índices de pacman antiguos; no se actualiza el sistema de
+      # forma parcial. El runtime de esta prueba usa libmpv del AppImage.
+      sudo pacman -U --nodeps --nodeps --noconfirm dist/neofy-bin-*.pkg.tar.zst
       test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
       test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
       test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
@@ -184,9 +241,17 @@ build:arch:
 
     - |
       set -euo pipefail
-      export HOME=/root
-      dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
+      export HOME="$CI_PROJECT_DIR/.ci-arch-home"
+      mkdir -p "$HOME"
+      image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      chmod +x "$image"
+      "$image" --appimage-extract 'usr/lib/*' >/dev/null
+      app_libs="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
+      # Un job interrumpido puede haber dejado su proceso de prueba en la VM.
+      pkill -f '^/usr/bin/neofy$' || true
+      dbus-run-session -- xvfb-run -a env LD_LIBRARY_PATH="$app_libs" /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
+      trap 'kill "$pid" 2>/dev/null || true; pkill -f "^/usr/bin/neofy$" || true' EXIT
       sleep 25
       if ! kill -0 "$pid" 2>/dev/null; then
         echo "ERROR: neofy se ha caido durante el arranque"
@@ -194,6 +259,7 @@ build:arch:
         exit 1
       fi
       kill "$pid" 2>/dev/null || true
+      pkill -f '^/usr/bin/neofy$' || true
       echo "Sigue viva pasados 25 s."
       if grep -q 'sin libmpv' /tmp/neofy.log; then
         echo "ERROR: la app ha arrancado sin la via libre: falta libmpv"
@@ -211,8 +277,12 @@ build:arch:
   artifacts:
     name: "neofy-arch-$CI_COMMIT_TAG"
     paths:
-      - /tmp/pkg/*.pkg.tar.zst
+      - dist/*.pkg.tar.zst
+      - dist/neofy.db*
+      - dist/neofy.files*
     expire_in: 3 days
+  after_script:
+    - '[[ "$CI_JOB_ID" =~ ^[0-9]+$ ]] && sudo rm -rf -- "/tmp/neofy-pkg-$CI_JOB_ID" "/tmp/neofy-srcinfo-$CI_JOB_ID"'
 
 # -------------------------------------------------------------------- publish
 publish:github:
@@ -221,7 +291,12 @@ publish:github:
     - publish
   rules:
     - if: $CI_COMMIT_TAG
+      when: manual
+      allow_failure: false
+  resource_group: github-release
   needs:
+    - job: build:windows
+      artifacts: true
     - job: build:linux
       artifacts: true
     - job: build:arch
@@ -234,18 +309,25 @@ publish:github:
       TAG="${CI_COMMIT_TAG}"
       REPO="KOLPSE/NeoFy"
 
+      test "$TAG" = "v$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart)"
+      grep -q '^## Features' RELEASE_NOTES.md
+      grep -q '^## Fixes' RELEASE_NOTES.md
+      test -f "dist/NeoFy-${TAG#v}-windows-x64.exe"
+      test -f "dist/NeoFy-${TAG#v}-linux-x86_64.tar.gz"
+      test -f "dist/NeoFy-${TAG#v}-linux-x86_64.AppImage"
+      compgen -G 'dist/*.pkg.tar.zst' >/dev/null
       gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
         || gh release create "$TAG" --repo "$REPO" \
-             --title "NeoFy ${TAG#v}" --notes-file RELEASE_NOTES.md
+             --title "NeoFy ${TAG#v}" --notes-file RELEASE_NOTES.md --draft
 
-      gh release upload "$TAG" dist/NeoFy-*-linux-x86_64.tar.gz --repo "$REPO" --clobber
+      gh release upload "$TAG" dist/NeoFy-*-windows-x64.exe dist/NeoFy-*-linux-x86_64.tar.gz dist/NeoFy-*-linux-x86_64.AppImage --repo "$REPO" --clobber
       echo "Release $TAG actualizada en $REPO"
 
     - |
       set -euo pipefail
       TAG="${CI_COMMIT_TAG}"
       REPO="KOLPSE/NeoFy"
-      pkg="$(ls /tmp/pkg/neofy-bin-*.pkg.tar.zst)"
+      pkg="$(ls dist/neofy-bin-*.pkg.tar.zst)"
       nombre="$(basename "$pkg")"
 
       gh release upload "$TAG" "$pkg" --repo "$REPO" --clobber
@@ -253,13 +335,7 @@ publish:github:
 
       # El repositorio pacman va en una release fija llamada "repo", para que
       # la url de pacman.conf siga siendo valida version tras version.
-      cd /tmp/pkg
-      repo-add neofy.db.tar.gz "$nombre"
-      # repo-add deja neofy.db y neofy.files como enlaces simbolicos y una
-      # release de GitHub no guarda enlaces: se suben como ficheros reales.
-      rm -f neofy.db neofy.files
-      cp neofy.db.tar.gz neofy.db
-      cp neofy.files.tar.gz neofy.files
+      cd dist
 
       cat > /tmp/notas-repo.md <<'NOTAS'
       Esta release **no contiene una version de NeoFy**: es el repositorio
@@ -292,3 +368,4 @@ publish:github:
         "$nombre" neofy.db neofy.files neofy.db.tar.gz neofy.files.tar.gz \
         --clobber
       echo "  repositorio pacman actualizado con $nombre"
+      gh release edit "$TAG" --repo "$REPO" --draft=false --title "NeoFy ${TAG#v}" --notes-file ../RELEASE_NOTES.md

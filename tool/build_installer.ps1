@@ -1,5 +1,5 @@
 ﻿
-
+param([switch]$NoCerrarProcesos)
 $ErrorActionPreference = 'Stop'
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
@@ -25,8 +25,10 @@ if ($LASTEXITCODE -ne 0) { throw "Falló la descarga de yt-dlp" }
 if (-not (Test-Path $ytdlp)) { throw "No se encuentra $ytdlp" }
 
 Paso "Compilando NeoFy"
-foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
-  Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
+if (-not $NoCerrarProcesos) {
+  foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
+    Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
+  }
 }
 
 $flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source
@@ -45,7 +47,15 @@ if (-not $flutter) {
   throw 'No encuentro Flutter. Añádelo al PATH o define FLUTTER_ROOT con la ' +
         'carpeta donde lo tengas (la que contiene bin\flutter.bat).'
 }
-& $flutter build windows --release
+$definiciones = @()
+if ($env:NEOREPORT_APP_KEY) {
+  $definiciones += "--dart-define=NEOREPORT_APP_KEY=$env:NEOREPORT_APP_KEY"
+} elseif (Test-Path '.neoreport-key.json') {
+  $definiciones += '--dart-define-from-file=.neoreport-key.json'
+} else {
+  throw 'Configura NEOREPORT_APP_KEY o .neoreport-key.json antes de compilar.'
+}
+& $flutter build windows --release @definiciones
 if ($LASTEXITCODE -ne 0) { throw "Falló la compilación de Flutter" }
 
 $release = "build\windows\x64\runner\Release"

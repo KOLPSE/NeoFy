@@ -393,6 +393,7 @@ class _AppShellState extends State<AppShell> {
                         artistaSeleccionado:
                             _view == _View.artist ? _artista : null,
                         playingContextUri: playingContextUri,
+                        player: widget.player,
                         plegado: widget.settings.sidebarPlegado,
                         onTogglePlegado: () => unawaited(widget.settings
                             .setSidebarPlegado(
@@ -821,6 +822,7 @@ class _Sidebar extends StatelessWidget {
     required this.artistasExpanded,
     required this.artistaSeleccionado,
     required this.playingContextUri,
+    required this.player,
     required this.plegado,
     required this.onTogglePlegado,
     required this.onToggleExpanded,
@@ -862,6 +864,7 @@ class _Sidebar extends StatelessWidget {
   final bool artistasExpanded;
   final Artist? artistaSeleccionado;
   final String? playingContextUri;
+  final PlayerController player;
   final bool plegado;
   final VoidCallback onTogglePlegado;
   final VoidCallback onToggleExpanded;
@@ -912,6 +915,7 @@ class _Sidebar extends StatelessWidget {
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
+      trackUri: player.state.track?.uri,
       bloquesExtra: [
         BotonDeTemas(temas: temas, settings: settings),
         BotonDeIdioma(settings: settings),

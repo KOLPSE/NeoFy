@@ -20,7 +20,14 @@ bash ./tool/fetch_ytdlp.sh
 [ -x 'tool/ytdlp-build/bin/yt-dlp' ] || { echo "Falta tool/ytdlp-build/bin/yt-dlp" >&2; exit 1; }
 
 echo "Compilando la app..."
-flutter build linux --release
+if [[ -n "${NEOREPORT_APP_KEY:-}" ]]; then
+  flutter build linux --release "--dart-define=NEOREPORT_APP_KEY=$NEOREPORT_APP_KEY"
+elif [[ -f .neoreport-key.json ]]; then
+  flutter build linux --release --dart-define-from-file=.neoreport-key.json
+else
+  echo "Configura NEOREPORT_APP_KEY o .neoreport-key.json antes de compilar." >&2
+  exit 1
+fi
 
 bundle='build/linux/x64/release/bundle'
 [ -d "$bundle" ] || { echo "No aparece $bundle" >&2; exit 1; }

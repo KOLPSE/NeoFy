@@ -215,3 +215,22 @@ comportamiento real está verificado con las sondas de `tool/`.
 ## Licencia
 
 MIT. Ver [LICENSE](LICENSE), que incluye además los avisos de terceros.
+
+### Reportes con NeoReport
+
+En Ajustes se puede enviar un reporte y abrir NeoReport para asociarlo a la
+cuenta de Discord. La identidad se confirma en el portal; Rich Presence no
+inicia sesión en Discord. La credencial de instalación se guarda en el
+almacén seguro del sistema (en Linux se necesita libsecret y un servicio de
+llavero activo). Si se pierde, los reportes anteriores no se vinculan
+automáticamente a la nueva instalación.
+
+Para generar instaladores, configura `NEOREPORT_APP_KEY` en el entorno de
+compilación o crea el archivo local ignorado `.neoreport-key.json` con la
+propiedad `NEOREPORT_APP_KEY`. En GitLab configura esa misma variable protegida
+para los jobs de release. La clave se incorpora al ejecutable y puede
+extraerse: NeoReport la trata como identificador revocable de la aplicación,
+no como identidad del usuario. No incluyas la clave en el repositorio.
+La compilación de Windows también requiere el componente ATL de C++ de Visual
+Studio para `flutter_secure_storage_windows`; en los runners debe estar
+instalado para el mismo conjunto de herramientas de MSVC que use CMake.
