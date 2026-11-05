@@ -106,6 +106,8 @@ build:arch:
       image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
       chmod +x "$image"
       "$image" --appimage-extract 'usr/lib/*' >/dev/null
+      ls -l "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv* || true
+      for lib in "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv*; do [ -e "$lib" ] && ldd "$lib" | grep -E 'not found|libmpv' || true; done
       app_libs="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
       dbus-run-session -- xvfb-run -a env LD_LIBRARY_PATH="$app_libs" /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
