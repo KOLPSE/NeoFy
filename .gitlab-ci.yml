@@ -126,6 +126,7 @@ build:linux:
         exit 1
       fi
       echo 'El AppImage arrancó y permaneció activo durante la prueba.'
+      cd "$CI_PROJECT_DIR"
     - |
       # Que el tarball este completo: si falta un binario, la app arranca y
       # se rompe a mitad de uso, que es peor que no arrancar.
