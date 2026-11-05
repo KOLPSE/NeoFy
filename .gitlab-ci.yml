@@ -6,6 +6,7 @@ build:arch:
   tags:
     - arch
   before_script:
+    - sudo rm -rf -- /tmp/neofy-pkg-{280,286,292,298,304,310,317,323} /tmp/neofy-srcinfo-{280,286,292,298,304,310,317,323}
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
     - sudo pacman -S --noconfirm --needed
@@ -153,3 +154,5 @@ build:arch:
       - dist/neofy.db*
       - dist/neofy.files*
     expire_in: 3 days
+  after_script:
+    - '[[ "$CI_JOB_ID" =~ ^[0-9]+$ ]] && sudo rm -rf -- "/tmp/neofy-pkg-$CI_JOB_ID" "/tmp/neofy-srcinfo-$CI_JOB_ID"'
