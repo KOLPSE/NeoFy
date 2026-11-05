@@ -120,8 +120,10 @@ build:arch:
       find "$CI_PROJECT_DIR/squashfs-root/usr/lib" -maxdepth 1 \( -name '*jack*' -o -name '*pipewire*' \) -printf '%f\n'
       LD_LIBRARY_PATH="$CI_PROJECT_DIR/squashfs-root/usr/lib" ldd "$CI_PROJECT_DIR/squashfs-root/usr/lib/libmpv.so.2" | grep -E 'not found|GLIBC' || true
       app_libs="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
+      pkill -f '^/usr/bin/neofy$' || true
       dbus-run-session -- xvfb-run -a env LD_LIBRARY_PATH="$app_libs" /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
+      trap 'kill "$pid" 2>/dev/null || true; pkill -f "^/usr/bin/neofy$" || true' EXIT
       sleep 25
       if ! kill -0 "$pid" 2>/dev/null; then
         echo "ERROR: neofy se ha caido durante el arranque"
@@ -129,6 +131,7 @@ build:arch:
         exit 1
       fi
       kill "$pid" 2>/dev/null || true
+      pkill -f '^/usr/bin/neofy$' || true
       echo "Sigue viva pasados 25 s."
       if grep -q 'sin libmpv' /tmp/neofy.log; then
         echo "ERROR: la app ha arrancado sin la via libre: falta libmpv"
