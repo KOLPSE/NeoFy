@@ -147,12 +147,37 @@ build:arch:
       sudo pacman -R --noconfirm neofy-bin
       test ! -e /opt/neofy || { echo "ERROR: quedan restos en /opt/neofy"; exit 1; }
       echo "Desinstala limpio."
+    - |
+      set -euo pipefail
+      image="$CI_PROJECT_DIR/dist/NeoFy-1.3.3-linux-x86_64.AppImage"
+      # El árbol anterior solo contiene las bibliotecas de la prueba nativa.
+      rm -rf -- "$CI_PROJECT_DIR/squashfs-root"
+      "$image" --appimage-extract >/dev/null
+      cp -L deps/usr/lib/x86_64-linux-gnu/libjack.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libjack.so.0"
+      cp -L deps/usr/lib/x86_64-linux-gnu/libpipewire-0.3.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libpipewire-0.3.so.0"
+      curl -fsSL --retry 3 https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -o appimagetool
+      chmod +x appimagetool
+      ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool "$CI_PROJECT_DIR/squashfs-root" "$CI_PROJECT_DIR/dist/neofy-corrected.AppImage"
+      mv -f "$CI_PROJECT_DIR/dist/neofy-corrected.AppImage" "$image"
+      chmod +x "$image"
+      sha256sum "$image"
+      set +e
+      timeout 60s dbus-run-session -- xvfb-run -a env APPIMAGE_EXTRACT_AND_RUN=1 "$image" >appimage-arch.log 2>&1
+      result=$?
+      set -e
+      if [ "$result" -ne 124 ] || grep -q 'sin libmpv' appimage-arch.log; then
+        cat appimage-arch.log
+        echo "El AppImage no superó la prueba en Arch (estado $result)." >&2
+        exit 1
+      fi
+      echo 'El AppImage corregido arranca en Arch y encuentra libmpv.'
   artifacts:
     name: "neofy-arch-$CI_COMMIT_TAG"
     paths:
       - dist/*.pkg.tar.zst
       - dist/neofy.db*
       - dist/neofy.files*
+      - dist/NeoFy-*-linux-x86_64.AppImage
     expire_in: 3 days
   after_script:
     - '[[ "$CI_JOB_ID" =~ ^[0-9]+$ ]] && sudo rm -rf -- "/tmp/neofy-pkg-$CI_JOB_ID" "/tmp/neofy-srcinfo-$CI_JOB_ID"'
