@@ -281,6 +281,8 @@ build:arch:
       - dist/neofy.db*
       - dist/neofy.files*
     expire_in: 3 days
+  after_script:
+    - '[[ "$CI_JOB_ID" =~ ^[0-9]+$ ]] && sudo rm -rf -- "/tmp/neofy-pkg-$CI_JOB_ID" "/tmp/neofy-srcinfo-$CI_JOB_ID"'
 
 # -------------------------------------------------------------------- publish
 publish:github:
