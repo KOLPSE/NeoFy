@@ -12,7 +12,7 @@ if (-not $atl) {
   $process = Start-Process -FilePath $installer -ArgumentList @(
     'modify', '--installPath', ('"' + $instance + '"'),
     '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
-    '--quiet', '--wait', '--norestart'
+    '--quiet', '--norestart'
   ) -Wait -PassThru -WindowStyle Hidden
   if ($process.ExitCode -ne 0) { throw "No se pudo instalar ATL (código $($process.ExitCode))." }
   $atl = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ATL -property installationPath
