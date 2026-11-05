@@ -106,6 +106,15 @@ build:arch:
       image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
       chmod +x "$image"
       "$image" --appimage-extract 'usr/lib/*' >/dev/null
+      mkdir -p deps
+      curl -fsSL 'https://archive.ubuntu.com/ubuntu/pool/main/j/jackd2/libjack-jackd2-0_1.9.21~dfsg-3ubuntu3_amd64.deb' -o deps/jack.deb
+      curl -fsSL 'https://archive.ubuntu.com/ubuntu/pool/main/p/pipewire/libpipewire-0.3-0t64_1.0.5-1ubuntu3.3_amd64.deb' -o deps/pipewire.deb
+      echo '4fc5f4d0fbf2602df59bbed3ea504742bdcc7f899d7b32f6b2fd446ceb1fdf7d  deps/jack.deb' | sha256sum -c -
+      echo '225786f83ecb81075b820652038e20f38ae8f72a9787b766c4e0aa1bd7dfead8  deps/pipewire.deb' | sha256sum -c -
+      ar p deps/jack.deb data.tar.zst | tar --zstd -x -C deps
+      ar p deps/pipewire.deb data.tar.zst | tar --zstd -x -C deps
+      cp -L deps/usr/lib/x86_64-linux-gnu/libjack.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libjack.so.0"
+      cp -L deps/usr/lib/x86_64-linux-gnu/libpipewire-0.3.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libpipewire-0.3.so.0"
       ls -l "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv* || true
       for lib in "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv*; do [ -e "$lib" ] && ldd "$lib" | grep -E 'not found|libmpv' || true; done
       find "$CI_PROJECT_DIR/squashfs-root/usr/lib" -maxdepth 1 \( -name '*jack*' -o -name '*pipewire*' \) -printf '%f\n'
