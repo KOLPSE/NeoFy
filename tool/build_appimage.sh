@@ -17,8 +17,8 @@ rm -rf "$appdir"
 mkdir -p "$appdir/usr/bin" "$appdir/usr/lib"
 cp -a "$bundle/." "$appdir/usr/bin/"
 # linuxdeploy excluye estas bibliotecas por defecto, pero libmpv las necesita
-# incluso en escritorios que no ejecutan JACK o PipeWire.
-for name in libjack.so.0 libpipewire-0.3.so.0; do
+# incluso en escritorios que no ejecutan JACK o PipeWire o carecen de libusb.
+for name in libjack.so.0 libpipewire-0.3.so.0 libusb-1.0.so.0; do
   path="$(ldconfig -p | awk -v name="$name" '$1 == name {path=$NF} END {print path}')"
   [ -n "$path" ] || { echo "Falta $name para el AppImage" >&2; exit 1; }
   cp -L "$path" "$appdir/usr/lib/$name"
