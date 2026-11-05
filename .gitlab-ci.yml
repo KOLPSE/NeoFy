@@ -74,7 +74,7 @@ build:arch:
     - |
       set -euo pipefail
       sudo install -dm755 /tmp/srcinfo
-      cp linux/packaging/PKGBUILD /tmp/srcinfo/
+      sudo cp linux/packaging/PKGBUILD /tmp/srcinfo/
       sudo chown -R builder /tmp/srcinfo
       sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
 
