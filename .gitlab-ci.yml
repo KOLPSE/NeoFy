@@ -222,7 +222,9 @@ build:arch:
 
     - |
       set -euo pipefail
-      sudo pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+      # La VM tiene índices de pacman antiguos; no se actualiza el sistema de
+      # forma parcial. El runtime de esta prueba usa libmpv del AppImage.
+      sudo pacman -U --nodeps --noconfirm dist/neofy-bin-*.pkg.tar.zst
       test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
       test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
       test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
@@ -238,7 +240,11 @@ build:arch:
 
     - |
       set -euo pipefail
-      export HOME=/root
+      export HOME="$CI_PROJECT_DIR/.ci-arch-home"
+      mkdir -p "$HOME"
+      image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      "$image" --appimage-extract 'usr/lib/*' >/dev/null
+      export LD_LIBRARY_PATH="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
       dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
       sleep 25
