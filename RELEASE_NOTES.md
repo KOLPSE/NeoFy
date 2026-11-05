@@ -7,3 +7,4 @@
 
 - Los reportes conservan la pista actual como metadato sin provocar errores de validación.
 - Los reintentos de un reporte usan la misma clave para evitar duplicados.
+- El aviso de actualización en Linux ya no presupone que uses Arch.
