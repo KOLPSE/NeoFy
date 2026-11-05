@@ -155,6 +155,7 @@ build:arch:
       "$image" --appimage-extract >/dev/null
       cp -L deps/usr/lib/x86_64-linux-gnu/libjack.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libjack.so.0"
       cp -L deps/usr/lib/x86_64-linux-gnu/libpipewire-0.3.so.0 "$CI_PROJECT_DIR/squashfs-root/usr/lib/libpipewire-0.3.so.0"
+      chmod -R a+rX "$CI_PROJECT_DIR/squashfs-root"
       curl -fsSL --retry 3 https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -o appimagetool
       chmod +x appimagetool
       ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool "$CI_PROJECT_DIR/squashfs-root" "$CI_PROJECT_DIR/dist/neofy-corrected.AppImage"
