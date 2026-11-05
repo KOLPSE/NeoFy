@@ -154,11 +154,10 @@ build:arch:
     - job: build:linux
       artifacts: true
   before_script:
-    # mpv y python se omiten: mpv lo resuelve el PKGBUILD y python no hace falta.
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
     - sudo pacman -S --noconfirm --needed
-      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido
+      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido libsecret mpv
       webkit2gtk-4.1
       base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
   script:
@@ -183,6 +182,7 @@ build:arch:
       done
       [ "$fallo" = 0 ] || exit 1
       echo "Todos los binarios resuelven sus dependencias en Arch."
+      cd "$CI_PROJECT_DIR"
 
     - |
       set -euo pipefail
