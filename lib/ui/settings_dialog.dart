@@ -377,7 +377,7 @@ class _Actualizaciones extends StatelessWidget {
                           Updater.seInstalaSolo
                               ? 'Hay una versión nueva: ${updater.versionDisponible}'
                               : 'Hay una versión nueva (${updater.versionDisponible}). '
-                                    'Actualiza con ${Updater.comandoDeActualizacion}',
+                                    'Descárgala desde GitHub o actualiza tu paquete de Linux.',
                         EstadoActualizacion.descargando =>
                           'Descargando… ${(updater.progreso * 100).round()} %',
                         EstadoActualizacion.listaParaInstalar =>
