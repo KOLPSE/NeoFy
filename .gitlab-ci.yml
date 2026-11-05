@@ -247,8 +247,11 @@ build:arch:
       chmod +x "$image"
       "$image" --appimage-extract 'usr/lib/*' >/dev/null
       app_libs="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
+      # Un job interrumpido puede haber dejado su proceso de prueba en la VM.
+      pkill -f '^/usr/bin/neofy$' || true
       dbus-run-session -- xvfb-run -a env LD_LIBRARY_PATH="$app_libs" /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
+      trap 'kill "$pid" 2>/dev/null || true; pkill -f "^/usr/bin/neofy$" || true' EXIT
       sleep 25
       if ! kill -0 "$pid" 2>/dev/null; then
         echo "ERROR: neofy se ha caido durante el arranque"
@@ -256,6 +259,7 @@ build:arch:
         exit 1
       fi
       kill "$pid" 2>/dev/null || true
+      pkill -f '^/usr/bin/neofy$' || true
       echo "Sigue viva pasados 25 s."
       if grep -q 'sin libmpv' /tmp/neofy.log; then
         echo "ERROR: la app ha arrancado sin la via libre: falta libmpv"
