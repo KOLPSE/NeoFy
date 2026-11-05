@@ -108,6 +108,8 @@ build:arch:
       "$image" --appimage-extract 'usr/lib/*' >/dev/null
       ls -l "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv* || true
       for lib in "$CI_PROJECT_DIR"/squashfs-root/usr/lib/libmpv*; do [ -e "$lib" ] && ldd "$lib" | grep -E 'not found|libmpv' || true; done
+      find "$CI_PROJECT_DIR/squashfs-root/usr/lib" -maxdepth 1 \( -name '*jack*' -o -name '*pipewire*' \) -printf '%f\n'
+      LD_LIBRARY_PATH="$CI_PROJECT_DIR/squashfs-root/usr/lib" ldd "$CI_PROJECT_DIR/squashfs-root/usr/lib/libmpv.so.2" | grep -E 'not found|GLIBC' || true
       app_libs="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
       dbus-run-session -- xvfb-run -a env LD_LIBRARY_PATH="$app_libs" /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
