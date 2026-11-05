@@ -2,7 +2,7 @@
 # Crea un AppImage a partir del bundle Flutter compilado para Linux x86_64.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-version="$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart)"
+version="$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart | tr -d '\r')"
 bundle="build/linux/x64/release/bundle"
 [ -x "$bundle/neofy" ] && [ -n "$version" ] || { echo 'Falta el bundle Linux o la versión' >&2; exit 1; }
 cache="${APPIMAGE_TOOL_CACHE:-$PWD/tool/.appimage-cache}"
