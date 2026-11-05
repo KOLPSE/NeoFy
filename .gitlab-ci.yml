@@ -23,8 +23,10 @@ check:windows:
   stage: check
   tags:
     - windows
+  variables:
+    GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
   before_script:
-    - '$env:PATH = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"'
+    - '. .\tool\prepare_windows_ci.ps1'
   script:
     - flutter pub get
     - flutter analyze
@@ -66,8 +68,10 @@ build:windows:
   stage: build
   tags:
     - windows
+  variables:
+    GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
   before_script:
-    - '$env:PATH = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"'
+    - '. .\tool\prepare_windows_ci.ps1'
   needs:
     - job: check:windows
   script:

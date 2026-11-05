@@ -49,3 +49,4 @@ credentials.json
 
 # Herramientas descargadas para empaquetar AppImage
 tool/.appimage-cache/
+.ci-tools/
