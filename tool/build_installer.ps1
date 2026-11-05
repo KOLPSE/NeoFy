@@ -1,5 +1,5 @@
 ﻿
-
+param([switch]$NoCerrarProcesos)
 $ErrorActionPreference = 'Stop'
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
@@ -25,8 +25,10 @@ if ($LASTEXITCODE -ne 0) { throw "Falló la descarga de yt-dlp" }
 if (-not (Test-Path $ytdlp)) { throw "No se encuentra $ytdlp" }
 
 Paso "Compilando NeoFy"
-foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
-  Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
+if (-not $NoCerrarProcesos) {
+  foreach ($n in @('neofy', 'librespot', 'metadata-sidecar', 'yt-dlp')) {
+    Get-Process $n -ErrorAction SilentlyContinue | Stop-Process -Force
+  }
 }
 
 $flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source

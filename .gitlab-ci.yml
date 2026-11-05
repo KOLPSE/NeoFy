@@ -100,8 +100,8 @@ build:linux:
       # Que el tarball este completo: si falta un binario, la app arranca y
       # se rompe a mitad de uso, que es peor que no arrancar.
       tar -tzf dist/NeoFy-*-linux-x86_64.tar.gz > /tmp/tarball.txt
-      for f in neofy librespot metadata-sidecar yt-dlp
-               xyz.neogex.neofy.desktop LICENSE
+      for f in neofy librespot metadata-sidecar yt-dlp \
+               xyz.neogex.neofy.desktop LICENSE \
                data/icudtl.dat lib/libapp.so lib/libflutter_linux_gtk.so; do
         grep -q "/$f\$" /tmp/tarball.txt || { echo "El tarball no trae $f"; exit 1; }
       done
@@ -165,7 +165,7 @@ build:arch:
 
     - |
       set -euo pipefail
-      sudo useradd -m builder
+      id builder >/dev/null 2>&1 || sudo useradd -m builder
       mkdir -p /tmp/pkg
       cp linux/packaging/PKGBUILD /tmp/pkg/
       cp dist/NeoFy-*-linux-x86_64.tar.gz /tmp/pkg/
