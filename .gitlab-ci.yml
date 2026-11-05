@@ -23,6 +23,8 @@ check:windows:
   stage: check
   tags:
     - windows
+  before_script:
+    - '$env:PATH = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"'
   script:
     - flutter pub get
     - flutter analyze
@@ -64,6 +66,8 @@ build:windows:
   stage: build
   tags:
     - windows
+  before_script:
+    - '$env:PATH = "C:\flutter\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"'
   needs:
     - job: check:windows
   script:
