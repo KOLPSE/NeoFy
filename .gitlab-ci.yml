@@ -16,10 +16,12 @@ build:arch:
     - |
       set -euo pipefail
       mkdir -p dist
-      curl -fsSL --retry 3 --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/jobs/253/artifacts/dist/NeoFy-1.3.3-linux-x86_64.tar.gz" \
-        -o dist/NeoFy-1.3.3-linux-x86_64.tar.gz
+      for file in NeoFy-1.3.3-linux-x86_64.tar.gz NeoFy-1.3.3-linux-x86_64.AppImage; do
+        curl -fsSL --retry 3 --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/jobs/253/artifacts/dist/$file" -o "dist/$file"
+      done
       echo '40dac9d42c7950906d7e09f9145f76b8df31d29a95bc28aed62fdd4e97224ae6  dist/NeoFy-1.3.3-linux-x86_64.tar.gz' | sha256sum -c -
+      echo '9b4dbad4aae53f6b51146cdf9074996f2f8313dea2e3ec9037e607dd0d07364e  dist/NeoFy-1.3.3-linux-x86_64.AppImage' | sha256sum -c -
     - |
       set -euo pipefail
       tar -xzf dist/NeoFy-*-linux-x86_64.tar.gz
@@ -81,7 +83,9 @@ build:arch:
 
     - |
       set -euo pipefail
-      sudo pacman -U --noconfirm /tmp/pkg/neofy-bin-*.pkg.tar.zst
+      # La VM tiene índices de pacman antiguos; no se actualiza el sistema de
+      # forma parcial. El runtime de esta prueba usa libmpv del AppImage.
+      sudo pacman -U --nodeps --noconfirm dist/neofy-bin-*.pkg.tar.zst
       test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
       test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
       test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
@@ -97,7 +101,11 @@ build:arch:
 
     - |
       set -euo pipefail
-      export HOME=/root
+      export HOME="$CI_PROJECT_DIR/.ci-arch-home"
+      mkdir -p "$HOME"
+      image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      "$image" --appimage-extract 'usr/lib/*' >/dev/null
+      export LD_LIBRARY_PATH="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
       dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
       pid=$!
       sleep 25
