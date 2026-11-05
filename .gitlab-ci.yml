@@ -216,8 +216,8 @@ build:arch:
     - |
       set -euo pipefail
       srcdir="/tmp/neofy-srcinfo-${CI_JOB_ID:?}"
-      sudo install -dm755 -o builder -g builder "$srcdir"
-      sudo install -m644 -o builder -g builder linux/packaging/PKGBUILD "$srcdir/PKGBUILD"
+      sudo install -dm755 -o builder "$srcdir"
+      sudo install -m644 -o builder linux/packaging/PKGBUILD "$srcdir/PKGBUILD"
       sudo -u builder bash -c 'cd "$1" && makepkg --printsrcinfo' _ "$srcdir"
 
     - |
