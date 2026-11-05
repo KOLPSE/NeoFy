@@ -157,7 +157,7 @@ build:arch:
     # ayatana-ido tiene que estar aqui y en depends= del PKGBUILD: desde
     # libayatana-appindicator 0.6.0-2 ese paquete ya no lo arrastra.
     - sudo pacman -S --noconfirm --needed
-      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido libsecret mpv
+      gtk3 libayatana-appindicator libayatana-indicator ayatana-ido libsecret
       webkit2gtk-4.1
       base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
   script:
@@ -215,7 +215,7 @@ build:arch:
     - |
       set -euo pipefail
       sudo install -dm755 /tmp/srcinfo
-      cp linux/packaging/PKGBUILD /tmp/srcinfo/
+      sudo cp linux/packaging/PKGBUILD /tmp/srcinfo/
       sudo chown -R builder /tmp/srcinfo
       sudo -u builder bash -c 'cd /tmp/srcinfo && makepkg --printsrcinfo'
 
