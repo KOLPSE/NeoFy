@@ -243,6 +243,7 @@ build:arch:
       export HOME="$CI_PROJECT_DIR/.ci-arch-home"
       mkdir -p "$HOME"
       image="$(realpath dist/NeoFy-*-linux-x86_64.AppImage)"
+      chmod +x "$image"
       "$image" --appimage-extract 'usr/lib/*' >/dev/null
       export LD_LIBRARY_PATH="$CI_PROJECT_DIR/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}"
       dbus-run-session -- xvfb-run -a /usr/bin/neofy > /tmp/neofy.log 2>&1 &
