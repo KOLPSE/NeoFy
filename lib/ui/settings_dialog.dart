@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/updater.dart';
+import '../core/neoreport.dart';
 import 'texto_traducido.dart';
 
 Future<void> mostrarAjustes(
@@ -13,6 +14,7 @@ Future<void> mostrarAjustes(
   required Settings settings,
   required Updater updater,
   required Future<void> Function() onSalirParaActualizar,
+  String? trackUri,
   List<Widget> bloquesExtra = const [],
 }) {
   return showDialogTraducido<void>(
@@ -22,6 +24,7 @@ Future<void> mostrarAjustes(
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
+      trackUri: trackUri,
       bloquesExtra: bloquesExtra,
     ),
   );
@@ -33,12 +36,14 @@ class _DialogoAjustes extends StatelessWidget {
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
+    required this.trackUri,
     required this.bloquesExtra,
   });
 
   final ResourceMonitor monitor;
   final Settings settings;
   final Updater updater;
+  final String? trackUri;
 
   final Future<void> Function() onSalirParaActualizar;
 
@@ -89,24 +94,28 @@ class _DialogoAjustes extends StatelessWidget {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       value: settings.performanceMode,
-                      onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
+                      onChanged: (v) =>
+                          unawaited(settings.setPerformanceMode(v)),
                       title: T('Modo rendimiento'),
                       subtitle: T(
                         'Elimina las portadas por cuadrados de color',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                     const Divider(height: 12),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       value: settings.discordRpcEnabled,
-                      onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
+                      onChanged: (v) =>
+                          unawaited(settings.setDiscordRpcEnabled(v)),
                       title: T('Rich Presence'),
                       subtitle: T(
                         'Muestra en tu perfil de Discord la canción que estás escuchando.',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                     if (settings.discordRpcEnabled) ...[
@@ -120,6 +129,8 @@ class _DialogoAjustes extends StatelessWidget {
                 const Divider(height: 12),
                 bloque,
               ],
+              const Divider(height: 12),
+              _EnviarReporte(neoreport: NeoReport(), trackUri: trackUri),
               const Divider(height: 12),
               _Actualizaciones(
                 updater: updater,
@@ -137,6 +148,126 @@ class _DialogoAjustes extends StatelessWidget {
       ],
     );
   }
+}
+
+class _EnviarReporte extends StatefulWidget {
+  const _EnviarReporte({required this.neoreport, required this.trackUri});
+  final NeoReport neoreport;
+  final String? trackUri;
+
+  @override
+  State<_EnviarReporte> createState() => _EnviarReporteState();
+}
+
+class _EnviarReporteState extends State<_EnviarReporte> {
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+  String _category = 'bug';
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    if (_title.text.trim().isEmpty || _body.text.trim().isEmpty) {
+      setState(() => _error = 'Escribe un título y una descripción.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final uri = await widget.neoreport.enviar(
+        title: _title.text,
+        body: _body.text,
+        category: _category,
+        trackUri: widget.trackUri,
+      );
+      if (mounted) {
+        _title.clear();
+        _body.clear();
+        setState(
+          () => _error =
+              'Reporte enviado. Continúa en NeoReport para consultar o vincular tu cuenta de Discord.',
+        );
+      }
+      try {
+        await widget.neoreport.abrir(uri);
+      } catch (_) {
+        if (mounted) {
+          setState(
+            () =>
+                _error = 'Reporte enviado. No se pudo abrir el navegador: $uri',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Align(alignment: Alignment.centerLeft, child: T('Enviar un reporte')),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _title,
+        maxLength: 300,
+        decoration: const InputDecoration(labelText: 'Título'),
+      ),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String>(
+        initialValue: _category,
+        decoration: const InputDecoration(labelText: 'Tipo'),
+        items: const [
+          DropdownMenuItem(value: 'bug', child: Text('Error')),
+          DropdownMenuItem(value: 'crash', child: Text('Cierre inesperado')),
+          DropdownMenuItem(value: 'idea', child: Text('Sugerencia')),
+          DropdownMenuItem(value: 'other', child: Text('Otro')),
+        ],
+        onChanged: (value) {
+          if (value != null) setState(() => _category = value);
+        },
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _body,
+        minLines: 3,
+        maxLines: 5,
+        maxLength: 65536,
+        decoration: const InputDecoration(labelText: 'Descripción'),
+      ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(_error!, style: Theme.of(context).textTheme.bodySmall),
+        ),
+      const SizedBox(height: 8),
+      FilledButton.icon(
+        onPressed: _busy ? null : _send,
+        icon: _busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.send),
+        label: Text(_busy ? 'Enviando…' : 'Enviar y vincular con Discord'),
+      ),
+    ],
+  );
 }
 
 class ReiniciarAudioDeNeoFy extends StatefulWidget {
@@ -176,8 +307,9 @@ class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
                 _enMarcha
                     ? 'Reabriendo la salida…'
                     : 'Si deja de escucharse, vuelve a abrir la salida.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -228,7 +360,8 @@ class _Actualizaciones extends StatelessWidget {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 2),
-                  if (estado == EstadoActualizacion.fallo && updater.error != null)
+                  if (estado == EstadoActualizacion.fallo &&
+                      updater.error != null)
                     Text(
                       updater.error!,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -240,16 +373,18 @@ class _Actualizaciones extends StatelessWidget {
                       switch (estado) {
                         EstadoActualizacion.buscando => 'Buscando…',
                         EstadoActualizacion.alDia => 'Estás al día',
-                        EstadoActualizacion.disponible => Updater.seInstalaSolo
-                            ? 'Hay una versión nueva: ${updater.versionDisponible}'
-                            : 'Hay una versión nueva (${updater.versionDisponible}). '
-                                'Actualiza con ${Updater.comandoDeActualizacion}',
+                        EstadoActualizacion.disponible =>
+                          Updater.seInstalaSolo
+                              ? 'Hay una versión nueva: ${updater.versionDisponible}'
+                              : 'Hay una versión nueva (${updater.versionDisponible}). '
+                                    'Actualiza con ${Updater.comandoDeActualizacion}',
                         EstadoActualizacion.descargando =>
                           'Descargando… ${(updater.progreso * 100).round()} %',
                         EstadoActualizacion.listaParaInstalar =>
                           'Instalando; NeoFy se reiniciará',
                         EstadoActualizacion.fallo => 'No se pudo comprobar',
-                        EstadoActualizacion.reposo => 'Comprobar si hay novedades',
+                        EstadoActualizacion.reposo =>
+                          'Comprobar si hay novedades',
                       },
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: estado == EstadoActualizacion.disponible
@@ -310,8 +445,9 @@ class _Medida extends StatelessWidget {
         Text(valor, style: theme.textTheme.titleLarge),
         Text(
           etiqueta,
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -342,7 +478,8 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
     if (!_foco.hasFocus) _guardar();
   }
 
-  void _guardar() => unawaited(widget.settings.setDiscordClientId(_controller.text));
+  void _guardar() =>
+      unawaited(widget.settings.setDiscordClientId(_controller.text));
 
   @override
   void didUpdateWidget(covariant _CampoDiscordClientId oldWidget) {
@@ -371,8 +508,9 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
       helper:
           'Crea una app en el Discord Developer Portal con un asset llamado "logo"',
       helperMaxLines: 2,
-      helperStyle: theme.textTheme.bodySmall
-          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      helperStyle: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
       onSubmitted: (_) => _guardar(),
     );
   }

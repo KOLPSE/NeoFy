@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Crea un AppImage a partir del bundle Flutter compilado para Linux x86_64.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version="$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart)"
+bundle="build/linux/x64/release/bundle"
+[ -x "$bundle/neofy" ] && [ -n "$version" ] || { echo 'Falta el bundle Linux o la versión' >&2; exit 1; }
+cache="${APPIMAGE_TOOL_CACHE:-$PWD/tool/.appimage-cache}"
+mkdir -p "$cache" dist
+linuxdeploy="$cache/linuxdeploy-x86_64.AppImage"
+if [ ! -x "$linuxdeploy" ]; then
+  curl -fsSL --retry 3 -o "$linuxdeploy" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+  chmod +x "$linuxdeploy"
+fi
+appdir="$PWD/dist/NeoFy.AppDir"
+rm -rf "$appdir"
+mkdir -p "$appdir/usr/bin"
+cp -a "$bundle/." "$appdir/usr/bin/"
+cat > "$PWD/dist/neofy-appimage.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=NeoFy
+Comment=Reproductor de música
+Exec=neofy
+Icon=neofy
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=xyz.neogex.neofy
+DESKTOP
+
+# linuxdeploy recopila dependencias ELF; las bibliotecas del bundle permanecen
+# junto al ejecutable para que Flutter y sus sidecars las encuentren.
+export APPIMAGE_EXTRACT_AND_RUN=1
+export ARCH=x86_64
+export OUTPUT="$PWD/dist/NeoFy-$version-linux-x86_64.AppImage"
+"$linuxdeploy" --appdir "$appdir" --desktop-file "$PWD/dist/neofy-appimage.desktop" \
+  --icon-file "$PWD/linux/packaging/icons/256x256/neofy.png" --executable "$appdir/usr/bin/neofy" \
+  --executable "$appdir/usr/bin/librespot" \
+  --executable "$appdir/usr/bin/metadata-sidecar" --output appimage
+chmod +x "$OUTPUT"
+sha256sum "$OUTPUT"

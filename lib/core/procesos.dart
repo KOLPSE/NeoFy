@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'app_config.dart';
 
@@ -10,9 +11,11 @@ final String _nul = String.fromCharCode(0);
 
 Directory _dirDePids() {
   final base = Platform.environment['XDG_RUNTIME_DIR'];
-  final dir = Directory(base != null && base.isNotEmpty && p.isAbsolute(base)
-      ? p.join(base, 'neofy')
-      : p.join(cacheDir().path, 'run'));
+  final dir = Directory(
+    base != null && base.isNotEmpty && p.isAbsolute(base)
+        ? p.join(base, 'neofy')
+        : p.join(cacheDir().path, 'run'),
+  );
   if (!dir.existsSync()) dir.createSync(recursive: true);
   return dir;
 }
@@ -24,8 +27,7 @@ void anotarPid(String nombre, int pid) {
   if (Platform.isWindows) return;
   try {
     _ficheroDePid(nombre).writeAsStringSync('$pid');
-  } catch (_) {
-  }
+  } catch (_) {}
 }
 
 void olvidarPid(String nombre) {
@@ -38,10 +40,12 @@ void olvidarPid(String nombre) {
 
 Future<void> matarHuerfano(String nombre, File? binario) async {
   if (Platform.isWindows) {
+    if (kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1') {
+      return;
+    }
     try {
       await Process.run('taskkill', ['/F', '/IM', '$nombre.exe']);
-    } catch (_) {
-    }
+    } catch (_) {}
     return;
   }
 
