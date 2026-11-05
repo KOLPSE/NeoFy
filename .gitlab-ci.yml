@@ -224,7 +224,7 @@ build:arch:
       set -euo pipefail
       # La VM tiene índices de pacman antiguos; no se actualiza el sistema de
       # forma parcial. El runtime de esta prueba usa libmpv del AppImage.
-      sudo pacman -U --nodeps --noconfirm dist/neofy-bin-*.pkg.tar.zst
+      sudo pacman -U --nodeps --nodeps --noconfirm dist/neofy-bin-*.pkg.tar.zst
       test -x /opt/neofy/neofy          || { echo "ERROR: falta /opt/neofy/neofy"; exit 1; }
       test -x /opt/neofy/librespot      || { echo "ERROR: falta librespot"; exit 1; }
       test -x /opt/neofy/metadata-sidecar || { echo "ERROR: falta metadata-sidecar"; exit 1; }
