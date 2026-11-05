@@ -2,15 +2,15 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # El SDK vive en el directorio de trabajo del runner, no en el sistema.
-$sdkRoot = Join-Path $env:CI_PROJECT_DIR '.ci-tools\flutter'
+$toolsDir = Join-Path $env:CI_PROJECT_DIR '.ci-tools\flutter-3.44.6'
+$sdkRoot = Join-Path $toolsDir 'flutter'
 if (-not (Test-Path (Join-Path $sdkRoot 'bin\flutter.bat'))) {
   Write-Host 'Preparando Flutter 3.44.6 en el directorio del job.'
-  $toolsDir = Split-Path $sdkRoot -Parent
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
   $manifest = Invoke-RestMethod -TimeoutSec 45 'https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json'
   $release = $manifest.releases | Where-Object { $_.version -eq '3.44.6' -and $_.channel -eq 'stable' } | Select-Object -First 1
   if (-not $release -or -not $release.sha256) { throw 'No se encuentra Flutter 3.44.6 en el manifiesto oficial.' }
-  $archive = Join-Path $toolsDir 'flutter.zip'
+  $archive = Join-Path $toolsDir "flutter-$env:CI_JOB_ID.zip"
   try {
     & curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 1200 --output $archive "https://storage.googleapis.com/flutter_infra_release/releases/$($release.archive)"
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo descargar el SDK de Flutter.' }
