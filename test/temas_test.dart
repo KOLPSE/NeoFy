@@ -278,17 +278,42 @@ void main() {
       expect(ids, isNot(contains(kIdTemaDelSistema)));
     });
 
-    test('incluye Nocturno junto a los dos Material y Liquid Glass', () {
+    test('incluye Nocturno y Claro junto a los dos Material y Liquid Glass', () {
       final ids = temasIncluidos.map((t) => t.id).toSet();
       expect(
         ids,
         containsAll([
           temaNeoFyNocturno.id,
+          temaNeoFyClaro.id,
           'material-claro',
           'material-oscuro',
           'liquid-glass',
         ]),
       );
+    });
+
+    test('NeoFy Claro comparte la interfaz de NeoFy Nocturno en modo claro',
+        () {
+      final claro = TemaStore(AppConfig(tema: temaNeoFyClaro.id));
+      final auto = TemaStore(AppConfig(tema: kIdTemaDelSistema));
+      addTearDown(claro.dispose);
+      addTearDown(auto.dispose);
+
+      expect(claro.modo, ThemeMode.light);
+      expect(claro.themeDataClaro.colorScheme.brightness, Brightness.light);
+      expect(
+        claro.themeDataClaro.extension<EstiloNeoFy>()!.usaInterfazNocturna,
+        isTrue,
+      );
+      expect(temaNeoFyClaro.radio, temaNeoFyNocturno.radio);
+      expect(temaNeoFyClaro.radioBoton, temaNeoFyNocturno.radioBoton);
+      expect(temaNeoFyClaro.radioCaratula, temaNeoFyNocturno.radioCaratula);
+      expect(
+        temaNeoFyClaro.tipografia.pesoTitulos,
+        temaNeoFyNocturno.tipografia.pesoTitulos,
+      );
+      expect(auto.temaParaClaro.id, temaNeoFyClaro.id);
+      expect(auto.temaParaOscuro.id, temaNeoFyNocturno.id);
     });
 
     test('la configuración nueva abre Nocturno y Material sigue siendo clásico', () {

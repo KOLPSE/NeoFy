@@ -688,7 +688,8 @@ class EstiloNeoFy extends ThemeExtension<EstiloNeoFy> {
 
   bool get navegacionEnPildora => navegacion == EstiloDeNavegacion.pildora;
 
-  bool get usaInterfazNocturna => idDelTema == kIdTemaNocturno;
+  bool get usaInterfazNocturna =>
+      idDelTema == kIdTemaNocturno || idDelTema == kIdTemaClaro;
 
   double radioDeCaratula(double lado) =>
       radioCaratula < lado * 0.28 ? radioCaratula : lado * 0.28;

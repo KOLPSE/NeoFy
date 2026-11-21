@@ -211,6 +211,27 @@ void main() {
     expect(cierresDeSesion, 1);
 
     await t.binding.setSurfaceSize(const Size(820, 560));
+    await temas.seleccionar(temaNeoFyClaro.id);
+    await t.pumpWidget(
+      AnimatedBuilder(
+        animation: temas,
+        builder: (context, _) => MaterialApp(
+          theme: temas.themeDataClaro,
+          darkTheme: temas.themeDataOscuro,
+          themeMode: temas.modo,
+          home: shell,
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Biblioteca'), findsOneWidget);
+    expect(find.text('Última escucha'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(
+      Theme.of(t.element(find.text('Biblioteca'))).brightness,
+      Brightness.light,
+    );
+
     await temas.seleccionar(temaMaterialOscuro.id);
     await t.pumpAndSettle();
     expect(find.text('Biblioteca'), findsNothing);

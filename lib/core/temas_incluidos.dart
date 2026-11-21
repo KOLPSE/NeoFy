@@ -33,6 +33,30 @@ const Tema temaNeoFyNocturno = Tema(
   ),
 );
 
+const Tema temaNeoFyClaro = Tema(
+  id: kIdTemaClaro,
+  nombre: 'NeoFy Claro',
+  autor: 'NeoFy',
+  descripcion: 'Blanco y piedra suave, acentos verdes y portadas protagonistas.',
+  brillo: BrilloDeTema.claro,
+  incluido: true,
+  radio: 10,
+  radioBoton: 22,
+  radioCaratula: 6,
+  tipografia: Tipografia(pesoTitulos: 700),
+  colores: Paleta(
+    primario: Color(0xFF15803D),
+    sobrePrimario: Color(0xFFFFFFFF),
+    fondo: Color(0xFFEEF0EE),
+    superficie: Color(0xFFE4E7E4),
+    panel: Color(0xFFFFFFFF),
+    texto: Color(0xFF111312),
+    textoTenue: Color(0xFF555956),
+    borde: Color(0xFFA2A8A4),
+    error: Color(0xFFC62828),
+  ),
+);
+
 /// Temas retirados en la 1.3.0 y a qué incluido migra cada uno. Un
 /// `config.json` viejo puede traer cualquiera de estos ids; al cargar se
 /// cambia por el suyo y se guarda, para que la migración ocurra una vez.
@@ -161,6 +185,7 @@ const Tema temaMaterialOscuro = Tema(
 
 const List<Tema> temasIncluidos = [
   temaNeoFyNocturno,
+  temaNeoFyClaro,
   temaMaterialOscuro,
   temaMaterialClaro,
   temaLiquidGlass,

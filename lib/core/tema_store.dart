@@ -85,12 +85,12 @@ class TemaStore extends ChangeNotifier {
   bool get siguiendoAlSistema => porId(idSeleccionado) == null;
 
   Tema get temaParaClaro => siguiendoAlSistema
-      ? temaMaterialClaro.personalizado(config.temaColores[temaMaterialClaro.id])
+      ? temaNeoFyClaro.personalizado(config.temaColores[temaNeoFyClaro.id])
       : porId(idSeleccionado)!;
 
   Tema get temaParaOscuro => siguiendoAlSistema
-      ? temaMaterialOscuro
-          .personalizado(config.temaColores[temaMaterialOscuro.id])
+      ? temaNeoFyNocturno
+          .personalizado(config.temaColores[temaNeoFyNocturno.id])
       : porId(idSeleccionado)!;
 
   ThemeMode get modo {
