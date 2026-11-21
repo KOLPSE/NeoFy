@@ -7,8 +7,10 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:http/http.dart' as http;
 
 import '../core/app_config.dart' show kLimiteDesfaseLetraMs;
+import '../core/detector_voz.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
+import '../core/sincronizacion_voz.dart';
 import 'art_image.dart';
 import 'letra_sincronizada.dart';
 import 'now_playing_bar.dart' show formatMs;
@@ -20,11 +22,15 @@ class LyricsView extends StatefulWidget {
     required this.track,
     required this.player,
     required this.onClose,
+    this.fuenteVoz,
+    this.cliente,
   });
 
   final Track track;
   final PlayerController player;
   final VoidCallback onClose;
+  final FuenteDeteccionVoz? fuenteVoz;
+  final http.Client? cliente;
 
   @override
   State<LyricsView> createState() => _LyricsViewState();
@@ -33,14 +39,20 @@ class LyricsView extends StatefulWidget {
 class _LyricsViewState extends State<LyricsView>
     with SingleTickerProviderStateMixin {
   late Future<_Lyrics?> _request;
-  final _client = http.Client();
+  late final http.Client _client = widget.cliente ?? http.Client();
   final _activeLine = GlobalKey();
   final _tiempo = ValueNotifier<int>(0);
   final _indice = ValueNotifier<int>(-1);
+  final _desfaseVoz = ValueNotifier<int>(0);
   late final Ticker _latido = createTicker((_) => _sincronizarTiempo());
+  late final FuenteDeteccionVoz _fuenteVoz;
+  late final bool _fuentePropia;
+  final _controladorVoz = ControladorSincronizacionPorVoz();
   var _lineas = const <LineaDeLetra>[];
   late int _desfaseGuardado;
   late int _desfaseMs;
+  late ModoVisualizacionLetra _modoLetra;
+  late bool _sincVoz;
   bool _ajustando = false;
   bool _guardando = false;
   bool _follow = true;
@@ -48,9 +60,17 @@ class _LyricsViewState extends State<LyricsView>
   @override
   void initState() {
     super.initState();
-    _desfaseGuardado =
-        widget.player.config.desfasesLetraMs[widget.track.uri] ?? 0;
+    final config = widget.player.config;
+    _desfaseGuardado = config.desfasesLetraMs[widget.track.uri] ?? 0;
     _desfaseMs = _desfaseGuardado;
+    _modoLetra = config.modoLetraPorPalabras
+        ? ModoVisualizacionLetra.palabras
+        : ModoVisualizacionLetra.letras;
+    _sincVoz = config.sincronizacionPorVoz;
+    _fuentePropia = widget.fuenteVoz == null;
+    _fuenteVoz = widget.fuenteVoz ?? CapturaVozWasapi();
+    _fuenteVoz.estado.addListener(_sincronizarTiempo);
+    if (_sincVoz) unawaited(_fuenteVoz.iniciar());
     widget.player.progressMs.addListener(_sincronizarTiempo);
     widget.player.addListener(_actualizarLatido);
     _request = _load();
@@ -60,16 +80,36 @@ class _LyricsViewState extends State<LyricsView>
   void dispose() {
     widget.player.progressMs.removeListener(_sincronizarTiempo);
     widget.player.removeListener(_actualizarLatido);
+    _fuenteVoz.estado.removeListener(_sincronizarTiempo);
+    if (_fuentePropia) {
+      _fuenteVoz.dispose();
+    } else {
+      unawaited(_fuenteVoz.detener());
+    }
     _latido.dispose();
     _tiempo.dispose();
     _indice.dispose();
-    _client.close();
+    _desfaseVoz.dispose();
+    if (widget.cliente == null) _client.close();
     super.dispose();
   }
 
   void _sincronizarTiempo() {
     if (widget.player.state.track?.uri != widget.track.uri) return;
-    _mostrarTiempo(widget.player.posicionActualMs + _desfaseMs);
+    final baseMs = widget.player.posicionActualMs + _desfaseMs;
+    final ms = _sincVoz && _lineas.isNotEmpty
+        ? _controladorVoz.actualizar(
+            posicionBaseMs: baseMs,
+            reproduciendo: widget.player.state.isPlaying,
+            hayVoz: _fuenteVoz.estado.value.hayVoz,
+            lineas: _lineas,
+            modo: _modoLetra,
+          )
+        : baseMs;
+    if (_desfaseVoz.value != _controladorVoz.desfaseAdaptativoMs) {
+      _desfaseVoz.value = _controladorVoz.desfaseAdaptativoMs;
+    }
+    _mostrarTiempo(ms);
   }
 
   void _actualizarLatido() {
@@ -96,10 +136,41 @@ class _LyricsViewState extends State<LyricsView>
       (linea.inicioMs - _desfaseMs).clamp(0, widget.track.durationMs);
 
   void _previsualizarDesfase(int ms) {
+    _controladorVoz.reiniciar();
+    _desfaseVoz.value = 0;
     setState(() {
       _desfaseMs = ms.clamp(-kLimiteDesfaseLetraMs, kLimiteDesfaseLetraMs);
     });
     _sincronizarTiempo();
+  }
+
+  Future<void> _cambiarModoLetra(ModoVisualizacionLetra modo) async {
+    if (_modoLetra == modo) return;
+    setState(() => _modoLetra = modo);
+    final config = widget.player.config;
+    config.modoLetraPorPalabras = modo == ModoVisualizacionLetra.palabras;
+    _sincronizarTiempo();
+    try {
+      await config.save();
+    } catch (_) {}
+  }
+
+  Future<void> _cambiarSincronizacionVoz(bool activa) async {
+    if (_sincVoz == activa) return;
+    _controladorVoz.reiniciar();
+    _desfaseVoz.value = 0;
+    setState(() => _sincVoz = activa);
+    final config = widget.player.config;
+    config.sincronizacionPorVoz = activa;
+    if (activa) {
+      unawaited(_fuenteVoz.iniciar());
+    } else {
+      unawaited(_fuenteVoz.detener());
+    }
+    _sincronizarTiempo();
+    try {
+      await config.save();
+    } catch (_) {}
   }
 
   Future<void> _guardarDesfase() async {
@@ -361,6 +432,7 @@ class _LyricsViewState extends State<LyricsView>
 
   Widget _panelDeSincronizacion() {
     final signo = _desfaseMs > 0 ? '+' : '';
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
       child: Column(
@@ -406,6 +478,76 @@ class _LyricsViewState extends State<LyricsView>
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  T('Resaltado', style: theme.textTheme.bodyMedium),
+                  const SizedBox(width: 10),
+                  SegmentedButton<ModoVisualizacionLetra>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: ModoVisualizacionLetra.letras,
+                        label: T('Por letras'),
+                      ),
+                      ButtonSegment(
+                        value: ModoVisualizacionLetra.palabras,
+                        label: T('Por palabras'),
+                      ),
+                    ],
+                    selected: {_modoLetra},
+                    onSelectionChanged: (sel) => _cambiarModoLetra(sel.first),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Switch(
+                    value: _sincVoz,
+                    onChanged: _cambiarSincronizacionVoz,
+                  ),
+                  const SizedBox(width: 6),
+                  const T('Sincronizar con voz'),
+                ],
+              ),
+              if (_sincVoz)
+                ValueListenableBuilder<EstadoVoz>(
+                  valueListenable: _fuenteVoz.estado,
+                  builder: (context, voz, _) {
+                    return ValueListenableBuilder<int>(
+                      valueListenable: _desfaseVoz,
+                      builder: (context, ajusteMs, _) {
+                        final etiqueta = !voz.disponible
+                            ? 'Audio no disponible'
+                            : voz.hayVoz
+                            ? 'Voz detectada'
+                            : 'Esperando voz';
+                        final signoVoz = ajusteMs > 0 ? '+' : '';
+                        final texto = ajusteMs == 0
+                            ? etiqueta
+                            : '$etiqueta · $signoVoz$ajusteMs ms';
+                        return Text(
+                          texto,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: voz.hayVoz
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Align(
             alignment: AlignmentDirectional.centerEnd,
             child: Wrap(
@@ -454,8 +596,11 @@ class _LyricsViewState extends State<LyricsView>
                     key: index == i ? _activeLine : ValueKey(i),
                     padding: const EdgeInsets.only(bottom: 8),
                     child: TextButton(
-                      onPressed: () =>
-                          widget.player.seek(_posicionParaLinea(line)),
+                      onPressed: () {
+                        _controladorVoz.reiniciar();
+                        _desfaseVoz.value = 0;
+                        widget.player.seek(_posicionParaLinea(line));
+                      },
                       style: TextButton.styleFrom(
                         backgroundColor: index == i
                             ? theme.colorScheme.primaryContainer.withValues(
@@ -505,7 +650,7 @@ class _LyricsViewState extends State<LyricsView>
     return ValueListenableBuilder<int>(
       valueListenable: _tiempo,
       builder: (context, ms, _) {
-        final texto = linea.en(ms);
+        final texto = linea.en(ms, modo: _modoLetra);
         return Text.rich(
           TextSpan(
             children: [

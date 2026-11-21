@@ -68,4 +68,35 @@ lines:
     expect(lineas.last.en(6000).actual, 't');
     expect(lineas.last.en(7000).anterior, 'Ey tú');
   });
+
+  test('el modo por palabras resalta la palabra completa y no letra a letra', () {
+    final linea = LineaDeLetra.leer({
+      'syncedLyrics': '[00:01.00]<00:01.00>Hola <00:02.00>mundo<00:03.00>',
+    }, 5000).single;
+
+    final primera = linea.en(1200, modo: ModoVisualizacionLetra.palabras);
+    expect(primera.anterior, '');
+    expect(primera.actual, 'Hola');
+    expect(primera.siguiente, ' mundo');
+
+    final segunda = linea.en(2400, modo: ModoVisualizacionLetra.palabras);
+    expect(segunda.anterior, 'Hola ');
+    expect(segunda.actual, 'mundo');
+    expect(segunda.siguiente, '');
+  });
+
+  test('siguientePasoMs distingue fronteras por letra y por palabra', () {
+    final linea = LineaDeLetra.leer({
+      'syncedLyrics': '[00:01.00]<00:01.00>Sol <00:02.00>luz<00:03.00>',
+    }, 5000).single;
+
+    expect(
+      linea.siguientePasoMs(1000, modo: ModoVisualizacionLetra.letras),
+      inInclusiveRange(1200, 1400),
+    );
+    expect(
+      linea.siguientePasoMs(1000, modo: ModoVisualizacionLetra.palabras),
+      2000,
+    );
+  });
 }

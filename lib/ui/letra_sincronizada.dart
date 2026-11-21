@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart' show StringCharacters;
 import 'package:yaml/yaml.dart';
 
+enum ModoVisualizacionLetra { letras, palabras }
+
 typedef _Palabra = ({String texto, int inicio, int? fin});
 typedef _Linea = ({
   String texto,
@@ -14,9 +16,16 @@ typedef _Linea = ({
 typedef _Tramo = ({int desde, int hasta, int inicio, int fin});
 
 class LineaDeLetra {
-  LineaDeLetra._(this.inicioMs, this.texto, this._limites, this._tramos);
+  LineaDeLetra._(
+    this.inicioMs,
+    this.finMs,
+    this.texto,
+    this._limites,
+    this._tramos,
+  );
 
   final int inicioMs;
+  final int finMs;
   final String texto;
   final List<int> _limites;
   final List<_Tramo> _tramos;
@@ -42,7 +51,10 @@ class LineaDeLetra {
     ];
   }
 
-  ({String anterior, String actual, String siguiente}) en(int ms) {
+  ({String anterior, String actual, String siguiente}) en(
+    int ms, {
+    ModoVisualizacionLetra modo = ModoVisualizacionLetra.letras,
+  }) {
     var indice = 0;
     var activo = false;
     for (final tramo in _tramos) {
@@ -59,16 +71,86 @@ class LineaDeLetra {
       activo = true;
       break;
     }
-    var fin = indice;
-    if (activo && indice + 1 < _limites.length) {
-      final visible = texto.substring(_limites[indice], _limites[indice + 1]);
-      if (visible.trim().isNotEmpty) fin = indice + 1;
+    if (!activo || indice + 1 >= _limites.length) {
+      return (
+        anterior: texto.substring(0, _limites[indice]),
+        actual: '',
+        siguiente: texto.substring(_limites[indice]),
+      );
+    }
+    final visible = _grafema(indice);
+    if (visible.trim().isEmpty) {
+      return (
+        anterior: texto.substring(0, _limites[indice]),
+        actual: '',
+        siguiente: texto.substring(_limites[indice]),
+      );
+    }
+    if (modo == ModoVisualizacionLetra.letras) {
+      return (
+        anterior: texto.substring(0, _limites[indice]),
+        actual: visible,
+        siguiente: texto.substring(_limites[indice + 1]),
+      );
+    }
+    var inicioPalabra = indice;
+    while (inicioPalabra > 0 && _grafema(inicioPalabra - 1).trim().isNotEmpty) {
+      inicioPalabra--;
+    }
+    var finPalabra = indice + 1;
+    while (finPalabra + 1 < _limites.length &&
+        _grafema(finPalabra).trim().isNotEmpty) {
+      finPalabra++;
     }
     return (
-      anterior: texto.substring(0, _limites[indice]),
-      actual: texto.substring(_limites[indice], _limites[fin]),
-      siguiente: texto.substring(_limites[fin]),
+      anterior: texto.substring(0, _limites[inicioPalabra]),
+      actual: texto.substring(_limites[inicioPalabra], _limites[finPalabra]),
+      siguiente: texto.substring(_limites[finPalabra]),
     );
+  }
+
+  String _grafema(int indice) =>
+      texto.substring(_limites[indice], _limites[indice + 1]);
+
+  bool estaEnPausa(int ms) {
+    if (ms < inicioMs || ms >= finMs || _tramos.isEmpty) return true;
+    for (final tramo in _tramos) {
+      if (ms < tramo.inicio) return true;
+      if (ms < tramo.fin) {
+        final indice =
+            tramo.desde +
+            (ms - tramo.inicio) *
+                (tramo.hasta - tramo.desde) ~/
+                (tramo.fin - tramo.inicio);
+        if (indice + 1 >= _limites.length) return true;
+        return _grafema(indice).trim().isEmpty;
+      }
+    }
+    return true;
+  }
+
+  int? siguientePasoMs(
+    int ms, {
+    required ModoVisualizacionLetra modo,
+  }) {
+    for (final tramo in _tramos) {
+      if (tramo.fin <= ms) continue;
+      final total = tramo.hasta - tramo.desde;
+      if (total <= 0) continue;
+      final duracion = tramo.fin - tramo.inicio;
+      for (var g = tramo.desde; g < tramo.hasta; g++) {
+        if (g + 1 >= _limites.length) break;
+        if (_grafema(g).trim().isEmpty) continue;
+        final esInicioPalabra = g == 0 || _grafema(g - 1).trim().isEmpty;
+        if (modo == ModoVisualizacionLetra.palabras && !esInicioPalabra) {
+          continue;
+        }
+        final inicioPaso =
+            tramo.inicio + ((g - tramo.desde) * duracion) ~/ total;
+        if (inicioPaso > ms) return inicioPaso;
+      }
+    }
+    return null;
   }
 
   static LineaDeLetra _preparar(_Linea linea, int siguiente) {
@@ -111,7 +193,7 @@ class LineaDeLetra {
       tramoHasta(hasta, (palabra.fin ?? fin).clamp(inicio, fin));
     }
     tramoHasta(cantidad, fin);
-    return LineaDeLetra._(linea.inicio, linea.texto, limites, tramos);
+    return LineaDeLetra._(linea.inicio, fin, linea.texto, limites, tramos);
   }
 
   static List<_Linea> _leerLyricsfile(Object? contenido) {

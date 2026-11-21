@@ -110,6 +110,8 @@ class AppConfig {
   /// paleta ('primario', 'fondo', 'panel') → color '#RRGGBB'.
   Map<String, Map<String, String>> temaColores;
   final Map<String, int> desfasesLetraMs;
+  bool modoLetraPorPalabras;
+  bool sincronizacionPorVoz;
 
   /// Los menús se abren ocupando el rectángulo del elemento en vez de
   /// flotar encima (estilo Material Expressive).
@@ -131,6 +133,8 @@ class AppConfig {
     this.idiomaPreferido = kIdiomaSistema,
     Map<String, Map<String, String>>? temaColores,
     Map<String, int>? desfasesLetraMs,
+    this.modoLetraPorPalabras = false,
+    this.sincronizacionPorVoz = false,
     this.menusEnElemento = true,
     this.sidebarPlegado = false,
   }) : temaColores = temaColores ?? {},
@@ -175,6 +179,8 @@ class AppConfig {
         },
         menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
         sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
+        modoLetraPorPalabras: (map['modoLetraPorPalabras'] as bool?) ?? false,
+        sincronizacionPorVoz: (map['sincronizacionPorVoz'] as bool?) ?? false,
         desfasesLetraMs: {
           if (map['desfasesLetraMs'] case Map<String, dynamic> desfases)
             for (final entrada in desfases.entries)
@@ -205,6 +211,8 @@ class AppConfig {
         'idiomaPreferido': idiomaPreferido,
         if (temaColores.isNotEmpty) 'temaColores': temaColores,
         if (desfasesLetraMs.isNotEmpty) 'desfasesLetraMs': desfasesLetraMs,
+        'modoLetraPorPalabras': modoLetraPorPalabras,
+        'sincronizacionPorVoz': sincronizacionPorVoz,
         'menusEnElemento': menusEnElemento,
         'sidebarPlegado': sidebarPlegado,
       }),
