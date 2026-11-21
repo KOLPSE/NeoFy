@@ -1,71 +1,60 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-function Buscar-AtlEnDisco {
-  if ($env:VCToolsInstallDir -and (Test-Path (Join-Path $env:VCToolsInstallDir 'atlmfc\include\atlbase.h'))) {
-    return $true
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
+
+function Buscar-InstanciaVs {
+  param([string]$Requiere = '')
+  if (-not (Test-Path $vswhere)) { return $null }
+  if ($Requiere) {
+    return (& $vswhere -all -products '*' -requires $Requiere -property installationPath 2>$null | Select-Object -First 1)
   }
-  $candidatos = Get-ChildItem -Path @(
-    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\atlmfc\include\atlbase.h",
-    "${env:ProgramFiles}\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\atlmfc\include\atlbase.h"
-  ) -ErrorAction SilentlyContinue
-  return [bool]($candidatos | Select-Object -First 1)
+  return (& $vswhere -all -products '*' -property installationPath 2>$null | Select-Object -First 1)
 }
 
-if (Buscar-AtlEnDisco) {
-  Write-Host 'ATL disponible para la compilación de Windows.'
+$atl = Buscar-InstanciaVs -Requiere 'Microsoft.VisualStudio.Component.VC.ATL'
+if ($atl) {
+  Write-Host "ATL disponible para la compilación de Windows ($atl)."
   return
 }
 
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
-if (-not (Test-Path $installer)) {
-  throw 'Falta Visual Studio Installer en el runner de Windows.'
-}
-
-$instance = $null
-if (Test-Path $vswhere) {
-  $instance = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1
-  if (-not $instance) {
-    $instance = & $vswhere -products '*' -property installationPath 2>$null |
-      Where-Object { $_ -and (Test-Path (Join-Path $_ 'VC\Tools\MSVC')) } |
-      Select-Object -First 1
+$instance = Buscar-InstanciaVs -Requiere 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+if ($instance -and (Test-Path $installer)) {
+  Write-Host "Añadiendo ATL a Visual Studio ($instance) en el runner de Windows."
+  $process = Start-Process -FilePath $installer -ArgumentList @(
+    'modify', '--installPath', ('"' + $instance + '"'),
+    '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
+    '--quiet', '--norestart'
+  ) -Wait -PassThru -WindowStyle Hidden
+  if ($process.ExitCode -notin @(0, 3010)) {
+    throw "No se pudo instalar ATL (código $($process.ExitCode))."
+  }
+} else {
+  # Si vswhere no detecta ninguna instancia registrada (p. ej. si falta state.json),
+  # CMake tampoco encontrará Visual Studio 17 2022: instalamos BuildTools + ATL en C:\ci\vs2022.
+  $vsDir = 'C:\ci\vs2022'
+  $bootstrapper = Join-Path $env:TEMP "vs_buildtools-$PID.exe"
+  Write-Host "Instalando Visual Studio 2022 BuildTools + ATL en $vsDir..."
+  try {
+    & curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 600 --output $bootstrapper 'https://aka.ms/vs/17/release/vs_buildtools.exe'
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudo descargar vs_buildtools.exe.' }
+    $process = Start-Process -FilePath $bootstrapper -ArgumentList @(
+      '--installPath', $vsDir,
+      '--add', 'Microsoft.VisualStudio.Workload.VCTools',
+      '--includeRecommended',
+      '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
+      '--quiet', '--wait', '--norestart'
+    ) -Wait -PassThru -WindowStyle Hidden
+    if ($process.ExitCode -notin @(0, 3010)) {
+      throw "No se pudo instalar BuildTools + ATL (código $($process.ExitCode))."
+    }
+  } finally {
+    Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
   }
 }
 
-if (-not $instance -and $env:VSINSTALLDIR) {
-  $cand = $env:VSINSTALLDIR.TrimEnd('\')
-  if (Test-Path (Join-Path $cand 'VC\Tools\MSVC')) {
-    $instance = $cand
-  }
+$atl = Buscar-InstanciaVs -Requiere 'Microsoft.VisualStudio.Component.VC.ATL'
+if (-not $atl) {
+  throw 'ATL no aparece registrado en vswhere tras la instalación.'
 }
-
-if (-not $instance) {
-  $instance = Get-ChildItem -Path @(
-    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*",
-    "${env:ProgramFiles}\Microsoft Visual Studio\*\*"
-  ) -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path (Join-Path $_.FullName 'VC\Tools\MSVC') } |
-    Select-Object -ExpandProperty FullName -First 1
-}
-
-if (-not $instance) {
-  throw 'Faltan las herramientas C++ de Visual Studio.'
-}
-
-Write-Host "Añadiendo ATL a Visual Studio ($instance) en el runner de Windows."
-$process = Start-Process -FilePath $installer -ArgumentList @(
-  'modify', '--installPath', ('"' + $instance + '"'),
-  '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
-  '--quiet', '--norestart'
-) -Wait -PassThru -WindowStyle Hidden
-if ($process.ExitCode -ne 0) {
-  throw "No se pudo instalar ATL (código $($process.ExitCode))."
-}
-
-if (-not (Buscar-AtlEnDisco)) {
-  throw 'ATL no aparece instalado tras ejecutar Visual Studio Installer.'
-}
-if (Test-Path 'C:\ci\msvc-env.ps1') {
-  & 'C:\ci\msvc-env.ps1'
-}
-Write-Host 'ATL disponible para la compilación de Windows.'
+Write-Host "ATL disponible para la compilación de Windows ($atl)."
