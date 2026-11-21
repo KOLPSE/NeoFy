@@ -61,6 +61,7 @@ check:windows:
     - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
+    PUB_CACHE: 'C:\ci\pub-cache'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
   script:
@@ -76,11 +77,6 @@ check:windows:
         exit 1
       }
       Write-Host "kDefaultClientId vacio, correcto."
-  cache:
-    key: "neofy-flutter-win"
-    paths:
-      - .pub-cache
-    policy: pull-push
 
 check:ubuntu:
   stage: check
@@ -114,6 +110,7 @@ build:windows:
     - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
+    PUB_CACHE: 'C:\ci\pub-cache'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
     - '. .\tool\prepare_windows_atl_ci.ps1'

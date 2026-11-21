@@ -29,6 +29,21 @@ if (-not (Test-Path $completed)) {
     Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
   }
 }
+if ($env:PUB_CACHE) {
+  $env:PUB_CACHE = [IO.Path]::GetFullPath($env:PUB_CACHE)
+} else {
+  $env:PUB_CACHE = 'C:\ci\pub-cache'
+}
+New-Item -ItemType Directory -Force -Path $env:PUB_CACHE | Out-Null
+
+# Si falta el snapshot compilado (primer uso o intento previo fallido), limpia
+# el estado de flutter_tools para regenerar package_config.json con rutas válidas.
+$snapshot = Join-Path $sdkRoot 'bin\cache\flutter_tools.snapshot'
+if (-not (Test-Path $snapshot)) {
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'packages\flutter_tools\.dart_tool') -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter.bat.lock') -Force -ErrorAction SilentlyContinue
+}
+
 $env:PATH = "$sdkRoot\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:GIT_CONFIG_COUNT = '1'
 $env:GIT_CONFIG_KEY_0 = 'safe.directory'
