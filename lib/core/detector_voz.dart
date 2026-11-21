@@ -346,9 +346,16 @@ class CapturaVozWasapi implements FuenteDeteccionVoz {
     _salida = salida;
     final controlReady = Completer<SendPort?>();
 
-    onExit.first.whenComplete(() {
-      if (!salida.isCompleted) salida.complete();
-    });
+    unawaited(
+      onExit.first.then(
+        (_) {
+          if (!salida.isCompleted) salida.complete();
+        },
+        onError: (_) {
+          if (!salida.isCompleted) salida.complete();
+        },
+      ),
+    );
 
     _rxSub = rx.listen((msg) {
       if (msg is SendPort) {
