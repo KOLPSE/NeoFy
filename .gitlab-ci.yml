@@ -212,7 +212,7 @@ build:arch:
     - sudo pacman -S --noconfirm --needed
       gtk3 libayatana-appindicator libayatana-indicator ayatana-ido libsecret
       webkit2gtk-4.1
-      base-devel sudo github-cli pacman-contrib xorg-server-xvfb xorg-xauth dbus
+      base-devel sudo pacman-contrib xorg-server-xvfb xorg-xauth dbus
   script:
     - |
       set -euo pipefail
