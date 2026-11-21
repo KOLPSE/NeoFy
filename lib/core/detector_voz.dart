@@ -37,13 +37,15 @@ abstract class FuenteDeteccionVoz {
   void dispose();
 }
 
-/// Detector de voz sobre PCM usando separación de banda vocal (280–3400 Hz)
-/// frente a graves (< 200 Hz) y suavizado por histéresis temporal.
+/// Detector de voz sobre PCM orientado a música mezclada: combina separación
+/// Mid/Side (la voz principal va centrada), balance espectral frente a graves
+/// (< 200 Hz) y agudos (> 4000 Hz), periodicidad vocal (90–950 Hz) y piso
+/// instrumental adaptativo con histéresis temporal.
 class AnalizadorVozPcm {
   AnalizadorVozPcm({
     int sampleRate = 48000,
-    this.umbralEntrada = 0.012,
-    this.umbralSosten = 0.007,
+    this.umbralEntrada = 0.022,
+    this.umbralSosten = 0.013,
     this.confirmacionMs = 70,
     this.retencionMs = 200,
   }) : _sampleRate = sampleRate.clamp(8000, 192000) {
@@ -59,60 +61,147 @@ class AnalizadorVozPcm {
   bool _hayVoz = false;
   int _acumuladoEntradaMs = 0;
   int _restanteRetencionMs = 0;
+  double _pisoVocal = 0;
 
   late _Biquad _pasaAltosVoz;
   late _Biquad _pasaBajosVoz;
   late _Biquad _pasaBajosGraves;
+  late _Biquad _pasaAltosAgudos;
+  late _Biquad _pasaAltosSide;
+  late _Biquad _pasaBajosSide;
+
+  Float64List _vozDecimada = Float64List(0);
 
   void _configurarFiltros(int sr) {
     _sampleRate = sr.clamp(8000, 192000);
-    _pasaAltosVoz = _Biquad.highPass(_sampleRate.toDouble(), 280);
-    _pasaBajosVoz = _Biquad.lowPass(
-      _sampleRate.toDouble(),
-      math.min(3400.0, _sampleRate * 0.42),
-    );
-    _pasaBajosGraves = _Biquad.lowPass(_sampleRate.toDouble(), 200);
+    final srD = _sampleRate.toDouble();
+    final corteSuperiorVoz = math.min(2800.0, _sampleRate * 0.40);
+    final corteAgudos = math.min(4000.0, _sampleRate * 0.44);
+    _pasaAltosVoz = _Biquad.highPass(srD, 280);
+    _pasaBajosVoz = _Biquad.lowPass(srD, corteSuperiorVoz);
+    _pasaBajosGraves = _Biquad.lowPass(srD, 200);
+    _pasaAltosAgudos = _Biquad.highPass(srD, corteAgudos);
+    _pasaAltosSide = _Biquad.highPass(srD, 280);
+    _pasaBajosSide = _Biquad.lowPass(srD, corteSuperiorVoz);
   }
 
   void reiniciar() {
     _hayVoz = false;
     _acumuladoEntradaMs = 0;
     _restanteRetencionMs = 0;
+    _pisoVocal = 0;
     _pasaAltosVoz.reset();
     _pasaBajosVoz.reset();
     _pasaBajosGraves.reset();
+    _pasaAltosAgudos.reset();
+    _pasaAltosSide.reset();
+    _pasaBajosSide.reset();
   }
 
-  EstadoVoz analizarMono(List<double> muestras, {int? sampleRate}) {
+  EstadoVoz analizarMono(List<double> muestras, {int? sampleRate}) =>
+      analizarEstereo(muestras, null, sampleRate: sampleRate);
+
+  EstadoVoz analizarEstereo(
+    List<double> mid,
+    List<double>? side, {
+    int? sampleRate,
+  }) {
     if (sampleRate != null && sampleRate != _sampleRate) {
       _configurarFiltros(sampleRate);
     }
-    if (muestras.isEmpty) {
+    final n = mid.length;
+    if (n == 0) {
       return EstadoVoz(hayVoz: _hayVoz, nivelVoz: 0);
+    }
+
+    final paso = (_sampleRate / 12000).round().clamp(1, 8);
+    final nDec = (n + paso - 1) ~/ paso;
+    if (_vozDecimada.length < nDec) {
+      _vozDecimada = Float64List(nDec);
     }
 
     var sumaVoz = 0.0;
     var sumaGraves = 0.0;
+    var sumaAgudos = 0.0;
     var sumaTotal = 0.0;
-    for (final x in muestras) {
+    var sumaSideVoz = 0.0;
+    final haySide = side != null && side.length >= n;
+
+    var idxDec = 0;
+    for (var i = 0; i < n; i++) {
+      final x = mid[i];
       sumaTotal += x * x;
       final voz = _pasaBajosVoz.process(_pasaAltosVoz.process(x));
       final grave = _pasaBajosGraves.process(x);
+      final agudo = _pasaAltosAgudos.process(x);
       sumaVoz += voz * voz;
       sumaGraves += grave * grave;
+      sumaAgudos += agudo * agudo;
+      if (i % paso == 0) {
+        _vozDecimada[idxDec++] = voz;
+      }
+      if (haySide) {
+        final s = _pasaBajosSide.process(_pasaAltosSide.process(side[i]));
+        sumaSideVoz += s * s;
+      }
     }
 
-    final n = muestras.length;
     final rmsVoz = math.sqrt(sumaVoz / n);
     final rmsGraves = math.sqrt(sumaGraves / n);
+    final rmsAgudos = math.sqrt(sumaAgudos / n);
     final rmsTotal = math.sqrt(sumaTotal / n);
+    final rmsSideVoz = haySide ? math.sqrt(sumaSideVoz / n) : 0.0;
     final duracionMs = ((n * 1000) / _sampleRate).round().clamp(1, 200);
 
-    // Exige energía en banda vocal que no quede eclipsada por puro bombo/bajo.
-    final umbral = _hayVoz ? umbralSosten : umbralEntrada;
-    final relacionGraves = rmsVoz > rmsGraves * 0.45 || rmsVoz > umbral * 2.2;
-    final relacionTotal = rmsTotal <= 1e-6 || rmsVoz >= rmsTotal * 0.16;
-    final frameConVoz = rmsVoz >= umbral && relacionGraves && relacionTotal;
+    // En estéreo, la voz principal va centrada (Mid >> Side); los instrumentos
+    // panoramizados y reverberados aportan mucha energía en Side.
+    final tieneEstereoReal = haySide && rmsSideVoz > 1e-4;
+    final razonCentro = tieneEstereoReal
+        ? rmsVoz / (rmsVoz + rmsSideVoz + 1e-9)
+        : 1.0;
+    final energiaVocal = tieneEstereoReal
+        ? math.max(0.0, rmsVoz - rmsSideVoz * 0.95)
+        : rmsVoz;
+
+    final umbralBase = _hayVoz ? umbralSosten : umbralEntrada;
+    final factorPiso = _hayVoz ? 1.25 : 1.55;
+    final superaPiso = energiaVocal >= math.max(umbralBase, _pisoVocal * factorPiso);
+
+    final relacionCentro = !tieneEstereoReal ||
+        razonCentro >= (_hayVoz ? 0.64 : 0.70);
+    final relacionGraves = rmsVoz >= rmsGraves * (_hayVoz ? 0.55 : 0.65);
+    final relacionAgudos = rmsVoz >= rmsAgudos * (_hayVoz ? 1.0 : 1.15);
+    final relacionTotal = rmsTotal <= 1e-6 || rmsVoz >= rmsTotal * 0.30;
+
+    final candidatoEspectral =
+        superaPiso &&
+        relacionCentro &&
+        relacionGraves &&
+        relacionAgudos &&
+        relacionTotal;
+
+    // Solo calculamos autocorrelación si pasó los filtros energéticos rápidos.
+    var periodicidad = 0.0;
+    if (candidatoEspectral && idxDec >= 24) {
+      periodicidad = _periodicidadVocal(
+        _vozDecimada,
+        idxDec,
+        _sampleRate / paso,
+      );
+    }
+    final esArmonico = periodicidad >= (_hayVoz ? 0.40 : 0.48);
+    final frameConVoz = candidatoEspectral && esArmonico;
+
+    // Piso adaptativo: sigue la energía instrumental cuando no hay voz y baja
+    // rápido en silencio, pero nunca sube arrastrado por la propia voz.
+    if (rmsTotal < 0.005) {
+      _pisoVocal *= 0.85;
+    } else if (!frameConVoz) {
+      final alfa = energiaVocal < _pisoVocal ? 0.18 : 0.06;
+      _pisoVocal = _pisoVocal * (1 - alfa) + energiaVocal * alfa;
+    } else if (energiaVocal < _pisoVocal) {
+      _pisoVocal = _pisoVocal * 0.95 + energiaVocal * 0.05;
+    }
 
     if (frameConVoz) {
       _acumuladoEntradaMs += duracionMs;
@@ -131,8 +220,41 @@ class AnalizadorVozPcm {
       }
     }
 
-    final nivel = (rmsVoz / (umbralEntrada * 4)).clamp(0.0, 1.0);
+    final nivel = (energiaVocal / (umbralEntrada * 4)).clamp(0.0, 1.0);
     return EstadoVoz(hayVoz: _hayVoz, nivelVoz: nivel);
+  }
+
+  /// Autocorrelación normalizada en el rango fundamental de canto (90–950 Hz).
+  /// Separa vocales armónicas de baterías, ruido, platillos y mezclas densas.
+  static double _periodicidadVocal(
+    Float64List muestras,
+    int n,
+    double srEfectivo,
+  ) {
+    final lagMin = math.max(2, (srEfectivo / 950.0).floor());
+    final lagMax = math.min(n ~/ 2, (srEfectivo / 90.0).ceil());
+    if (lagMin >= lagMax) return 0;
+
+    var mejor = 0.0;
+    for (var lag = lagMin; lag <= lagMax; lag++) {
+      final limite = n - lag;
+      var cruce = 0.0;
+      var e1 = 0.0;
+      var e2 = 0.0;
+      for (var i = 0; i < limite; i++) {
+        final a = muestras[i];
+        final b = muestras[i + lag];
+        cruce += a * b;
+        e1 += a * a;
+        e2 += b * b;
+      }
+      final denom = math.sqrt(e1 * e2);
+      if (denom > 1e-12) {
+        final r = cruce / denom;
+        if (r > mejor) mejor = r;
+      }
+    }
+    return mejor;
   }
 }
 
@@ -370,9 +492,10 @@ Future<void> _isolateLoopbackWindows(SendPort mainPort) async {
         iidAudioClient: iidAudioClient,
         iidCaptureClient: iidCaptureClient,
         debeDetener: () => detener,
-        onMuestras: (muestras, sampleRate) {
-          final actual = analizador.analizarMono(
-            muestras,
+        onMuestras: (mid, side, sampleRate) {
+          final actual = analizador.analizarEstereo(
+            mid,
+            side,
             sampleRate: sampleRate,
           );
           if (actual.hayVoz != ultimoEnvio.hayVoz ||
@@ -415,7 +538,11 @@ Future<bool> _ejecutarBucleWasapi({
   required Pointer<Uint8> iidAudioClient,
   required Pointer<Uint8> iidCaptureClient,
   required bool Function() debeDetener,
-  required void Function(List<double> muestras, int sampleRate) onMuestras,
+  required void Function(
+    List<double> mid,
+    List<double>? side,
+    int sampleRate,
+  ) onMuestras,
 }) async {
   final ppEnum = calloc<Pointer<Void>>();
   Pointer<Void> enumerator = nullptr;
@@ -585,9 +712,12 @@ Future<bool> _ejecutarBucleWasapi({
 
     try {
       var silencio = Float64List((sampleRate * 0.02).round());
-      var bufferMono = Float64List((sampleRate * 0.02).round());
+      var bufferMid = Float64List((sampleRate * 0.02).round());
+      var bufferSide = Float64List((sampleRate * 0.02).round());
+      final esEstereo = channels >= 2;
       final invCanales = 1.0 / channels;
       final invPcm16 = invCanales / 32768.0;
+      const invPcm16Estereo = 0.5 / 32768.0;
 
       while (!debeDetener()) {
         hr = getNextPacket(captureClient, pPacket);
@@ -612,39 +742,80 @@ Future<bool> _ejecutarBucleWasapi({
               if (silencio.length < frames) {
                 silencio = Float64List(frames);
               }
-              onMuestras(Float64List.sublistView(silencio, 0, frames), sampleRate);
+              final vista = Float64List.sublistView(silencio, 0, frames);
+              onMuestras(vista, esEstereo ? vista : null, sampleRate);
             } else if (esFloat) {
-              if (bufferMono.length < frames) {
-                bufferMono = Float64List(frames);
+              if (bufferMid.length < frames) {
+                bufferMid = Float64List(frames);
+                if (esEstereo) bufferSide = Float64List(frames);
               }
               final floats = ppData.value.cast<Float>().asTypedList(
                 frames * channels,
               );
-              for (var i = 0; i < frames; i++) {
-                var acc = 0.0;
-                final base = i * channels;
-                for (var c = 0; c < channels; c++) {
-                  acc += floats[base + c];
+              if (esEstereo) {
+                for (var i = 0; i < frames; i++) {
+                  final base = i * channels;
+                  final l = floats[base];
+                  final r = floats[base + 1];
+                  bufferMid[i] = (l + r) * 0.5;
+                  bufferSide[i] = (l - r) * 0.5;
                 }
-                bufferMono[i] = acc * invCanales;
+                onMuestras(
+                  Float64List.sublistView(bufferMid, 0, frames),
+                  Float64List.sublistView(bufferSide, 0, frames),
+                  sampleRate,
+                );
+              } else {
+                for (var i = 0; i < frames; i++) {
+                  var acc = 0.0;
+                  final base = i * channels;
+                  for (var c = 0; c < channels; c++) {
+                    acc += floats[base + c];
+                  }
+                  bufferMid[i] = acc * invCanales;
+                }
+                onMuestras(
+                  Float64List.sublistView(bufferMid, 0, frames),
+                  null,
+                  sampleRate,
+                );
               }
-              onMuestras(Float64List.sublistView(bufferMono, 0, frames), sampleRate);
             } else {
-              if (bufferMono.length < frames) {
-                bufferMono = Float64List(frames);
+              if (bufferMid.length < frames) {
+                bufferMid = Float64List(frames);
+                if (esEstereo) bufferSide = Float64List(frames);
               }
               final ints = ppData.value.cast<Int16>().asTypedList(
                 frames * channels,
               );
-              for (var i = 0; i < frames; i++) {
-                var acc = 0.0;
-                final base = i * channels;
-                for (var c = 0; c < channels; c++) {
-                  acc += ints[base + c];
+              if (esEstereo) {
+                for (var i = 0; i < frames; i++) {
+                  final base = i * channels;
+                  final l = ints[base];
+                  final r = ints[base + 1];
+                  bufferMid[i] = (l + r) * invPcm16Estereo;
+                  bufferSide[i] = (l - r) * invPcm16Estereo;
                 }
-                bufferMono[i] = acc * invPcm16;
+                onMuestras(
+                  Float64List.sublistView(bufferMid, 0, frames),
+                  Float64List.sublistView(bufferSide, 0, frames),
+                  sampleRate,
+                );
+              } else {
+                for (var i = 0; i < frames; i++) {
+                  var acc = 0.0;
+                  final base = i * channels;
+                  for (var c = 0; c < channels; c++) {
+                    acc += ints[base + c];
+                  }
+                  bufferMid[i] = acc * invPcm16;
+                }
+                onMuestras(
+                  Float64List.sublistView(bufferMid, 0, frames),
+                  null,
+                  sampleRate,
+                );
               }
-              onMuestras(Float64List.sublistView(bufferMono, 0, frames), sampleRate);
             }
           }
           releaseBuffer(captureClient, frames);
@@ -652,7 +823,7 @@ Future<bool> _ejecutarBucleWasapi({
           if (hr < 0) return true;
         }
         if (!leidoAlgo) {
-          onMuestras(silencio, sampleRate);
+          onMuestras(silencio, esEstereo ? silencio : null, sampleRate);
         }
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }

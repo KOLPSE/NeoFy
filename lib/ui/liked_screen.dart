@@ -92,11 +92,26 @@ class _LikedScreenState extends State<LikedScreen> {
 
   Future<void> _play({int? offset}) async {
     final likes = widget.likes;
-    // Misma lista que ve el usuario: tras unlike/like el índice del contexto
-    // remoto de Spotify queda desfasado y suena otra pista.
+    final userId = widget.player.currentUserId;
+    final uriDeInicio = (offset != null &&
+            offset >= 0 &&
+            offset < likes.biblioteca.length)
+        ? likes.biblioteca[offset].uri
+        : null;
+
+    // Usamos el contexto oficial de "Canciones que te gustan" con offset por
+    // URI para que arranque en la pista exacta y siga el orden de la lista.
+    if (userId != null) {
+      await widget.player.playContext(
+        SpotifyApi.likedContextUri(userId),
+        offset: offset,
+        offsetUri: uriDeInicio,
+      );
+      return;
+    }
+
     if (likes.biblioteca.isNotEmpty) {
       final desde = (offset ?? 0).clamp(0, likes.biblioteca.length - 1);
-      // La API de play admite como mucho ~100 uris por llamada.
       const maxUris = 100;
       final fin = (desde + maxUris > likes.biblioteca.length)
           ? likes.biblioteca.length
@@ -105,15 +120,7 @@ class _LikedScreenState extends State<LikedScreen> {
       await widget.player.playLista(uris, desde: 0);
       return;
     }
-    final userId = widget.player.currentUserId;
-    if (userId == null) {
-      _toast('Todavía no sé el id de tu cuenta; espera un momento.');
-      return;
-    }
-    await widget.player.playContext(
-      SpotifyApi.likedContextUri(userId),
-      offset: offset,
-    );
+    _toast('Todavía no sé el id de tu cuenta; espera un momento.');
   }
 
   String _textoProgreso(LikedStore likes) {

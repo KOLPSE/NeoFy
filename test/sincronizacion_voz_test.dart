@@ -99,6 +99,75 @@ void main() {
       }
       expect(estadoFinal, isFalse);
     });
+
+    test('descarta ruido de percusión e instrumental estéreo panoramizado', () {
+      const sr = 48000;
+      const frame = 960; // 20 ms
+      final analizador = AnalizadorVozPcm(
+        sampleRate: sr,
+        confirmacionMs: 60,
+        retencionMs: 120,
+      );
+
+      // Ruido blanco / platillos / caja no debe activar detección de voz.
+      final rng = math.Random(42);
+      for (var f = 0; f < 10; f++) {
+        final ruido = [for (var i = 0; i < frame; i++) (rng.nextDouble() * 2 - 1) * 0.25];
+        expect(analizador.analizarMono(ruido).hayVoz, isFalse);
+      }
+
+      // Instrumental estéreo (guitarras/sintes panoramizados en L y R) sin voz
+      // centrada tampoco debe disparar falsos positivos.
+      for (var f = 0; f < 12; f++) {
+        final mid = List<double>.filled(frame, 0);
+        final side = List<double>.filled(frame, 0);
+        for (var i = 0; i < frame; i++) {
+          final t = (f * frame + i) / sr;
+          final izq = 0.22 * math.sin(2 * math.pi * 440 * t) +
+              0.18 * math.sin(2 * math.pi * 660 * t);
+          final der = 0.22 * math.sin(2 * math.pi * 554 * t) +
+              0.18 * math.sin(2 * math.pi * 880 * t);
+          mid[i] = (izq + der) * 0.5;
+          side[i] = (izq - der) * 0.5;
+        }
+        expect(analizador.analizarEstereo(mid, side).hayVoz, isFalse);
+      }
+
+      // Al entrar una voz centrada (misma fase en L y R) sobre el mismo
+      // instrumental estéreo, sí debe activarse.
+      var detectada = false;
+      for (var f = 0; f < 8; f++) {
+        final mid = List<double>.filled(frame, 0);
+        final side = List<double>.filled(frame, 0);
+        for (var i = 0; i < frame; i++) {
+          final t = (f * frame + i) / sr;
+          final voz = 0.28 * math.sin(2 * math.pi * 320 * t) +
+              0.14 * math.sin(2 * math.pi * 640 * t);
+          final izq = voz + 0.08 * math.sin(2 * math.pi * 440 * t);
+          final der = voz + 0.08 * math.sin(2 * math.pi * 554 * t);
+          mid[i] = (izq + der) * 0.5;
+          side[i] = (izq - der) * 0.5;
+        }
+        detectada = analizador.analizarEstereo(mid, side).hayVoz;
+      }
+      expect(detectada, isTrue);
+
+      // Si el cantante se calla pero el instrumental estéreo sigue, vuelve a false.
+      var sigue = true;
+      for (var f = 0; f < 12; f++) {
+        final mid = List<double>.filled(frame, 0);
+        final side = List<double>.filled(frame, 0);
+        for (var i = 0; i < frame; i++) {
+          final t = (f * frame + i) / sr;
+          final izq = 0.22 * math.sin(2 * math.pi * 440 * t);
+          final der = 0.22 * math.sin(2 * math.pi * 554 * t);
+          mid[i] = (izq + der) * 0.5;
+          side[i] = (izq - der) * 0.5;
+        }
+        sigue = analizador.analizarEstereo(mid, side).hayVoz;
+      }
+      expect(sigue, isFalse);
+    });
   });
 
   group('ControladorSincronizacionPorVoz', () {

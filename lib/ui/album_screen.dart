@@ -213,7 +213,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         FilledButton.icon(
                           onPressed: _tracks.isEmpty && widget.album.uri.isEmpty
                               ? null
-                              : () => _tracks.isEmpty
+                              : () => widget.album.uri.isNotEmpty
                                   ? widget.player.playContext(widget.album.uri)
                                   : widget.player.playLista(_uris),
                           icon: const Icon(Icons.play_arrow),
@@ -277,7 +277,13 @@ class _AlbumScreenState extends State<AlbumScreen> {
             leadingNumber: i + 1,
             isCurrent: currentUri != null && currentUri == t.uri,
             actions: TrackActions(
-              onPlay: () => widget.player.playLista(_uris, desde: i),
+              onPlay: () => widget.album.uri.isNotEmpty
+                  ? widget.player.playContext(
+                      widget.album.uri,
+                      offset: i,
+                      offsetUri: t.uri,
+                    )
+                  : widget.player.playLista(_uris, desde: i),
               onQueue: () async {
                 await widget.player.addToQueue(t.uri);
                 _toast('Añadida a la cola');

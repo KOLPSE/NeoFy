@@ -267,6 +267,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           onPlay: () => widget.player.playContext(
                             widget.playlist.uri,
                             offset: i,
+                            offsetUri: t.uri,
                           ),
                           onQueue: () async {
                             await widget.player.addToQueue(t.uri);

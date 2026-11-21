@@ -304,6 +304,98 @@ void main() {
       expect(reproductor.lastError, isNull);
     });
 
+    test('tras respaldo en álbum, siguiente y anterior respetan el orden de la lista',
+        () async {
+      final peticiones = <http.Request>[];
+      final cliente = MockClient((peticion) async {
+        peticiones.add(peticion);
+        if (peticion.method == 'GET') {
+          final id = peticion.url.pathSegments.last;
+          return http.Response(
+            '{"uri":"spotify:track:$id","album":{"uri":"spotify:album:disco_$id"}}',
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }
+        final cuerpo = peticion.body.isEmpty
+            ? const <String, dynamic>{}
+            : jsonDecode(peticion.body) as Map<String, dynamic>;
+        if (cuerpo.containsKey('uris')) {
+          return http.Response(
+            '{"error":{"message":"Player command failed: Restriction violated"}}',
+            403,
+          );
+        }
+        return http.Response('', 204);
+      });
+      addTearDown(cliente.close);
+      final reproductor = PlayerController(
+        SpotifyApi(_AuthDePrueba(config), cliente: cliente),
+        config,
+      )..ourDeviceId = 'dev';
+      addTearDown(reproductor.dispose);
+
+      await reproductor.playLista(
+        const ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'],
+        desde: 1,
+      );
+      peticiones.clear();
+
+      // Siguiente debe ir a 'c' (siguiente de la lista), nunca a POST /next del álbum.
+      await reproductor.next();
+      expect(peticiones.any((p) => p.url.path == '/v1/me/player/next'), isFalse);
+      expect(jsonDecode(peticiones.last.body), {
+        'context_uri': 'spotify:album:disco_c',
+        'offset': {'uri': 'spotify:track:c'},
+      });
+
+      peticiones.clear();
+      // Anterior debe volver a 'b' (anterior de la lista).
+      await reproductor.previous();
+      expect(peticiones.any((p) => p.url.path == '/v1/me/player/previous'), isFalse);
+      expect(jsonDecode(peticiones.last.body), {
+        'context_uri': 'spotify:album:disco_b',
+        'offset': {'uri': 'spotify:track:b'},
+      });
+    });
+
+    test('playContext usa offsetUri y cae a offset position si la API devuelve 400',
+        () async {
+      final peticiones = <http.Request>[];
+      final cliente = MockClient((peticion) async {
+        peticiones.add(peticion);
+        if (peticiones.length == 1) {
+          return http.Response(
+            '{"error":{"message":"Invalid offset"}}',
+            400,
+          );
+        }
+        return http.Response('', 204);
+      });
+      addTearDown(cliente.close);
+      final reproductor = PlayerController(
+        SpotifyApi(_AuthDePrueba(config), cliente: cliente),
+        config,
+      )..ourDeviceId = 'dev';
+      addTearDown(reproductor.dispose);
+
+      await reproductor.playContext(
+        'spotify:user:yo:collection',
+        offset: 4,
+        offsetUri: 'spotify:track:cuatro',
+      );
+
+      expect(peticiones, hasLength(2));
+      expect(jsonDecode(peticiones[0].body), {
+        'context_uri': 'spotify:user:yo:collection',
+        'offset': {'uri': 'spotify:track:cuatro'},
+      });
+      expect(jsonDecode(peticiones[1].body), {
+        'context_uri': 'spotify:user:yo:collection',
+        'offset': {'position': 4},
+      });
+    });
+
     test('un 403 de permisos conserva el aviso sin reintentar', () async {
       final peticiones = <http.Request>[];
       final cliente = MockClient((peticion) async {

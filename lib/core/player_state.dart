@@ -63,6 +63,11 @@ class PlayerController extends ChangeNotifier {
 
   List<String>? _lastUris;
 
+  bool _colaLocalActiva = false;
+  int _indiceColaLocal = 0;
+  String? _albumDeRespaldoActual;
+  bool _avanzandoColaLocal = false;
+
   String? get contextUri => state.contextUri ?? _lastContextUri;
 
   final ValueNotifier<int> progressMs = ValueNotifier(0);
@@ -248,6 +253,28 @@ class PlayerController extends ChangeNotifier {
       _porRetomar = null;
 
       if (next.track?.uri != state.track?.uri) {
+        if (_colaLocalActiva &&
+            !_avanzandoColaLocal &&
+            _lastUris != null &&
+            _indiceColaLocal < _lastUris!.length) {
+          final esperada = _lastUris![_indiceColaLocal];
+          final contextoCambioExterno =
+              _albumDeRespaldoActual != null &&
+              next.contextUri != null &&
+              next.contextUri != _albumDeRespaldoActual;
+          if (contextoCambioExterno) {
+            _colaLocalActiva = false;
+            _albumDeRespaldoActual = null;
+          } else if (state.track?.uri == esperada &&
+              next.track?.uri != null &&
+              next.track!.uri != esperada &&
+              next.progressMs < 15000) {
+            // La pista de la lista terminó y Spotify pasó a la siguiente del
+            // álbum de respaldo: interceptamos y avanzamos en nuestra lista.
+            unawaited(_avanzarColaLocalAutomatico());
+            return;
+          }
+        }
         _pendingSeekMs = null;
         _yaCorregiArranque = false;
       }
@@ -522,6 +549,10 @@ class PlayerController extends ChangeNotifier {
     final guardada = _porRetomar;
     if (guardada != null) return _retomarGuardada(guardada);
     if (libre != null) return libre!.siguiente();
+    if (_colaLocalActiva && _lastUris != null && _lastUris!.isNotEmpty) {
+      await _saltarEnColaLocal(1);
+      return;
+    }
     final sinSiguiente = !state.canSkipNext || state.track == null;
     if (sinSiguiente && await _volverAlPrincipio()) return;
 
@@ -537,6 +568,14 @@ class PlayerController extends ChangeNotifier {
     final guardada = _porRetomar;
     if (guardada != null) return _retomarGuardada(guardada);
     if (libre != null) return libre!.anterior();
+    if (_colaLocalActiva && _lastUris != null && _lastUris!.isNotEmpty) {
+      if (progressMs.value > 3000) {
+        await seek(0);
+        return;
+      }
+      await _saltarEnColaLocal(-1);
+      return;
+    }
     if (progressMs.value > 3000 || !state.canSkipPrevious) {
       await seek(0);
       return;
@@ -544,6 +583,44 @@ class PlayerController extends ChangeNotifier {
     _revisionPosicion++;
     _fijarPosicion(0);
     if (await _withDevice(api.previous)) await _reanudarTrasSaltar();
+  }
+
+  Future<void> _avanzarColaLocalAutomatico() async {
+    if (_avanzandoColaLocal || !_colaLocalActiva) return;
+    final uris = _lastUris;
+    if (uris == null || uris.isEmpty) return;
+    if (state.repeat == 'off' && _indiceColaLocal + 1 >= uris.length) {
+      _colaLocalActiva = false;
+      _albumDeRespaldoActual = null;
+      await pause();
+      return;
+    }
+    await _saltarEnColaLocal(1);
+  }
+
+  Future<void> _saltarEnColaLocal(int delta) async {
+    final uris = _lastUris;
+    if (uris == null || uris.isEmpty) return;
+    _avanzandoColaLocal = true;
+    try {
+      final int siguiente;
+      if (state.repeat == 'track') {
+        siguiente = _indiceColaLocal.clamp(0, uris.length - 1);
+      } else if (delta > 0) {
+        siguiente = (_indiceColaLocal + delta) % uris.length;
+      } else {
+        siguiente = _indiceColaLocal > 0
+            ? _indiceColaLocal - 1
+            : (state.repeat == 'context' ? uris.length - 1 : 0);
+      }
+      _indiceColaLocal = siguiente;
+      final cola = uris.sublist(siguiente);
+      _marcarArranque(cola.first);
+      _fijarPosicion(0);
+      await _withDevice(() => _reproducirUris(cola));
+    } finally {
+      _avanzandoColaLocal = false;
+    }
   }
 
   Future<void> _reanudarTrasSaltar() async {
@@ -932,19 +1009,41 @@ class PlayerController extends ChangeNotifier {
     await _withDevice(() => api.setRepeat(next));
   }
 
-  Future<void> playContext(String contextUri, {int? offset}) {
+  Future<void> playContext(
+    String contextUri, {
+    int? offset,
+    String? offsetUri,
+  }) {
     _mandoDelUsuario = true;
     _porRetomar = null;
-    _marcarArranque(null);
+    _colaLocalActiva = false;
+    _albumDeRespaldoActual = null;
+    _marcarArranque(offsetUri);
     if (libre != null) return libre!.playContext(contextUri, offset: offset);
     _aleatorioInteligente = false;
     _lastContextUri = contextUri;
     _lastUris = null;
-    return _withDevice(() => api.play(
+    return _withDevice(() async {
+      try {
+        await api.play(
+          deviceId: ourDeviceId,
+          contextUri: contextUri,
+          offsetPosition: offsetUri == null ? offset : null,
+          offsetUri: offsetUri,
+        );
+      } on ApiException catch (e) {
+        if (offsetUri == null ||
+            offset == null ||
+            (e.status != 400 && !e.isForbidden)) {
+          rethrow;
+        }
+        await api.play(
           deviceId: ourDeviceId,
           contextUri: contextUri,
           offsetPosition: offset,
-        ));
+        );
+      }
+    });
   }
 
   Future<void> playLista(
@@ -956,7 +1055,10 @@ class PlayerController extends ChangeNotifier {
     if (uris.isEmpty) return Future<void>.value();
     _mandoDelUsuario = true;
     _porRetomar = null;
+    _colaLocalActiva = false;
+    _albumDeRespaldoActual = null;
     final inicio = desde.clamp(0, uris.length - 1);
+    _indiceColaLocal = inicio;
     _marcarArranque(uris[inicio]);
     if (libre != null) return libre!.playLista(uris, desde: inicio);
     if (!esInteligente) {
@@ -973,6 +1075,8 @@ class PlayerController extends ChangeNotifier {
   Future<void> playTrack(String uri) {
     _mandoDelUsuario = true;
     _porRetomar = null;
+    _colaLocalActiva = false;
+    _albumDeRespaldoActual = null;
     _marcarArranque(uri);
     if (libre != null) return libre!.playTrack(uri);
     _aleatorioInteligente = false;
@@ -985,6 +1089,8 @@ class PlayerController extends ChangeNotifier {
     final revision = _revisionPosicion;
     try {
       await api.play(deviceId: ourDeviceId, uris: uris, positionMs: posicionMs);
+      _colaLocalActiva = false;
+      _albumDeRespaldoActual = null;
     } on ApiException catch (e) {
       if (!e.isPlaybackRestriction || !uris.first.startsWith('spotify:track:')) {
         rethrow;
@@ -999,6 +1105,10 @@ class PlayerController extends ChangeNotifier {
         offsetUri: contexto.pista,
         positionMs: posicionMs,
       );
+      if (_lastUris != null && _lastUris!.length > 1) {
+        _colaLocalActiva = true;
+        _albumDeRespaldoActual = contexto.album;
+      }
     }
   }
 
