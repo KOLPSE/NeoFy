@@ -9,7 +9,7 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.3.3';
+const String kVersion = '1.4.0';
 
 const String kRepoGitHub = 'KOLPSE/NeoFy';
 
