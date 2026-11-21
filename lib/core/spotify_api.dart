@@ -16,6 +16,9 @@ class ApiException implements Exception {
 
   bool get isForbidden => status == 403;
 
+  bool get isPlaybackRestriction =>
+      isForbidden && message.toLowerCase().contains('restriction violated');
+
   @override
   String toString() => message;
 }
@@ -86,6 +89,7 @@ class SpotifyApi {
     Map<String, String>? query,
     Object? body,
     bool retryOn401 = true,
+    void Function(int ms)? alMedirRespuesta,
   }) async {
     if (esperaDe(path) != null) throw ApiException(429, avisoDeCuota ?? '');
 
@@ -100,6 +104,7 @@ class SpotifyApi {
       req.body = jsonEncode(body);
     }
 
+    final cronometro = alMedirRespuesta == null ? null : (Stopwatch()..start());
     final streamed = await _http.send(req).timeout(
           _plazo,
           onTimeout: () => throw ApiException(
@@ -113,7 +118,8 @@ class SpotifyApi {
 
     if (res.statusCode == 401 && retryOn401) {
       await auth.forceRefresh();
-      return _request(method, path, query: query, body: body, retryOn401: false);
+      return _request(method, path, query: query, body: body, retryOn401: false,
+        alMedirRespuesta: alMedirRespuesta);
     }
     if (res.statusCode == 429) {
       final wait = int.tryParse(res.headers['retry-after'] ?? '') ?? 3;
@@ -122,7 +128,8 @@ class SpotifyApi {
         throw ApiException(429, avisoDeCuota ?? '');
       }
       await Future<void>.delayed(Duration(seconds: wait + 1));
-      return _request(method, path, query: query, body: body, retryOn401: retryOn401);
+      return _request(method, path, query: query, body: body, retryOn401: retryOn401,
+        alMedirRespuesta: alMedirRespuesta);
     }
     if (res.statusCode == 410) {
       throw ApiException(
@@ -143,7 +150,9 @@ class SpotifyApi {
     try {
       final text = utf8.decode(res.bodyBytes);
       if (text.trim().isEmpty) return null;
-      return jsonDecode(text);
+      final decoded = jsonDecode(text);
+      if (cronometro != null) alMedirRespuesta!(cronometro.elapsedMilliseconds);
+      return decoded;
     } on FormatException catch (e) {
       final preview = String.fromCharCodes(res.bodyBytes.take(120))
           .replaceAll(RegExp(r'\s+'), ' ');
@@ -180,9 +189,26 @@ class SpotifyApi {
       (await _request('GET', '/me')) as Map<String, dynamic>;
 
   Future<Playback?> playbackState() async {
-    final j = await _request('GET', '/me/player');
+    var idaYVueltaMs = 0;
+    final j = await _request(
+      'GET',
+      '/me/player',
+      query: const {'additional_types': 'track,episode'},
+      alMedirRespuesta: (ms) => idaYVueltaMs = ms,
+    ) as Map<String, dynamic>?;
     if (j == null) return null;
-    return Playback.fromJson(j as Map<String, dynamic>);
+    final estado = Playback.fromJson(j);
+    final pista = estado.track;
+    if (!estado.isPlaying || j['progress_ms'] == null || pista == null ||
+        pista.durationMs <= 0) {
+      return estado;
+    }
+    // timestamp en esta respuesta indica el último cambio de estado.
+    // Estimamos el viaje de vuelta con la mitad del tiempo de esta petición.
+    final viajeDeVuelta = (idaYVueltaMs ~/ 2).clamp(0, 450);
+    return estado.copyWith(
+      progressMs: (estado.progressMs + viajeDeVuelta).clamp(0, pista.durationMs),
+    );
   }
 
   Future<List<Device>> devices() async {
@@ -505,6 +531,19 @@ class SpotifyApi {
     return resultado;
   }
 
+  Future<({String album, String pista})?> contextoDePista(String uri) async {
+    if (!uri.startsWith('spotify:track:')) return null;
+    final id = Uri.encodeComponent(uri.substring('spotify:track:'.length));
+    final pista = await _request('GET', '/tracks/$id') as Map<String, dynamic>?;
+    if (pista == null || pista['is_playable'] == false) return null;
+    final album = pista['album'] as Map<String, dynamic>?;
+    final albumUri = album?['uri'];
+    if (albumUri is! String || !albumUri.startsWith('spotify:album:')) {
+      return null;
+    }
+    return (album: albumUri, pista: pista['uri'] as String? ?? uri);
+  }
+
   Future<List<Track>> albumTracks(String id) async {
     final albumId = id.startsWith('spotify:album:') ? id.substring(14) : id;
     final j = await _request('GET', '/albums/$albumId') as Map<String, dynamic>?;
@@ -609,10 +648,46 @@ class SpotifyApi {
       );
     }
 
+    final shows = j['shows'] as Map<String, dynamic>?;
+    final rawShows = shows?['items'] as List<dynamic>? ?? const [];
     return SearchResults(
       tracks: trackPage,
       playlists: playlistPage,
       artists: artistPage,
+      podcasts: ApiPage(
+        items: rawShows
+            .whereType<Map<String, dynamic>>()
+            .map(Podcast.fromJson)
+            .where((show) => show.id.isNotEmpty)
+            .toList(),
+        hasMore: shows?['next'] != null,
+        rawCount: rawShows.length,
+        total: (shows?['total'] as num?)?.toInt(),
+      ),
+    );
+  }
+
+  Future<ApiPage<PodcastEpisode>> podcastEpisodes(
+    String id, {
+    int offset = 0,
+  }) async {
+    final page =
+        await _request(
+              'GET',
+              '/shows/$id/episodes',
+              query: {'limit': '20', 'offset': '$offset'},
+            )
+            as Map<String, dynamic>;
+    final raw = page['items'] as List<dynamic>? ?? const [];
+    return ApiPage(
+      items: raw
+          .whereType<Map<String, dynamic>>()
+          .map(PodcastEpisode.fromJson)
+          .where((episode) => episode.track.isEpisode)
+          .toList(),
+      hasMore: page['next'] != null && raw.isNotEmpty,
+      rawCount: raw.length,
+      total: (page['total'] as num?)?.toInt(),
     );
   }
 

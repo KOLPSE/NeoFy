@@ -32,6 +32,10 @@ class NowPlayingBar extends StatefulWidget {
     this.likes,
     this.home,
     this.onAbrirArtista,
+    this.onCola,
+    this.onLetra,
+    this.colaAbierta = false,
+    this.letraAbierta = false,
   });
 
   final PlayerController player;
@@ -39,6 +43,10 @@ class NowPlayingBar extends StatefulWidget {
   final LikedStore? likes;
   final HomeStore? home;
   final void Function(Artist artista)? onAbrirArtista;
+  final VoidCallback? onCola;
+  final VoidCallback? onLetra;
+  final bool colaAbierta;
+  final bool letraAbierta;
 
   @override
   State<NowPlayingBar> createState() => _NowPlayingBarState();
@@ -57,16 +65,21 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
       animation: Listenable.merge([widget.player, widget.librespot]),
       builder: (context, _) {
         final theme = Theme.of(context);
+        final estilo = EstiloNeoFy.de(context);
+        final nocturno = estilo.usaInterfazNocturna;
         final state = widget.player.state;
         final track = state.track;
+        final duracion = track?.durationMs ?? 0;
         final cuota = widget.player.api.avisoDeCuota;
         if (cuota == null) _cuotaIgnorada = false;
         final status = _statusMessage(cuota);
         final sePuedeIgnorar = cuota != null && status?.mensaje == cuota;
 
         return Material(
-          color: EstiloNeoFy.de(context).hayCristal
+          color: estilo.hayCristal
               ? Colors.transparent
+              : nocturno
+              ? theme.colorScheme.surface
               : theme.colorScheme.surfaceContainer,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -80,71 +93,92 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
                       : null,
                 ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: Row(
-                  children: [
-                    ArtImage(
-                      url: track?.artSmall,
-                      urlGrande: track?.artMedium,
-                      size: 56,
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 200,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                padding: nocturno
+                    ? const EdgeInsets.symmetric(horizontal: 20, vertical: 8)
+                    : const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: nocturno
+                    ? Row(
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: track == null
-                                    ? T(
-                                        'Nada sonando',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                                fontWeight: FontWeight.w600),
-                                      )
-                                    : TituloDesplazable(
-                                        texto: track.name,
-                                        estilo: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                                fontWeight: FontWeight.w600),
-                                      ),
-                              ),
-                              if (widget.likes != null &&
-                                  track != null &&
-                                  track.uri.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                LikeButton(
-                                  likes: widget.likes!,
-                                  uri: track.uri,
-                                  pista: track,
-                                  size: 20,
-                                  caja: 24,
+                          Expanded(
+                            flex: 3,
+                            child: _pistaActual(context, track, 48),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _controles(context),
+                                _progreso(context, duracion),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 3,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (widget.onLetra != null)
+                                  IconButton(
+                                    tooltip: 'Letra',
+                                    isSelected: widget.letraAbierta,
+                                    onPressed:
+                                        widget.letraAbierta ||
+                                            (track != null && !track.isEpisode)
+                                        ? widget.onLetra
+                                        : null,
+                                    icon: const Icon(Icons.lyrics_outlined),
+                                    selectedIcon: Icon(
+                                      Icons.lyrics,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                if (widget.onCola != null)
+                                  IconButton(
+                                    tooltip: 'Cola',
+                                    isSelected: widget.colaAbierta,
+                                    onPressed: widget.onCola,
+                                    icon: const Icon(
+                                      Icons.queue_music_outlined,
+                                    ),
+                                    selectedIcon: Icon(
+                                      Icons.queue_music,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                Flexible(
+                                  child: _volume(
+                                    widget.player.volumeShown,
+                                    compacto: true,
+                                  ),
                                 ),
                               ],
-                            ],
-                          ),
-                          LineaDeArtistas(
-                            artistas: track?.listaDeArtistas ?? const [],
-                            texto: track?.artists ?? '',
-                            estilo: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant),
-                            onAbrir: widget.onAbrirArtista == null
-                                ? null
-                                : (a) => widget.onAbrirArtista!(_artistaConFoto(a)),
+                            ),
                           ),
                         ],
+                      )
+                    : Row(
+                        children: [
+                          SizedBox(
+                            width: 268,
+                            child: _pistaActual(context, track, 56),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _controles(context),
+                                _progreso(context, duracion),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _volume(widget.player.volumeShown),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: _controlsAndProgress(context, track?.durationMs ?? 0)),
-                    const SizedBox(width: 8),
-                    _volume(widget.player.volumeShown),
-                  ],
-                ),
               ),
             ],
           ),
@@ -153,11 +187,71 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     );
   }
 
-  Widget _controlsAndProgress(BuildContext context, int durationMs) {
+  Widget _pistaActual(BuildContext context, Track? track, double lado) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        ArtImage(url: track?.artSmall, urlGrande: track?.artMedium, size: lado),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: track == null
+                        ? T(
+                            'Nada sonando',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : TituloDesplazable(
+                            texto: track.name,
+                            estilo: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                  if (widget.likes != null &&
+                      track != null &&
+                      !track.isEpisode &&
+                      track.uri.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    LikeButton(
+                      likes: widget.likes!,
+                      uri: track.uri,
+                      pista: track,
+                      size: 20,
+                      caja: 24,
+                    ),
+                  ],
+                ],
+              ),
+              LineaDeArtistas(
+                artistas: track?.listaDeArtistas ?? const [],
+                texto: track?.artists ?? '',
+                estilo: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                onAbrir: widget.onAbrirArtista == null
+                    ? null
+                    : (a) => widget.onAbrirArtista!(_artistaConFoto(a)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _controles(BuildContext context) {
     final player = widget.player;
     final state = player.state;
     final theme = Theme.of(context);
-    final track = state.track;
 
     final modoAleatorio = player.modoAleatorio;
     String shuffleTooltip;
@@ -182,83 +276,93 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
         break;
     }
 
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              tooltip: shuffleTooltip,
-              icon: Icon(shuffleIcon, size: 20),
-              color: shuffleColor,
-              onPressed: () =>
-                  player.ciclarModoAleatorio(likes: widget.likes, home: widget.home),
-            ),
-            BotonSaltoExpresivo(
-              tooltip: 'Anterior',
-              icono: Icons.skip_previous,
-              direccion: -1,
-              onPressed: player.previous,
-            ),
-            BotonPlayExpresivo(
-              tooltip: state.isPlaying ? 'Pausar' : 'Reproducir',
-              sonando: state.isPlaying,
-              onPressed: player.togglePlay,
-            ),
-            BotonSaltoExpresivo(
-              tooltip: 'Siguiente',
-              icono: Icons.skip_next,
-              direccion: 1,
-              onPressed: player.next,
-            ),
-            IconButton(
-              tooltip: 'Repetir',
-              icon: Icon(
-                state.repeat == 'track' ? Icons.repeat_one : Icons.repeat,
-                size: 20,
-              ),
-              color: state.repeat == 'off' ? null : theme.colorScheme.primary,
-              onPressed: player.cycleRepeat,
-            ),
-          ],
+        IconButton(
+          tooltip: shuffleTooltip,
+          icon: Icon(shuffleIcon, size: 20),
+          color: shuffleColor,
+          onPressed: () => player.ciclarModoAleatorio(
+            likes: widget.likes,
+            home: widget.home,
+          ),
         ),
-        ValueListenableBuilder<int>(
-          valueListenable: player.progressMs,
-          builder: (context, progress, _) {
-            final shown = _dragMs ?? progress.toDouble();
-            final max = durationMs <= 0 ? 1.0 : durationMs.toDouble();
-            return Row(
-              children: [
-                SizedBox(
-                  width: 40,
-                  child: Text(formatMs(shown.round()),
-                      style: theme.textTheme.bodySmall, textAlign: TextAlign.right),
-                ),
-                Expanded(
-                  child: BarraDeProgreso(
-                    clavePista: track?.uri,
-                    valor: shown.clamp(0, max),
-                    maximo: max,
-                    enMarcha: state.isPlaying,
-                    onCambio: durationMs <= 0
-                        ? null
-                        : (v) => setState(() => _dragMs = v),
-                    onFinDelCambio: (v) {
-                      setState(() => _dragMs = null);
-                      player.seek(v.round());
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 40,
-                  child: Text(formatMs(durationMs), style: theme.textTheme.bodySmall),
-                ),
-              ],
-            );
-          },
+        BotonSaltoExpresivo(
+          tooltip: 'Anterior',
+          icono: Icons.skip_previous,
+          direccion: -1,
+          onPressed: player.previous,
+        ),
+        BotonPlayExpresivo(
+          tooltip: state.isPlaying ? 'Pausar' : 'Reproducir',
+          sonando: state.isPlaying,
+          onPressed: player.togglePlay,
+        ),
+        BotonSaltoExpresivo(
+          tooltip: 'Siguiente',
+          icono: Icons.skip_next,
+          direccion: 1,
+          onPressed: player.next,
+        ),
+        IconButton(
+          tooltip: 'Repetir',
+          icon: Icon(
+            state.repeat == 'track' ? Icons.repeat_one : Icons.repeat,
+            size: 20,
+          ),
+          color: state.repeat == 'off' ? null : theme.colorScheme.primary,
+          onPressed: player.cycleRepeat,
         ),
       ],
+    );
+  }
+
+  Widget _progreso(BuildContext context, int durationMs) {
+    final player = widget.player;
+    final state = player.state;
+    final tema = Theme.of(context);
+    final tiempo = tema.textTheme.bodySmall?.copyWith(
+      color: tema.colorScheme.onSurfaceVariant,
+    );
+    return ValueListenableBuilder<int>(
+      valueListenable: player.progressMs,
+      builder: (context, progress, _) {
+        final shown = _dragMs ?? progress.toDouble();
+        final max = durationMs <= 0 ? 1.0 : durationMs.toDouble();
+        return Row(
+          children: [
+            SizedBox(
+              width: 40,
+              child: Text(
+                formatMs(shown.round()),
+                style: tiempo,
+                textAlign: TextAlign.right,
+              ),
+            ),
+            Expanded(
+              child: BarraDeProgreso(
+                clavePista: state.track?.uri,
+                valor: shown.clamp(0, max),
+                maximo: max,
+                enMarcha: state.isPlaying,
+                onCambio: durationMs <= 0
+                    ? null
+                    : (v) => setState(() => _dragMs = v),
+                onFinDelCambio: (v) {
+                  setState(() => _dragMs = null);
+                  player.seek(v.round());
+                },
+              ),
+            ),
+            SizedBox(
+              width: 40,
+              child: Text(formatMs(durationMs), style: tiempo),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -270,7 +374,7 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     return a.comoArtista;
   }
 
-  Widget _volume(int percent) {
+  Widget _volume(int percent, {bool compacto = false}) {
     final player = widget.player;
     final muteado = player.muteado;
     final shown = _dragVolume ?? percent.toDouble().clamp(0, 100);
@@ -303,11 +407,14 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
               },
             ),
           ),
-          SizedBox(
-            width: 26,
-            child: Text('${shown.round()}',
-                style: Theme.of(context).textTheme.bodySmall),
-          ),
+          if (!compacto)
+            SizedBox(
+              width: 26,
+              child: Text(
+                '${shown.round()}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
         ],
       ),
     );

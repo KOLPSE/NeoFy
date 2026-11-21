@@ -4,9 +4,34 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import 'app_config.dart';
 import 'temas.dart';
 
 const String kIdTemaDelSistema = 'sistema';
+
+const Tema temaNeoFyNocturno = Tema(
+  id: kIdTemaNocturno,
+  nombre: 'NeoFy Nocturno',
+  autor: 'NeoFy',
+  descripcion: 'Negro y carbón, acentos verdes y portadas protagonistas.',
+  brillo: BrilloDeTema.oscuro,
+  incluido: true,
+  radio: 10,
+  radioBoton: 22,
+  radioCaratula: 6,
+  tipografia: Tipografia(pesoTitulos: 700),
+  colores: Paleta(
+    primario: Color(0xFF55DF79),
+    sobrePrimario: Color(0xFF0C1910),
+    fondo: Color(0xFF090909),
+    superficie: Color(0xFF252525),
+    panel: Color(0xFF161616),
+    texto: Color(0xFFF7F7F7),
+    textoTenue: Color(0xFFB8B8B8),
+    borde: Color(0xFF595959),
+    error: Color(0xFFFFA0AA),
+  ),
+);
 
 /// Temas retirados en la 1.3.0 y a qué incluido migra cada uno. Un
 /// `config.json` viejo puede traer cualquiera de estos ids; al cargar se
@@ -26,7 +51,8 @@ const Tema temaLiquidGlass = Tema(
   id: 'liquid-glass',
   nombre: 'Liquid Glass',
   autor: 'NeoFy',
-  descripcion: 'Paneles translúcidos sobre la carátula desenfocada, al estilo '
+  descripcion:
+      'Paneles translúcidos sobre la carátula desenfocada, al estilo '
       'del cristal de Apple. Pide GPU: si va a tirones, baja el desenfoque.',
   brillo: BrilloDeTema.oscuro,
   incluido: true,
@@ -65,8 +91,9 @@ const Tema temaMaterialClaro = Tema(
   id: 'material-claro',
   nombre: 'Material claro',
   autor: 'NeoFy',
-  descripcion: 'Material 3 Expressive: la paleta baseline de Google, '
-      'superficies teñidas de violeta y esquinas muy redondeadas.',
+  descripcion:
+      'Interfaz clásica de NeoFy en claro, con superficies '
+      'teñidas de violeta y esquinas redondeadas.',
   brillo: BrilloDeTema.claro,
   incluido: true,
   radio: 26,
@@ -100,8 +127,9 @@ const Tema temaMaterialOscuro = Tema(
   id: 'material-oscuro',
   nombre: 'Material oscuro',
   autor: 'NeoFy',
-  descripcion: 'Material 3 Expressive en oscuro. Aquí los paneles son más '
-      'claros que el fondo, que es como Material marca la elevación.',
+  descripcion:
+      'Interfaz clásica de NeoFy en oscuro, con paneles '
+      'violeta y navegación en cápsulas.',
   brillo: BrilloDeTema.oscuro,
   incluido: true,
   radio: 26,
@@ -132,6 +160,7 @@ const Tema temaMaterialOscuro = Tema(
 );
 
 const List<Tema> temasIncluidos = [
+  temaNeoFyNocturno,
   temaMaterialOscuro,
   temaMaterialClaro,
   temaLiquidGlass,
@@ -177,13 +206,15 @@ Future<Directory> crearTemaDeEjemplo({
     ..['version'] = '1.0.0'
     ..['descripcion'] = 'Cámbiame y guarda: NeoFy lo recarga solo.';
 
-  await File(p.join(destino.path, kNombreDelManifiesto))
-      .writeAsString('${const JsonEncoder.withIndent('  ').convert(json)}\n');
+  await File(
+    p.join(destino.path, kNombreDelManifiesto),
+  ).writeAsString('${const JsonEncoder.withIndent('  ').convert(json)}\n');
   await File(p.join(destino.path, 'LEEME.md')).writeAsString(_leeme(id));
   return destino;
 }
 
-String _leeme(String id) => '''
+String _leeme(String id) =>
+    '''
 # Mi tema
 
 Plantilla de tema para NeoFy. La guía completa está en `TEMAS.md`, dentro del

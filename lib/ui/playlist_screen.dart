@@ -8,7 +8,9 @@ import '../core/metadata_sidecar.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import '../core/temas.dart';
 import 'art_image.dart';
+import 'cabecera_coleccion.dart';
 import 'playlist_follow_button.dart';
 import 'texto_traducido.dart';
 import 'track_tile.dart';
@@ -80,14 +82,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.isForbidden
-          ? 'Spotify no deja ver las canciones de esta playlist.\n\n'
-              'Es de ${widget.playlist.owner.isEmpty ? "otra persona" : widget.playlist.owner}, '
-              'y una app en Modo Desarrollo solo puede leer el contenido de tus '
-              'propias playlists.\n\n'
-              '${widget.sidecar.error ?? "El lector de metadatos no está disponible"}.\n\n'
-              'Sí puedes reproducirla entera con el botón de arriba.'
-          : '$e');
+      setState(
+        () => _error = e.isForbidden
+            ? 'Spotify no deja ver las canciones de esta playlist.\n\n'
+                  'Es de ${widget.playlist.owner.isEmpty ? "otra persona" : widget.playlist.owner}, '
+                  'y una app en Modo Desarrollo solo puede leer el contenido de tus '
+                  'propias playlists.\n\n'
+                  '${widget.sidecar.error ?? "El lector de metadatos no está disponible"}.\n\n'
+                  'Sí puedes reproducirla entera con el botón de arriba.'
+            : '$e',
+      );
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -97,16 +101,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   Future<ApiPage<Track>> _pedirPagina() async {
     if (_viaSidecar) {
-      return widget.sidecar
-          .playlistItems(widget.playlist.id, offset: _offset, limit: 50);
+      return widget.sidecar.playlistItems(
+        widget.playlist.id,
+        offset: _offset,
+        limit: 50,
+      );
     }
     try {
-      return await widget.api
-          .playlistItems(widget.playlist.id, limit: 50, offset: _offset);
+      return await widget.api.playlistItems(
+        widget.playlist.id,
+        limit: 50,
+        offset: _offset,
+      );
     } on ApiException catch (e) {
       if (!e.isForbidden || !widget.sidecar.ready) rethrow;
-      final page = await widget.sidecar
-          .playlistItems(widget.playlist.id, offset: _offset, limit: 50);
+      final page = await widget.sidecar.playlistItems(
+        widget.playlist.id,
+        offset: _offset,
+        limit: 50,
+      );
       if (mounted) setState(() => _viaSidecar = true);
       return page;
     }
@@ -128,66 +141,86 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     unawaited(() async {
       final t = await traducirTexto(context, message);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t), duration: const Duration(seconds: 2)),
+      );
     }());
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
+    final seguir = PlaylistFollowButton(
+      followed: widget.followed,
+      playlist: widget.playlist,
+      esPropia:
+          widget.playlist.ownerId.isNotEmpty &&
+          widget.playlist.ownerId == widget.player.currentUserId,
+      onCambio: widget.onCambioSeguimiento,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              ArtImage(url: widget.playlist.art, size: 96),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(widget.playlist.name,
+        if (nocturno) ...[
+          CabeceraColeccion(
+            portada: widget.playlist.art,
+            titulo: Text(widget.playlist.name),
+            detalle: T(
+              '${widget.playlist.owner} · ${widget.playlist.trackCount} canciones',
+            ),
+            onPlay: () => widget.player.playContext(widget.playlist.uri),
+            acciones: [seguir],
+          ),
+          const EncabezadoPistas(),
+        ] else
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                ArtImage(url: widget.playlist.art, size: 96),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.playlist.name,
                         style: theme.textTheme.headlineSmall,
                         maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    T(
-                      '${widget.playlist.owner} · ${widget.playlist.trackCount} canciones'
-                      '${_viaSidecar ? " · leída vía librespot" : ""}',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: () => widget.player.playContext(widget.playlist.uri),
-                          icon: const Icon(Icons.play_arrow),
-                          label: T('Reproducir'),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      T(
+                        '${widget.playlist.owner} · ${widget.playlist.trackCount} canciones'
+                        '${_viaSidecar ? " · leída vía librespot" : ""}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        const SizedBox(width: 8),
-                        PlaylistFollowButton(
-                          followed: widget.followed,
-                          playlist: widget.playlist,
-                          esPropia: widget.playlist.ownerId.isNotEmpty &&
-                              widget.playlist.ownerId == widget.player.currentUserId,
-                          onCambio: widget.onCambioSeguimiento,
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: () =>
+                                widget.player.playContext(widget.playlist.uri),
+                            icon: const Icon(Icons.play_arrow),
+                            label: T('Reproducir'),
+                          ),
+                          const SizedBox(width: 8),
+                          seguir,
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const Divider(height: 1),
+        if (!nocturno) const Divider(height: 1),
         Expanded(
           child: _error != null && _tracks.isEmpty
               ? Center(
@@ -198,8 +231,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       child: Text(
                         _error!,
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
@@ -207,39 +241,42 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               : ValueListenableBuilder<String?>(
                   valueListenable: widget.player.currentUri,
                   builder: (context, currentUri, _) => ListView.builder(
-                  controller: _scroll,
-                  itemCount: _tracks.length + (_loading ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= _tracks.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                    controller: _scroll,
+                    itemCount: _tracks.length + (_loading ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (i >= _tracks.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                           ),
+                        );
+                      }
+                      final t = _tracks[i];
+                      return TrackTile(
+                        track: t,
+                        likes: widget.likes,
+                        mostrarAlbum: nocturno,
+                        leadingNumber: i + 1,
+                        isCurrent: currentUri != null && currentUri == t.uri,
+                        actions: TrackActions(
+                          onPlay: () => widget.player.playContext(
+                            widget.playlist.uri,
+                            offset: i,
+                          ),
+                          onQueue: () async {
+                            await widget.player.addToQueue(t.uri);
+                            _toast('Añadida a la cola');
+                          },
+                          onRemove: () => _remove(t),
                         ),
                       );
-                    }
-                    final t = _tracks[i];
-                    return TrackTile(
-                      track: t,
-                      likes: widget.likes,
-                      leadingNumber: i + 1,
-                      isCurrent: currentUri != null && currentUri == t.uri,
-                      actions: TrackActions(
-                        onPlay: () => widget.player
-                            .playContext(widget.playlist.uri, offset: i),
-                        onQueue: () async {
-                          await widget.player.addToQueue(t.uri);
-                          _toast('Añadida a la cola');
-                        },
-                        onRemove: () => _remove(t),
-                      ),
-                    );
-                  },
-                ),
+                    },
+                  ),
                 ),
         ),
       ],

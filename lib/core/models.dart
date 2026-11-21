@@ -295,17 +295,61 @@ class SearchResults {
   final ApiPage<Track> tracks;
   final ApiPage<Playlist> playlists;
   final ApiPage<Artist> artists;
+  final ApiPage<Podcast> podcasts;
 
   const SearchResults({
     this.tracks = const ApiPage.empty(),
     this.playlists = const ApiPage.empty(),
     this.artists = const ApiPage.empty(),
+    this.podcasts = const ApiPage.empty(),
   });
 
-  const SearchResults.empty()
-      : tracks = const ApiPage.empty(),
-        playlists = const ApiPage.empty(),
-        artists = const ApiPage.empty();
+  const SearchResults.empty() : this();
+}
+
+class Podcast {
+  const Podcast({
+    required this.id,
+    required this.name,
+    required this.publisher,
+    required this.description,
+    required this.art,
+  });
+
+  final String id;
+  final String name;
+  final String publisher;
+  final String description;
+  final String? art;
+
+  factory Podcast.fromJson(Map<String, dynamic> json) => Podcast(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    publisher: json['publisher'] as String? ?? '',
+    description: json['description'] as String? ?? '',
+    art: pickImage(json['images'] as List<dynamic>?, 300),
+  );
+}
+
+class PodcastEpisode {
+  const PodcastEpisode({
+    required this.track,
+    required this.releaseDate,
+    required this.description,
+    required this.playable,
+  });
+
+  final Track track;
+  final String releaseDate;
+  final String description;
+  final bool playable;
+
+  factory PodcastEpisode.fromJson(Map<String, dynamic> json) => PodcastEpisode(
+    track: Track.fromJson(json)!,
+    releaseDate: json['release_date'] as String? ?? '',
+    description: json['description'] as String? ?? '',
+    playable: json['is_playable'] != false,
+  );
 }
 
 class ArtistaDePista {
@@ -362,6 +406,8 @@ class Track {
   final int durationMs;
   final bool isLocal;
   final int popularity;
+
+  bool get isEpisode => uri.startsWith('spotify:episode:');
 
   const Track({
     required this.id,
@@ -445,12 +491,13 @@ class Track {
     if (j == null) return null;
     final artistList = j['artists'] as List<dynamic>?;
     final album = j['album'] as Map<String, dynamic>?;
-    final images = album?['images'] as List<dynamic>?;
+    final show = j['show'] as Map<String, dynamic>?;
+    final images =
+        (album?['images'] ?? j['images'] ?? show?['images']) as List<dynamic>?;
     final lista = <ArtistaDePista>[
       if (artistList != null)
         for (final raw in artistList)
-          if (raw is Map<String, dynamic>)
-            ?ArtistaDePista.desdeJson(raw),
+          if (raw is Map<String, dynamic>) ?ArtistaDePista.desdeJson(raw),
     ];
     return Track(
       id: (j['id'] as String?) ?? '',
@@ -458,9 +505,9 @@ class Track {
       name: (j['name'] as String?) ?? 'Desconocido',
       artists: lista.isNotEmpty
           ? lista.map((a) => a.name).where((n) => n.isNotEmpty).join(', ')
-          : '',
+          : (show?['name'] as String? ?? ''),
       listaDeArtistas: lista,
-      album: (album?['name'] as String?) ?? '',
+      album: (album?['name'] as String?) ?? (show?['name'] as String?) ?? '',
       artSmall: pickImage(images, 64),
       artMedium: pickImage(images, 300),
       durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,

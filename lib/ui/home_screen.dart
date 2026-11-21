@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
 
     if (!widget.home.puedeLeer) return _avisoPermisos(theme);
 
@@ -59,6 +60,19 @@ class _HomeScreenState extends State<HomeScreen> {
       animation: widget.home,
       builder: (context, _) {
         final home = widget.home;
+        final destacada = nocturno && home.recientes.isNotEmpty
+            ? home.recientes.first
+            : null;
+        final accesos = destacada == null
+            ? const <Track>[]
+            : home.recientes.skip(1).take(4).toList();
+        final cantidadAccesos = destacada == null ? 0 : 1 + accesos.length;
+        final recientes = destacada == null
+            ? home.recientes
+            : home.recientes.skip(cantidadAccesos).toList();
+        Future<void> reproducirReciente(int indice) => widget.player.playLista([
+          for (final t in home.recientes) t.uri,
+        ], desde: indice);
         // Permisos llegaron después (reauth desde otra pantalla, scopes
         // tardíos): dispara la carga que initState no pudo hacer. Si ya
         // falló, no insistir en cada rebuild — el botón de actualizar sí.
@@ -86,7 +100,15 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
               child: Row(
                 children: [
-                  T('Inicio', style: theme.textTheme.headlineSmall),
+                  T(
+                    'Inicio',
+                    style: nocturno
+                        ? theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.6,
+                          )
+                        : theme.textTheme.headlineSmall,
+                  ),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Actualizar',
@@ -98,19 +120,53 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            if (home.recientes.isNotEmpty) ...[
+            if (destacada != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+                child: LayoutBuilder(
+                  builder: (context, espacio) {
+                    final enParalelo = accesos.isNotEmpty && espacio.maxWidth >= 1000;
+                    final destacadaActual = _EscuchaDestacada(
+                      pista: destacada,
+                      reproducir: () => reproducirReciente(0),
+                    );
+                    final recientesRapidas = _AccesosRecientes(
+                      pistas: accesos,
+                      onPlay: (i) => reproducirReciente(i + 1),
+                      alLado: enParalelo,
+                    );
+                    if (enParalelo) {
+                      return Row(
+                        children: [
+                          Expanded(flex: 5, child: destacadaActual),
+                          const SizedBox(width: 12),
+                          Expanded(flex: 4, child: recientesRapidas),
+                        ],
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        destacadaActual,
+                        if (accesos.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          recientesRapidas,
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+            if (recientes.isNotEmpty) ...[
               _Titulo('Vuelve a escuchar'),
               TiraDeCanciones(
-                tracks: home.recientes,
-                onPlay: (i) => widget.player.playLista(
-                  [for (final t in home.recientes) t.uri],
-                  desde: i,
-                ),
+                tracks: recientes,
+                onPlay: (i) => reproducirReciente(i + cantidadAccesos),
               ),
             ],
             if (home.paraTi.isNotEmpty) ...[
               _Titulo('Hecho para ti'),
-              Padding(
+              if (!nocturno) Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: T(
                   '   Canciones de tus artistas top que no has escuchado hace poco',
@@ -135,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             if (home.novedades.isNotEmpty) ...[
               _Titulo('Novedades'),
-              Padding(
+              if (!nocturno) Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: T(
                   '   Lo último publicado en Spotify',
@@ -150,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             if (home.masEscuchadas.isNotEmpty) ...[
               _Titulo('Lo que más escuchas'),
-              Padding(
+              if (!nocturno) Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: T(
                   '   De las últimas semanas',
@@ -248,6 +304,154 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _EscuchaDestacada extends StatelessWidget {
+  const _EscuchaDestacada({required this.pista, required this.reproducir});
+
+  final Track pista;
+  final VoidCallback reproducir;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final colores = tema.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(EstiloNeoFy.de(context).radio),
+        gradient: LinearGradient(
+          colors: [
+            colores.surfaceContainerHigh,
+            Color.lerp(colores.surfaceContainerHigh, colores.primary, 0.12)!,
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  T(
+                    'Última escucha',
+                    style: tema.textTheme.bodySmall?.copyWith(
+                      color: colores.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    pista.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: tema.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 1.12,
+                    ),
+                  ),
+                  Text(
+                    pista.artists,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tema.textTheme.bodyMedium?.copyWith(
+                      color: colores.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: reproducir,
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const T('Reproducir'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 20),
+            ArtImage(
+              url: pista.artSmall,
+              urlGrande: pista.artMedium,
+              size: 128,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AccesosRecientes extends StatelessWidget {
+  const _AccesosRecientes({
+    required this.pistas,
+    required this.onPlay,
+    required this.alLado,
+  });
+
+  final List<Track> pistas;
+  final ValueChanged<int> onPlay;
+  final bool alLado;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final colores = tema.colorScheme;
+    const hueco = 8.0;
+    const radio = BorderRadius.all(Radius.circular(8));
+    final lado = alLado ? 76.0 : 48.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnas = !alLado && constraints.maxWidth >= 850 ? 4 : 2;
+        final ancho =
+            (constraints.maxWidth - hueco * (columnas - 1)) / columnas;
+        return Wrap(
+          spacing: hueco,
+          runSpacing: hueco,
+          children: [
+            for (final (i, pista) in pistas.indexed)
+              SizedBox(
+                width: ancho,
+                child: Material(
+                  color: colores.surfaceContainerHigh,
+                  borderRadius: radio,
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => onPlay(i),
+                    borderRadius: radio,
+                    child: Row(
+                      children: [
+                        ArtImage(
+                          url: pista.artSmall,
+                          urlGrande: pista.artMedium,
+                          size: lado,
+                          radius: 0,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            pista.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: tema.textTheme.titleSmall,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Icon(
+                            Icons.play_arrow_rounded,
+                            size: 18,
+                            color: colores.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _Titulo extends StatelessWidget {
   const _Titulo(this.texto);
 
@@ -255,9 +459,14 @@ class _Titulo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-        child: T(texto, style: Theme.of(context).textTheme.titleMedium),
-      );
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+    child: T(
+      texto,
+      style: EstiloNeoFy.de(context).usaInterfazNocturna
+          ? Theme.of(context).textTheme.titleLarge
+          : Theme.of(context).textTheme.titleMedium,
+    ),
+  );
 }
 
 const double _huecoTarjeta = 6;

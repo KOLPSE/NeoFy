@@ -147,8 +147,9 @@ class TemaStore extends ChangeNotifier {
   }
 
   Future<void> seleccionar(String id) async {
-    if (config.tema == id) return;
+    if (config.tema == id && config.temaElegido) return;
     config.tema = id;
+    config.temaElegido = true;
     await _cargarFuentes();
     notifyListeners();
     await config.save();

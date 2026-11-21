@@ -21,7 +21,9 @@ const int kLibrespotOAuthPort = 8899;
 
 const String kDeviceName = 'NeoFy';
 
-const String kTemaPorDefecto = 'sistema';
+const String kIdTemaNocturno = 'neofy-nocturno';
+
+const String kTemaPorDefecto = kIdTemaNocturno;
 
 const List<String> kScopes = [
   'user-read-private',
@@ -80,9 +82,10 @@ void _migrarDesdeElNombreViejo(Directory nueva) {
     final vieja = Directory(p.join(nueva.parent.path, 'spotify-native'));
     if (!vieja.existsSync()) return;
     vieja.renameSync(nueva.path);
-  } catch (_) {
-  }
+  } catch (_) {}
 }
+
+const kLimiteDesfaseLetraMs = 5000;
 
 class AppConfig {
   String clientId;
@@ -98,6 +101,7 @@ class AppConfig {
   String discordClientId;
 
   String tema;
+  bool temaElegido;
 
   /// Vacío = sigue el idioma del PC. Formato Spotify: `es_ES`, `en_US`…
   String idiomaPreferido;
@@ -105,6 +109,7 @@ class AppConfig {
   /// Colores propios para los temas de Material: id del tema → clave de la
   /// paleta ('primario', 'fondo', 'panel') → color '#RRGGBB'.
   Map<String, Map<String, String>> temaColores;
+  final Map<String, int> desfasesLetraMs;
 
   /// Los menús se abren ocupando el rectángulo del elemento en vez de
   /// flotar encima (estilo Material Expressive).
@@ -122,11 +127,14 @@ class AppConfig {
     this.discordRpcEnabled = false,
     this.discordClientId = kDiscordClientId,
     this.tema = kTemaPorDefecto,
+    this.temaElegido = false,
     this.idiomaPreferido = kIdiomaSistema,
     Map<String, Map<String, String>>? temaColores,
+    Map<String, int>? desfasesLetraMs,
     this.menusEnElemento = true,
     this.sidebarPlegado = false,
-  }) : temaColores = temaColores ?? {};
+  }) : temaColores = temaColores ?? {},
+       desfasesLetraMs = desfasesLetraMs ?? {};
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
 
@@ -135,6 +143,11 @@ class AppConfig {
       final f = _file;
       if (!await f.exists()) return AppConfig();
       final map = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      final temaGuardado = map['tema'] as String?;
+      final temaElegido = map['temaElegido'] == true;
+      final materialPersonalizado =
+          (map['temaColores'] as Map?)?['material-oscuro'] is Map &&
+          ((map['temaColores'] as Map)['material-oscuro'] as Map).isNotEmpty;
       return AppConfig(
         clientId: (map['clientId'] as String?) ?? kDefaultClientId,
         initialVolume: (map['initialVolume'] as int?) ?? 60,
@@ -142,8 +155,15 @@ class AppConfig {
         performanceMode: (map['performanceMode'] as bool?) ?? false,
         volumenNeoTube: (map['volumenNeoTube'] as int?) ?? 60,
         discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
-        discordClientId: (map['discordClientId'] as String?) ?? kDiscordClientId,
-        tema: (map['tema'] as String?) ?? kTemaPorDefecto,
+        discordClientId:
+            (map['discordClientId'] as String?) ?? kDiscordClientId,
+        tema:
+            temaGuardado == 'material-oscuro' &&
+                !temaElegido &&
+                !materialPersonalizado
+            ? kTemaPorDefecto
+            : temaGuardado ?? kTemaPorDefecto,
+        temaElegido: temaElegido,
         idiomaPreferido: (map['idiomaPreferido'] as String?) ?? kIdiomaSistema,
         temaColores: {
           for (final entrada
@@ -155,6 +175,15 @@ class AppConfig {
         },
         menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
         sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
+        desfasesLetraMs: {
+          if (map['desfasesLetraMs'] case Map<String, dynamic> desfases)
+            for (final entrada in desfases.entries)
+              if (entrada.value case int ms when ms != 0)
+                entrada.key: ms.clamp(
+                  -kLimiteDesfaseLetraMs,
+                  kLimiteDesfaseLetraMs,
+                ),
+        },
       );
     } catch (_) {
       return AppConfig();
@@ -162,19 +191,23 @@ class AppConfig {
   }
 
   Future<void> save() async {
-    await _file.writeAsString(jsonEncode({
-      'clientId': clientId,
-      'initialVolume': initialVolume,
-      'bitrate': bitrate,
-      'performanceMode': performanceMode,
-      'volumenNeoTube': volumenNeoTube,
-      'discordRpcEnabled': discordRpcEnabled,
-      'discordClientId': discordClientId,
-      'tema': tema,
-      'idiomaPreferido': idiomaPreferido,
-      if (temaColores.isNotEmpty) 'temaColores': temaColores,
-      'menusEnElemento': menusEnElemento,
-      'sidebarPlegado': sidebarPlegado,
-    }));
+    await _file.writeAsString(
+      jsonEncode({
+        'clientId': clientId,
+        'initialVolume': initialVolume,
+        'bitrate': bitrate,
+        'performanceMode': performanceMode,
+        'volumenNeoTube': volumenNeoTube,
+        'discordRpcEnabled': discordRpcEnabled,
+        'discordClientId': discordClientId,
+        'tema': tema,
+        'temaElegido': temaElegido,
+        'idiomaPreferido': idiomaPreferido,
+        if (temaColores.isNotEmpty) 'temaColores': temaColores,
+        if (desfasesLetraMs.isNotEmpty) 'desfasesLetraMs': desfasesLetraMs,
+        'menusEnElemento': menusEnElemento,
+        'sidebarPlegado': sidebarPlegado,
+      }),
+    );
   }
 }

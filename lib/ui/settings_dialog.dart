@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
+import '../core/temas.dart';
 import '../core/updater.dart';
 import '../core/neoreport.dart';
 import 'texto_traducido.dart';
@@ -15,29 +16,35 @@ Future<void> mostrarAjustes(
   required Updater updater,
   required Future<void> Function() onSalirParaActualizar,
   String? trackUri,
-  List<Widget> bloquesExtra = const [],
+  List<Widget> apariencia = const [],
+  List<Widget> audio = const [],
 }) {
   return showDialogTraducido<void>(
     context: context,
-    builder: (context) => _DialogoAjustes(
+    builder: (context) => PanelAjustes(
       monitor: monitor,
       settings: settings,
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
       trackUri: trackUri,
-      bloquesExtra: bloquesExtra,
+      apariencia: apariencia,
+      audio: audio,
     ),
   );
 }
 
-class _DialogoAjustes extends StatelessWidget {
-  const _DialogoAjustes({
+class PanelAjustes extends StatelessWidget {
+  const PanelAjustes({
+    super.key,
     required this.monitor,
     required this.settings,
     required this.updater,
     required this.onSalirParaActualizar,
     required this.trackUri,
-    required this.bloquesExtra,
+    required this.apariencia,
+    required this.audio,
+    this.enPagina = false,
+    this.onCuenta,
   });
 
   final ResourceMonitor monitor;
@@ -47,98 +54,149 @@ class _DialogoAjustes extends StatelessWidget {
 
   final Future<void> Function() onSalirParaActualizar;
 
-  final List<Widget> bloquesExtra;
+  final List<Widget> apariencia;
+  final List<Widget> audio;
+  final bool enPagina;
+  final VoidCallback? onCuenta;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: T('Ajustes'),
-      content: SizedBox(
-        width: 380,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
+    final controles = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (nocturno) ...[
+          if (onCuenta != null)
+            _SeccionDeAjustes(
+              titulo: 'Cuenta',
+              icono: Icons.person_outline,
+              controles: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const T('Cuenta conectada'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onCuenta,
+                ),
+              ],
+            ),
+          if (apariencia.isNotEmpty)
+            _SeccionDeAjustes(
+              titulo: 'Apariencia e idioma',
+              icono: Icons.palette_outlined,
+              controles: apariencia,
+            ),
+          if (audio.isNotEmpty)
+            _SeccionDeAjustes(
+              titulo: 'Audio',
+              icono: Icons.headphones,
+              controles: audio,
+            ),
+          const _TituloDeAjustes('Rendimiento', Icons.speed),
+        ],
+        AnimatedBuilder(
+          animation: monitor,
+          builder: (context, _) {
+            final uso = monitor.uso;
+            return Row(
+              children: [
+                Expanded(
+                  child: _Medida(
+                    icono: Icons.memory,
+                    etiqueta: 'RAM',
+                    valor: UsoDeRecursos.mb(uso.total),
+                  ),
+                ),
+                Expanded(
+                  child: _Medida(
+                    icono: Icons.speed,
+                    etiqueta: 'CPU',
+                    valor: '${uso.cpu.toStringAsFixed(1)} %',
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const Divider(height: 28),
+        AnimatedBuilder(
+          animation: settings,
+          builder: (context, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AnimatedBuilder(
-                animation: monitor,
-                builder: (context, _) {
-                  final uso = monitor.uso;
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: _Medida(
-                          icono: Icons.memory,
-                          etiqueta: 'RAM',
-                          valor: UsoDeRecursos.mb(uso.total),
-                        ),
-                      ),
-                      Expanded(
-                        child: _Medida(
-                          icono: Icons.speed,
-                          etiqueta: 'CPU',
-                          valor: '${uso.cpu.toStringAsFixed(1)} %',
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const Divider(height: 28),
-              AnimatedBuilder(
-                animation: settings,
-                builder: (context, _) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: settings.performanceMode,
-                      onChanged: (v) =>
-                          unawaited(settings.setPerformanceMode(v)),
-                      title: T('Modo rendimiento'),
-                      subtitle: T(
-                        'Elimina las portadas por cuadrados de color',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: settings.discordRpcEnabled,
-                      onChanged: (v) =>
-                          unawaited(settings.setDiscordRpcEnabled(v)),
-                      title: T('Rich Presence'),
-                      subtitle: T(
-                        'Muestra en tu perfil de Discord la canción que estás escuchando.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    if (settings.discordRpcEnabled) ...[
-                      const SizedBox(height: 8),
-                      _CampoDiscordClientId(settings: settings),
-                    ],
-                  ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: settings.performanceMode,
+                onChanged: (v) => unawaited(settings.setPerformanceMode(v)),
+                title: T('Modo rendimiento'),
+                subtitle: T(
+                  'Elimina las portadas por cuadrados de color',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-              for (final bloque in bloquesExtra) ...[
+              if (nocturno)
+                const _TituloDeAjustes('Discord', Icons.chat_bubble_outline)
+              else
                 const Divider(height: 12),
-                bloque,
-              ],
-              const Divider(height: 12),
-              _EnviarReporte(neoreport: NeoReport(), trackUri: trackUri),
-              const Divider(height: 12),
-              _Actualizaciones(
-                updater: updater,
-                onSalirParaActualizar: onSalirParaActualizar,
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: settings.discordRpcEnabled,
+                onChanged: (v) => unawaited(settings.setDiscordRpcEnabled(v)),
+                title: T('Rich Presence'),
+                subtitle: T(
+                  'Muestra en tu perfil de Discord la canción que estás escuchando.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
+              if (settings.discordRpcEnabled) ...[
+                const SizedBox(height: 8),
+                _CampoDiscordClientId(settings: settings),
+              ],
             ],
           ),
         ),
+        if (nocturno)
+          _SeccionDeAjustes(
+            titulo: 'Soporte',
+            icono: Icons.help_outline,
+            controles: _soporte(),
+          )
+        else
+          for (final bloque in [...apariencia, ...audio, ..._soporte()]) ...[
+            const Divider(height: 12),
+            bloque,
+          ],
+      ],
+    );
+    if (enPagina) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 740),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                T('Ajustes', style: theme.textTheme.headlineMedium),
+                const SizedBox(height: 16),
+                controles,
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return AlertDialog(
+      title: const T('Ajustes'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(child: controles),
       ),
       actions: [
         TextButton(
@@ -146,6 +204,117 @@ class _DialogoAjustes extends StatelessWidget {
           child: T('Cerrar'),
         ),
       ],
+    );
+  }
+
+  List<Widget> _soporte() => [
+    _EnviarReporte(neoreport: NeoReport(), trackUri: trackUri),
+    _Actualizaciones(
+      updater: updater,
+      onSalirParaActualizar: onSalirParaActualizar,
+    ),
+  ];
+}
+
+class CalidadDeAudio extends StatelessWidget {
+  const CalidadDeAudio({
+    super.key,
+    required this.settings,
+    required this.onReiniciar,
+  });
+
+  final Settings settings;
+  final Future<void> Function() onReiniciar;
+
+  @override
+  Widget build(BuildContext context) {
+    const opciones = [96, 160, 320];
+    return AnimatedBuilder(
+      animation: settings,
+      builder: (context, _) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const T('Calidad de streaming'),
+        trailing: DropdownButton<int>(
+          value: opciones.contains(settings.bitrate) ? settings.bitrate : null,
+          items: [
+            for (final bitrate in opciones)
+              DropdownMenuItem(value: bitrate, child: Text('$bitrate kbit/s')),
+          ],
+          onChanged: (valor) async {
+            if (valor == null || valor == settings.bitrate) return;
+            await settings.setBitrate(valor);
+            await onReiniciar();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _TituloDeAjustes extends StatelessWidget {
+  const _TituloDeAjustes(this.titulo, this.icono);
+
+  final String titulo;
+  final IconData icono;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, top: 4),
+      child: Row(
+        children: [
+          Icon(icono, size: 20, color: tema.colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: T(titulo, style: tema.textTheme.titleMedium),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeccionDeAjustes extends StatelessWidget {
+  const _SeccionDeAjustes({
+    required this.titulo,
+    required this.icono,
+    required this.controles,
+  });
+
+  final String titulo;
+  final IconData icono;
+  final List<Widget> controles;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Material(
+        color: colores.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(EstiloNeoFy.de(context).radio),
+          side: BorderSide(color: colores.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TituloDeAjustes(titulo, icono),
+              for (var i = 0; i < controles.length; i++) ...[
+                if (i > 0) const Divider(height: 24),
+                controles[i],
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

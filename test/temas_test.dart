@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neofy/core/app_config.dart';
+import 'package:neofy/core/tema_store.dart';
 import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
 import 'package:path/path.dart' as p;
@@ -276,13 +278,34 @@ void main() {
       expect(ids, isNot(contains(kIdTemaDelSistema)));
     });
 
-    test('solo quedan los dos de Material y el de cristal', () {
+    test('incluye Nocturno junto a los dos Material y Liquid Glass', () {
       final ids = temasIncluidos.map((t) => t.id).toSet();
       expect(
         ids,
-        containsAll(['material-claro', 'material-oscuro', 'liquid-glass']),
+        containsAll([
+          temaNeoFyNocturno.id,
+          'material-claro',
+          'material-oscuro',
+          'liquid-glass',
+        ]),
       );
-      expect(ids, hasLength(3));
+    });
+
+    test('la configuración nueva abre Nocturno y Material sigue siendo clásico', () {
+      final nuevo = TemaStore(AppConfig());
+      final clasico = TemaStore(AppConfig(tema: temaMaterialOscuro.id));
+      addTearDown(nuevo.dispose);
+      addTearDown(clasico.dispose);
+
+      expect(nuevo.idSeleccionado, temaNeoFyNocturno.id);
+      expect(
+        nuevo.themeDataOscuro.extension<EstiloNeoFy>()!.usaInterfazNocturna,
+        isTrue,
+      );
+      expect(
+        clasico.themeDataOscuro.extension<EstiloNeoFy>()!.usaInterfazNocturna,
+        isFalse,
+      );
     });
 
     test('cada tema retirado migra a un incluido de su mismo brillo', () {

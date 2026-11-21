@@ -45,6 +45,17 @@ class PlayerController extends ChangeNotifier {
   ReproduccionLibre? libre;
 
   String? currentUserId;
+  String? currentDisplayName;
+
+  void aplicarPerfilSpotify(Map<String, dynamic> perfil) {
+    currentUserId = perfil['id'] is String ? perfil['id'] as String : null;
+    currentDisplayName = perfil['display_name'] as String?;
+    final producto = perfil['product'];
+    final sinPremium = producto == 'free' || producto == 'open';
+    premiumChecked = producto == 'premium' || sinPremium;
+    isPremium = !sinPremium;
+    notifyListeners();
+  }
 
   void notificar() => notifyListeners();
 
@@ -56,13 +67,27 @@ class PlayerController extends ChangeNotifier {
 
   final ValueNotifier<int> progressMs = ValueNotifier(0);
 
+  int get posicionActualMs {
+    final alternativa = libre;
+    if (alternativa != null) return alternativa.posicionActualMs;
+    final pista = state.track;
+    final anclaje = _ultimoAnclajeMs;
+    if (!state.isPlaying || pista == null || anclaje == null) {
+      return progressMs.value;
+    }
+    final transcurrido = _relojDePosicion.elapsedMilliseconds - anclaje;
+    return (_lastSyncedProgress + transcurrido).clamp(0, pista.durationMs);
+  }
+
   final ValueNotifier<String?> currentUri = ValueNotifier(null);
 
   bool _windowVisible = true;
   Timer? _pollTimer;
   Timer? _tickTimer;
-  DateTime _lastSync = DateTime.now();
+  final Stopwatch _relojDePosicion = Stopwatch()..start();
+  int? _ultimoAnclajeMs;
   int _lastSyncedProgress = 0;
+  int _revisionPosicion = 0;
   bool _polling = false;
   bool _disposed = false;
 
@@ -74,7 +99,7 @@ class PlayerController extends ChangeNotifier {
   Timer? _reintentoVolumen;
 
   int? _pendingSeekMs;
-  DateTime _pendingSeekAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _inicioSaltoMs = 0;
 
   String? _uriDeArranque;
   DateTime? _arranqueLocal;
@@ -83,6 +108,12 @@ class PlayerController extends ChangeNotifier {
   UltimaReproduccion? _porRetomar;
 
   bool get hayAlgoPorRetomar => _porRetomar != null;
+
+  void _fijarPosicion(int ms) {
+    _lastSyncedProgress = ms;
+    _ultimoAnclajeMs = _relojDePosicion.elapsedMilliseconds;
+    progressMs.value = ms;
+  }
 
   void restaurar(UltimaReproduccion ultima) {
     if (state.track != null) return;
@@ -101,9 +132,7 @@ class PlayerController extends ChangeNotifier {
       contextUri: ultima.contextUri,
     );
     currentUri.value = ultima.track.uri;
-    progressMs.value = ultima.posicionMs;
-    _lastSyncedProgress = ultima.posicionMs;
-    _lastSync = DateTime.now();
+    _fijarPosicion(ultima.posicionMs);
     notifyListeners();
   }
 
@@ -119,6 +148,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _retomarGuardada(UltimaReproduccion ultima) async {
+    _revisionPosicion++;
     final enLibre = libre;
     if (enLibre != null) {
       _porRetomar = null;
@@ -135,22 +165,21 @@ class PlayerController extends ChangeNotifier {
     if (ourDeviceId == null) await resolveDevice();
 
     state = state.copyWith(isPlaying: true);
-    _lastSyncedProgress = ultima.posicionMs;
-    _lastSync = DateTime.now();
+    _fijarPosicion(ultima.posicionMs);
     notifyListeners();
 
-    final conContexto = ultima.contextUri != null;
-    final ok = await _withDevice(() => api.play(
-          deviceId: ourDeviceId,
-          contextUri: ultima.contextUri,
-          uris: conContexto
-              ? null
-              : (ultima.uris?.isNotEmpty ?? false)
-                  ? ultima.uris
-                  : [ultima.track.uri],
-          offsetUri: conContexto ? ultima.track.uri : null,
-          positionMs: ultima.posicionMs,
-        ));
+    final cola = ultima.uris;
+    final ok = await _withDevice(() => ultima.contextUri == null
+        ? _reproducirUris(
+            cola != null && cola.isNotEmpty ? cola : [ultima.track.uri],
+            posicionMs: ultima.posicionMs,
+          )
+        : api.play(
+            deviceId: ourDeviceId,
+            contextUri: ultima.contextUri,
+            offsetUri: ultima.track.uri,
+            positionMs: ultima.posicionMs,
+          ));
 
     if (ok) {
       _porRetomar = null;
@@ -197,16 +226,19 @@ class PlayerController extends ChangeNotifier {
     }
     if (_polling || _disposed) return;
     _polling = true;
+    final revision = _revisionPosicion;
     try {
       final pb = await api.playbackState();
-      if (_disposed) return;
+      if (_disposed || revision != _revisionPosicion) return;
       var next = pb ?? Playback.empty;
 
       if (next.track == null) {
         if (state.track != null) {
           _porRetomar = paraRecordar();
           if (state.isPlaying) {
+            final posicion = posicionActualMs;
             state = state.copyWith(isPlaying: false);
+            _fijarPosicion(posicion);
             notifyListeners();
           }
         }
@@ -226,22 +258,20 @@ class PlayerController extends ChangeNotifier {
       if (next.contextUri != null) _lastContextUri = next.contextUri;
 
       state = next;
+      if (aceptarProgreso) _fijarPosicion(next.progressMs);
       currentUri.value = next.track?.uri;
-      if (aceptarProgreso) {
-        _lastSyncedProgress = next.progressMs;
-        _lastSync = DateTime.now();
-        progressMs.value = next.progressMs;
-      }
       lastError = null;
       notifyListeners();
     } catch (e) {
-      if (!_disposed) {
+      if (!_disposed && revision == _revisionPosicion) {
         lastError = '$e';
         notifyListeners();
       }
     } finally {
       _polling = false;
-      _schedulePoll(_pollInterval);
+      _schedulePoll(revision == _revisionPosicion
+          ? _pollInterval
+          : const Duration(milliseconds: 500));
     }
   }
 
@@ -260,9 +290,7 @@ class PlayerController extends ChangeNotifier {
     if (_esRearranqueEspurio(next)) {
       final ms = _progresoLocalDe(next);
       if (next.track?.uri != state.track?.uri) {
-        progressMs.value = ms;
-        _lastSyncedProgress = ms;
-        _lastSync = DateTime.now();
+        _fijarPosicion(ms);
       }
       if (!_yaCorregiArranque) {
         _yaCorregiArranque = true;
@@ -274,13 +302,13 @@ class PlayerController extends ChangeNotifier {
     final objetivo = _pendingSeekMs;
     if (objetivo == null) return true;
 
-    final desde = DateTime.now().difference(_pendingSeekAt);
-    if (desde > _ventanaPendiente) {
+    final desde = _relojDePosicion.elapsedMilliseconds - _inicioSaltoMs;
+    if (desde > _ventanaPendiente.inMilliseconds) {
       _pendingSeekMs = null;
       return true;
     }
-    final esperado = objetivo + (next.isPlaying ? desde.inMilliseconds : 0);
-    if ((next.progressMs - esperado).abs() < 3000) {
+    final esperado = objetivo + (next.isPlaying ? desde : 0);
+    if ((next.progressMs - esperado).abs() < 750) {
       _pendingSeekMs = null;
       return true;
     }
@@ -288,7 +316,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   int _progresoLocalDe(Playback next) {
-    if (next.track?.uri == state.track?.uri) return progressMs.value;
+    if (next.track?.uri == state.track?.uri) return posicionActualMs;
     if (next.track?.uri == _uriDeArranque && _arranqueLocal != null) {
       return DateTime.now().difference(_arranqueLocal!).inMilliseconds;
     }
@@ -308,16 +336,15 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _marcarArranque(String? uri) {
+    _revisionPosicion++;
     _uriDeArranque = uri;
     _arranqueLocal = DateTime.now();
     _yaCorregiArranque = false;
   }
 
   void _tick() {
-    if (!state.isPlaying || state.track == null) return;
-    final elapsed = DateTime.now().difference(_lastSync).inMilliseconds;
-    final next = _lastSyncedProgress + elapsed;
-    progressMs.value = next.clamp(0, state.track!.durationMs);
+    if (libre != null || !state.isPlaying || state.track == null) return;
+    progressMs.value = posicionActualMs;
   }
 
   Future<bool> resolveDevice({bool transfer = true, String? distintoDe}) async {
@@ -349,7 +376,7 @@ class PlayerController extends ChangeNotifier {
 
   ReproduccionEnCurso instantanea() => ReproduccionEnCurso(
         sonaba: state.isPlaying,
-        posicionMs: progressMs.value,
+        posicionMs: posicionActualMs,
         trackUri: state.track?.uri,
         contextUri: contextUri,
       );
@@ -357,14 +384,16 @@ class PlayerController extends ChangeNotifier {
   Future<void> retomar(ReproduccionEnCurso antes) async {
     final device = ourDeviceId;
     if (device == null) return;
+    _revisionPosicion++;
     try {
       await api.transfer(device, play: antes.sonaba);
       if (antes.sonaba) {
         await api.seek(antes.posicionMs);
         _pendingSeekMs = antes.posicionMs;
-        _pendingSeekAt = DateTime.now();
+        _inicioSaltoMs = _relojDePosicion.elapsedMilliseconds;
       }
       state = state.copyWith(isPlaying: antes.sonaba);
+      _fijarPosicion(antes.posicionMs);
       lastError = null;
       notifyListeners();
     } catch (_) {
@@ -374,15 +403,19 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _arrancarDeNuevo(ReproduccionEnCurso antes) async {
-    if (!antes.sonaba || antes.trackUri == null) return;
+    final uri = antes.trackUri;
+    if (!antes.sonaba || uri == null) return;
     try {
-      await api.play(
-        deviceId: ourDeviceId,
-        contextUri: antes.contextUri,
-        uris: antes.contextUri == null ? [antes.trackUri!] : null,
-        offsetUri: antes.contextUri == null ? null : antes.trackUri,
-        positionMs: antes.posicionMs,
-      );
+      if (antes.contextUri == null) {
+        await _reproducirUris([uri], posicionMs: antes.posicionMs);
+      } else {
+        await api.play(
+          deviceId: ourDeviceId,
+          contextUri: antes.contextUri,
+          offsetUri: uri,
+          positionMs: antes.posicionMs,
+        );
+      }
       lastError = null;
     } catch (e) {
       lastError = 'No se pudo retomar la reproducción tras reiniciar el '
@@ -397,13 +430,13 @@ class PlayerController extends ChangeNotifier {
     if (libre != null || _mandoDelUsuario) return;
     try {
       final pb = await api.playbackState();
-      if (pb == null || !pb.isPlaying) return;
+      if (pb == null || !pb.isPlaying || _mandoDelUsuario || _disposed) return;
+      final revision = ++_revisionPosicion;
       await api.pause();
+      if (_disposed || revision != _revisionPosicion) return;
       state = pb.copyWith(isPlaying: false);
+      _fijarPosicion(pb.progressMs);
       currentUri.value = pb.track?.uri;
-      progressMs.value = pb.progressMs;
-      _lastSyncedProgress = pb.progressMs;
-      _lastSync = DateTime.now();
       notifyListeners();
     } catch (_) {
     }
@@ -429,8 +462,7 @@ class PlayerController extends ChangeNotifier {
         return false;
       } else {
         lastError = e.isForbidden
-            ? 'Spotify rechazó la acción. Suele ser que la cuenta no es Premium '
-                'o que no se puede saltar en este contexto.'
+            ? 'Spotify rechazó la acción: ${e.message}'
             : '$e';
         notifyListeners();
         return false;
@@ -453,22 +485,36 @@ class PlayerController extends ChangeNotifier {
       return;
     }
 
-    final wasPlaying = state.isPlaying;
-    state = state.copyWith(isPlaying: !wasPlaying);
-    if (!wasPlaying) {
-      _lastSync = DateTime.now();
-      _lastSyncedProgress = progressMs.value;
-    }
-    notifyListeners();
-    await _withDevice(() => wasPlaying ? api.pause() : api.play(deviceId: ourDeviceId));
+    await _cambiarPausaSpotify();
   }
 
   Future<void> pause() async {
     if (libre != null) return libre!.pause();
     if (!state.isPlaying) return;
-    state = state.copyWith(isPlaying: false);
+    await _cambiarPausaSpotify();
+  }
+
+  Future<void> _cambiarPausaSpotify() async {
+    final sonaba = state.isPlaying;
+    final posicion = posicionActualMs;
+    final inicio = _relojDePosicion.elapsedMilliseconds;
+    final pista = state.track?.uri;
+    final revision = ++_revisionPosicion;
+    state = state.copyWith(isPlaying: !sonaba);
+    _fijarPosicion(posicion);
     notifyListeners();
-    await _withDevice(api.pause);
+    final ok = await _withDevice(
+      () => sonaba ? api.pause() : api.play(deviceId: ourDeviceId),
+    );
+    if (ok || _disposed || revision != _revisionPosicion ||
+        state.track?.uri != pista) {
+      return;
+    }
+    state = state.copyWith(isPlaying: sonaba);
+    final delta = sonaba ? _relojDePosicion.elapsedMilliseconds - inicio : 0;
+    _fijarPosicion((posicion + delta).clamp(0, state.track?.durationMs ?? posicion));
+    notifyListeners();
+    _schedulePoll(Duration.zero);
   }
 
   Future<void> next() async {
@@ -479,7 +525,8 @@ class PlayerController extends ChangeNotifier {
     final sinSiguiente = !state.canSkipNext || state.track == null;
     if (sinSiguiente && await _volverAlPrincipio()) return;
 
-    progressMs.value = 0;
+    _revisionPosicion++;
+    _fijarPosicion(0);
     if (await _withDevice(api.next, siProhibido: _volverAlPrincipio)) {
       await _reanudarTrasSaltar();
     }
@@ -494,15 +541,15 @@ class PlayerController extends ChangeNotifier {
       await seek(0);
       return;
     }
-    progressMs.value = 0;
+    _revisionPosicion++;
+    _fijarPosicion(0);
     if (await _withDevice(api.previous)) await _reanudarTrasSaltar();
   }
 
   Future<void> _reanudarTrasSaltar() async {
     if (state.isPlaying) return;
     state = state.copyWith(isPlaying: true);
-    _lastSyncedProgress = 0;
-    _lastSync = DateTime.now();
+    _fijarPosicion(0);
     notifyListeners();
     await _withDevice(() => api.play(deviceId: ourDeviceId));
   }
@@ -511,20 +558,15 @@ class PlayerController extends ChangeNotifier {
     final ctx = contextUri;
     final uris = _lastUris;
     if (ctx == null && uris == null) return false;
-    progressMs.value = 0;
-    _lastSyncedProgress = 0;
-    _lastSync = DateTime.now();
+    _revisionPosicion++;
+    _fijarPosicion(0);
     await _withDevice(() => ctx != null
         ? api.play(
             deviceId: ourDeviceId,
             contextUri: ctx,
             offsetPosition: 0,
           )
-        : api.play(
-            deviceId: ourDeviceId,
-            uris: uris,
-            offsetPosition: 0,
-          ));
+        : _reproducirUris(uris!));
     return true;
   }
 
@@ -535,20 +577,26 @@ class PlayerController extends ChangeNotifier {
     if (guardada != null) {
       _porRetomar = guardada.conPosicion(ms);
       state = state.copyWith(progressMs: ms);
-      progressMs.value = ms;
-      _lastSyncedProgress = ms;
-      _lastSync = DateTime.now();
+      _fijarPosicion(ms);
       notifyListeners();
       return;
     }
     if (libre != null) return libre!.saltar(ms);
+    final revision = ++_revisionPosicion;
+    final posicionPrevia = _lastSyncedProgress;
+    final anclajePrevio = _ultimoAnclajeMs;
     _pendingSeekMs = ms;
-    _pendingSeekAt = DateTime.now();
-    progressMs.value = ms;
-    _lastSyncedProgress = ms;
-    _lastSync = DateTime.now();
+    _inicioSaltoMs = _relojDePosicion.elapsedMilliseconds;
+    _fijarPosicion(ms);
     onSalto?.call(ms);
-    await _withDevice(() => api.seek(ms));
+    final ok = await _withDevice(() => api.seek(ms));
+    if (!ok && !_disposed && revision == _revisionPosicion) {
+      _pendingSeekMs = null;
+      _lastSyncedProgress = posicionPrevia;
+      _ultimoAnclajeMs = anclajePrevio;
+      progressMs.value = state.isPlaying ? posicionActualMs : posicionPrevia;
+      _schedulePoll(Duration.zero);
+    }
   }
 
   bool get muteado => _volumenAntesDeMutear != null;
@@ -905,23 +953,21 @@ class PlayerController extends ChangeNotifier {
     bool esInteligente = false,
     int? posicionMs,
   }) {
+    if (uris.isEmpty) return Future<void>.value();
     _mandoDelUsuario = true;
     _porRetomar = null;
-    _marcarArranque(
-      uris.isEmpty ? null : uris[desde.clamp(0, uris.length - 1)],
-    );
-    if (libre != null) return libre!.playLista(uris, desde: desde);
+    final inicio = desde.clamp(0, uris.length - 1);
+    _marcarArranque(uris[inicio]);
+    if (libre != null) return libre!.playLista(uris, desde: inicio);
     if (!esInteligente) {
       _aleatorioInteligente = false;
     }
     _lastContextUri = null;
     _lastUris = List.unmodifiable(uris);
-    return _withDevice(() => api.play(
-          deviceId: ourDeviceId,
-          uris: uris,
-          offsetPosition: desde,
-          positionMs: posicionMs,
-        ));
+    // Spotify solo admite offset con un contexto de álbum o playlist.
+    // Para una cola de URIs, la primera de la petición es la que debe sonar.
+    final cola = uris.sublist(inicio);
+    return _withDevice(() => _reproducirUris(cola, posicionMs: posicionMs));
   }
 
   Future<void> playTrack(String uri) {
@@ -932,7 +978,28 @@ class PlayerController extends ChangeNotifier {
     _aleatorioInteligente = false;
     _lastContextUri = null;
     _lastUris = null;
-    return _withDevice(() => api.play(deviceId: ourDeviceId, uris: [uri]));
+    return _withDevice(() => _reproducirUris([uri]));
+  }
+
+  Future<void> _reproducirUris(List<String> uris, {int? posicionMs}) async {
+    final revision = _revisionPosicion;
+    try {
+      await api.play(deviceId: ourDeviceId, uris: uris, positionMs: posicionMs);
+    } on ApiException catch (e) {
+      if (!e.isPlaybackRestriction || !uris.first.startsWith('spotify:track:')) {
+        rethrow;
+      }
+      if (_disposed || revision != _revisionPosicion) return;
+      final contexto = await api.contextoDePista(uris.first);
+      if (_disposed || revision != _revisionPosicion) return;
+      if (contexto == null) rethrow;
+      await api.play(
+        deviceId: ourDeviceId,
+        contextUri: contexto.album,
+        offsetUri: contexto.pista,
+        positionMs: posicionMs,
+      );
+    }
   }
 
   Future<void> addToQueue(String uri) {

@@ -30,6 +30,7 @@ class ReproduccionLibre {
   StreamSubscription<Duration>? _subPosicion;
 
   bool get tieneSesionYt => puente.api.auth.isLoggedIn;
+  int get posicionActualMs => ytPlayer.posicion.inMilliseconds;
 
   Track? get actual => (_indice >= 0 && _indice < _colaSpotify.length) ? _colaSpotify[_indice] : null;
 

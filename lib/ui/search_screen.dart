@@ -11,6 +11,7 @@ import '../core/metadata_sidecar.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import 'art_image.dart';
 import 'artist_favorite_button.dart';
 import 'playlist_follow_button.dart';
 import 'texto_traducido.dart';
@@ -21,6 +22,7 @@ enum SearchFilter {
   artistas('Artistas'),
   canciones('Canciones'),
   playlists('Playlists'),
+  podcasts('Pódcasts'),
   masEscuchadas('Más escuchadas');
 
   const SearchFilter(this.label);
@@ -42,6 +44,9 @@ class SearchScreen extends StatefulWidget {
     this.onAbrirArtista,
     this.onCambioSeguimiento,
     this.autofocus = true,
+    this.busquedaGlobal,
+    this.filtroInicial,
+    this.onAbrirPodcast,
   });
 
   final SpotifyApi api;
@@ -64,6 +69,9 @@ class SearchScreen extends StatefulWidget {
   final void Function(Artist)? onAbrirArtista;
   final void Function(Playlist, bool)? onCambioSeguimiento;
   final bool autofocus;
+  final TextEditingController? busquedaGlobal;
+  final SearchFilter? filtroInicial;
+  final ValueChanged<Podcast>? onAbrirPodcast;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -75,6 +83,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final List<Track> _tracks = [];
   final List<Playlist> _playlists = [];
   final List<Artist> _artistas = [];
+  final List<Podcast> _podcasts = [];
 
   // La pantalla abre en "Más escuchadas": con la caja vacía enseña el
   // Top 50 del idioma, y al escribir salta sola a "Todo".
@@ -95,13 +104,25 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _filter = widget.filtroInicial ?? SearchFilter.masEscuchadas;
+    widget.busquedaGlobal?.addListener(_alCambiarBusquedaGlobal);
     widget.sidecar.addListener(_alCambiarSidecar);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _asegurarTop50());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.busquedaGlobal?.text.isNotEmpty ?? false) {
+        _alCambiarBusquedaGlobal();
+      }
+      unawaited(_asegurarTop50());
+    });
   }
 
   @override
   void didUpdateWidget(covariant SearchScreen viejo) {
     super.didUpdateWidget(viejo);
+    if (viejo.busquedaGlobal != widget.busquedaGlobal) {
+      viejo.busquedaGlobal?.removeListener(_alCambiarBusquedaGlobal);
+      widget.busquedaGlobal?.addListener(_alCambiarBusquedaGlobal);
+    }
     if (viejo.sidecar != widget.sidecar) {
       viejo.sidecar.removeListener(_alCambiarSidecar);
       widget.sidecar.addListener(_alCambiarSidecar);
@@ -115,6 +136,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    widget.busquedaGlobal?.removeListener(_alCambiarBusquedaGlobal);
     widget.sidecar.removeListener(_alCambiarSidecar);
     _debounce?.cancel();
     _controller.dispose();
@@ -129,36 +151,42 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _reiniciarResultados() {
+    _searchId++;
+    _loading = false;
     _tracks.clear();
     _playlists.clear();
     _artistas.clear();
+    _podcasts.clear();
     _offset = 0;
     _hasMore = _query.isNotEmpty;
     _error = null;
   }
 
+  void _alCambiarBusquedaGlobal() => _onChanged(widget.busquedaGlobal!.text);
+
   void _onChanged(String value) {
     final q = value.trim();
+    if (q == _query) return;
     // Al escribir se busca en todo; al vaciar la caja vuelve el Top 50.
     final filtro = q.isEmpty
-        ? SearchFilter.masEscuchadas
+        ? widget.filtroInicial ?? SearchFilter.masEscuchadas
         : (_filter == SearchFilter.masEscuchadas && _query.isEmpty
-            ? SearchFilter.todo
-            : _filter);
-    if (filtro != _filter) setState(() => _filter = filtro);
+              ? SearchFilter.todo
+              : _filter);
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
+    setState(() {
       _query = q;
+      _filter = filtro;
       _reiniciarResultados();
+    });
+    if (q.isEmpty) return;
+    _debounce = Timer(const Duration(milliseconds: 350), () {
       unawaited(_search());
     });
   }
 
   Future<void> _asegurarTop50() async {
-    if (!mounted ||
-        !widget.sidecar.ready ||
-        _top50 != null ||
-        _cargandoTop50) {
+    if (!mounted || !widget.sidecar.ready || _top50 != null || _cargandoTop50) {
       return;
     }
     setState(() {
@@ -169,8 +197,10 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       ApiPage<Track> pagina;
       try {
-        pagina = await widget.sidecar
-            .playlistItems(playlistTop50ParaLocale(locale), limit: 50);
+        pagina = await widget.sidecar.playlistItems(
+          playlistTop50ParaLocale(locale),
+          limit: 50,
+        );
       } catch (_) {
         // Si la editorial del país falla (id retirado, región sin lista),
         // queda el global.
@@ -208,7 +238,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final List<String> types;
     switch (_filter) {
       case SearchFilter.todo:
-        types = const ['artist', 'track', 'playlist'];
+        types = widget.onAbrirPodcast == null
+            ? const ['artist', 'track', 'playlist']
+            : const ['artist', 'track', 'playlist', 'show'];
       case SearchFilter.artistas:
         types = const ['artist'];
       case SearchFilter.canciones:
@@ -216,11 +248,17 @@ class _SearchScreenState extends State<SearchScreen> {
         types = const ['track'];
       case SearchFilter.playlists:
         types = const ['playlist'];
+      case SearchFilter.podcasts:
+        types = const ['show'];
     }
 
     try {
-      final res =
-          await widget.api.search(_query, types: types, limit: 10, offset: _offset);
+      final res = await widget.api.search(
+        _query,
+        types: types,
+        limit: 10,
+        offset: _offset,
+      );
       if (!mounted || currentId != _searchId) return;
 
       setState(() {
@@ -229,12 +267,16 @@ class _SearchScreenState extends State<SearchScreen> {
             _artistas.addAll(res.artists.items);
             _tracks.addAll(res.tracks.items);
             _playlists.addAll(res.playlists.items);
+            _podcasts.addAll(res.podcasts.items);
             _offset += max(
               max(res.artists.rawCount, res.tracks.rawCount),
-              res.playlists.rawCount,
+              max(res.playlists.rawCount, res.podcasts.rawCount),
             );
             _hasMore =
-                res.artists.hasMore || res.tracks.hasMore || res.playlists.hasMore;
+                res.artists.hasMore ||
+                res.tracks.hasMore ||
+                res.playlists.hasMore ||
+                res.podcasts.hasMore;
           case SearchFilter.artistas:
             _artistas.addAll(res.artists.items);
             _offset += res.artists.rawCount;
@@ -247,6 +289,10 @@ class _SearchScreenState extends State<SearchScreen> {
             _playlists.addAll(res.playlists.items);
             _offset += res.playlists.rawCount;
             _hasMore = res.playlists.hasMore;
+          case SearchFilter.podcasts:
+            _podcasts.addAll(res.podcasts.items);
+            _offset += res.podcasts.rawCount;
+            _hasMore = res.podcasts.hasMore;
           case SearchFilter.masEscuchadas:
             _tracks.addAll(res.tracks.items);
             _tracks.sort((a, b) => b.popularity.compareTo(a.popularity));
@@ -271,8 +317,9 @@ class _SearchScreenState extends State<SearchScreen> {
     unawaited(() async {
       final t = await traducirTexto(context, message);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t), duration: const Duration(seconds: 2)),
+      );
     }());
   }
 
@@ -287,7 +334,11 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  bool get _vacio => _tracks.isEmpty && _playlists.isEmpty && _artistas.isEmpty;
+  bool get _vacio =>
+      _tracks.isEmpty &&
+      _playlists.isEmpty &&
+      _artistas.isEmpty &&
+      _podcasts.isEmpty;
 
   int _calcularTotalItems() {
     final boton = _hasMore ? 1 : 0;
@@ -299,6 +350,8 @@ class _SearchScreenState extends State<SearchScreen> {
         return _playlists.length + boton;
       case SearchFilter.artistas:
         return _artistas.length + boton;
+      case SearchFilter.podcasts:
+        return _podcasts.length + boton;
       case SearchFilter.todo:
         final headAr = _artistas.isNotEmpty ? 1 : 0;
         final headPl = _playlists.isNotEmpty ? 1 : 0;
@@ -309,6 +362,7 @@ class _SearchScreenState extends State<SearchScreen> {
             _playlists.length +
             headTr +
             _tracks.length +
+            (_podcasts.isEmpty ? 0 : _podcasts.length + 1) +
             boton;
     }
   }
@@ -327,6 +381,9 @@ class _SearchScreenState extends State<SearchScreen> {
       case SearchFilter.artistas:
         if (i >= _artistas.length) return _botonCargarMas();
         return _tileArtista(_artistas[i]);
+      case SearchFilter.podcasts:
+        if (i >= _podcasts.length) return _botonCargarMas();
+        return _tilePodcast(_podcasts[i]);
       case SearchFilter.todo:
         return _construirItemTodo(context, i, currentUri);
     }
@@ -361,8 +418,24 @@ class _SearchScreenState extends State<SearchScreen> {
       idx -= _tracks.length;
     }
 
+    if (_podcasts.isNotEmpty) {
+      if (idx == 0) return const _HeaderSeccion('Pódcasts');
+      if (idx <= _podcasts.length) return _tilePodcast(_podcasts[idx - 1]);
+    }
     return _botonCargarMas();
   }
+
+  Widget _tilePodcast(Podcast podcast) => ListTile(
+    leading: ArtImage(url: podcast.art, size: 44),
+    title: Text(podcast.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+    subtitle: Text(
+      podcast.publisher,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: () => widget.onAbrirPodcast?.call(podcast),
+  );
 
   Widget _tileTrack(Track t, int indice, String? currentUri, {int? orden}) {
     return TrackTile(
@@ -371,10 +444,9 @@ class _SearchScreenState extends State<SearchScreen> {
       leadingNumber: orden,
       isCurrent: currentUri != null && currentUri == t.uri,
       actions: TrackActions(
-        onPlay: () => widget.player.playLista(
-          [for (final r in _tracks) r.uri],
-          desde: indice,
-        ),
+        onPlay: () => widget.player.playLista([
+          for (final r in _tracks) r.uri,
+        ], desde: indice),
         onQueue: () async {
           await widget.player.addToQueue(t.uri);
           _toast('Añadida a la cola');
@@ -394,7 +466,9 @@ class _SearchScreenState extends State<SearchScreen> {
           PlaylistFollowButton(
             followed: widget.followed,
             playlist: pl,
-            esPropia: pl.ownerId.isNotEmpty && pl.ownerId == widget.player.currentUserId,
+            esPropia:
+                pl.ownerId.isNotEmpty &&
+                pl.ownerId == widget.player.currentUserId,
             size: 18,
             onCambio: widget.onCambioSeguimiento,
           ),
@@ -440,10 +514,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : TextButton(
-                onPressed: _search,
-                child: T('Ver más resultados'),
-              ),
+            : TextButton(onPressed: _search, child: T('Ver más resultados')),
       ),
     );
   }
@@ -455,8 +526,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return Center(
         child: T(
           'Escribe para buscar en NeoFy.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -470,15 +542,13 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Text(
                 _errorTop50!,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ),
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: _asegurarTop50,
-              child: T('Reintentar'),
-            ),
+            TextButton(onPressed: _asegurarTop50, child: T('Reintentar')),
           ],
         ),
       );
@@ -497,8 +567,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return Center(
         child: T(
           'Escribe para buscar en NeoFy.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -508,7 +579,9 @@ class _SearchScreenState extends State<SearchScreen> {
         controller: _scroll,
         itemCount: top.length + 1,
         itemBuilder: (context, i) {
-          if (i == 0) return const _HeaderSeccion('Lo más escuchado en tu idioma');
+          if (i == 0) {
+            return const _HeaderSeccion('Lo más escuchado en tu idioma');
+          }
           final t = top[i - 1];
           return TrackTile(
             track: t,
@@ -516,10 +589,9 @@ class _SearchScreenState extends State<SearchScreen> {
             leadingNumber: i,
             isCurrent: currentUri != null && currentUri == t.uri,
             actions: TrackActions(
-              onPlay: () => widget.player.playLista(
-                [for (final r in top) r.uri],
-                desde: i - 1,
-              ),
+              onPlay: () => widget.player.playLista([
+                for (final r in top) r.uri,
+              ], desde: i - 1),
               onQueue: () async {
                 await widget.player.addToQueue(t.uri);
                 _toast('Añadida a la cola');
@@ -538,8 +610,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return Center(
         child: T(
           'Escribe para buscar en NeoFy.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -547,8 +620,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return Center(
         child: T(
           _loading ? 'Buscando…' : 'Sin resultados.',
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -573,51 +647,52 @@ class _SearchScreenState extends State<SearchScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: TextField(
-            controller: _controller,
-            autofocus: widget.autofocus,
-            onChanged: _onChanged,
-            decoration: InputDecoration(
-              hintText: 'Buscar artistas, canciones, playlists…',
-              prefixIcon: const Icon(Icons.search),
-              border: const OutlineInputBorder(),
-              isDense: true,
-              suffixIcon: _controller.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _controller.clear();
-                        setState(() {
-                          _reiniciarResultados();
-                          _query = '';
-                          _filter = SearchFilter.masEscuchadas;
-                        });
-                      },
-                    ),
+        if (widget.busquedaGlobal == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _controller,
+              autofocus: widget.autofocus,
+              onChanged: _onChanged,
+              decoration: InputDecoration(
+                hintText: 'Buscar artistas, canciones, playlists…',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: _controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _controller.clear();
+                          _onChanged('');
+                        },
+                      ),
+              ),
             ),
-          ),
-        ),
+          )
+        else
+          const SizedBox(height: 12),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               for (final filter in SearchFilter.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: T(filter.label),
-                    selected: _filter == filter,
-                    onSelected: (selected) {
-                      if (selected && _filter != filter) {
-                        _cambiarFiltro(filter);
-                      }
-                    },
+                if (filter != SearchFilter.podcasts ||
+                    widget.onAbrirPodcast != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: T(filter.label),
+                      selected: _filter == filter,
+                      onSelected: (selected) {
+                        if (selected && _filter != filter) {
+                          _cambiarFiltro(filter);
+                        }
+                      },
+                    ),
                   ),
-                ),
             ],
           ),
         ),
@@ -625,11 +700,12 @@ class _SearchScreenState extends State<SearchScreen> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            child: Text(
+              _error!,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
           ),
-        Expanded(
-          child: _cuerpoResultados(theme),
-        ),
+        Expanded(child: _cuerpoResultados(theme)),
       ],
     );
   }

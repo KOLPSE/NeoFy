@@ -33,6 +33,14 @@ class Settings extends ChangeNotifier {
   String get idiomaPreferido => config.idiomaPreferido;
   String get localeEfectivo => localeSpotifyEfectivo(config.idiomaPreferido);
   bool get sidebarPlegado => config.sidebarPlegado;
+  int get bitrate => config.bitrate;
+
+  Future<void> setBitrate(int valor) async {
+    if (config.bitrate == valor) return;
+    config.bitrate = valor;
+    notifyListeners();
+    await config.save();
+  }
 
   Future<void> setMenusEnElemento(bool activo) async {
     if (config.menusEnElemento == activo) return;

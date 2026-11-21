@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/auth.dart';
 import 'package:neofy/core/models.dart';
@@ -15,6 +20,13 @@ class _FakeConfig extends AppConfig {
   Future<void> save() async => guardados++;
 }
 
+class _AuthDePrueba extends SpotifyAuth {
+  _AuthDePrueba(super.config);
+
+  @override
+  Future<String> accessToken() async => 'token-de-prueba';
+}
+
 class _FakeApi extends SpotifyApi {
   _FakeApi() : super(SpotifyAuth(AppConfig()));
 
@@ -23,6 +35,7 @@ class _FakeApi extends SpotifyApi {
   bool traspasoProhibido = false;
 
   Playback? estadoRemoto;
+  Future<Playback?> Function()? responderPlayback;
 
   List<Device> dispositivos = const [];
 
@@ -41,6 +54,7 @@ class _FakeApi extends SpotifyApi {
   @override
   Future<Playback?> playbackState() async {
     llamadas.add('playbackState');
+    if (responderPlayback case final responder?) return responder();
     return estadoRemoto;
   }
 
@@ -184,24 +198,132 @@ void main() {
   });
 
   group('tiras de la portada', () {
-    test('al pulsar una se manda la tira entera, no solo esa canción', () async {
+    test('al pulsar una empieza la cola por la canción elegida', () async {
       await player.playLista(
         const ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'],
         desde: 1,
       );
 
       expect(api.llamadas,
-          ['play [spotify:track:a, spotify:track:b, spotify:track:c] offset=1']);
+          ['play [spotify:track:b, spotify:track:c] offset=null']);
     });
 
     test('al final de la tira, siguiente vuelve a la primera', () async {
-      await player.playLista(const ['spotify:track:a', 'spotify:track:b']);
+      await player.playLista(
+        const ['spotify:track:a', 'spotify:track:b'],
+        desde: 1,
+      );
       api.llamadas.clear();
 
       player.state = _sonando(canSkipNext: false, contextUri: null);
       await player.next();
 
-      expect(api.llamadas, ['play [spotify:track:a, spotify:track:b] offset=0']);
+      expect(
+        api.llamadas,
+        ['play [spotify:track:a, spotify:track:b] offset=null'],
+      );
+    });
+
+    test('Spotify recibe una cola sin offset y una playlist con offset', () async {
+      final peticiones = <http.Request>[];
+      final cliente = MockClient((peticion) async {
+        peticiones.add(peticion);
+        return http.Response('', 204);
+      });
+      addTearDown(cliente.close);
+      final reproductor = PlayerController(
+        SpotifyApi(_AuthDePrueba(config), cliente: cliente),
+        config,
+      );
+      addTearDown(reproductor.dispose);
+      await reproductor.playLista(
+        const ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'],
+        desde: 1,
+        posicionMs: 1500,
+      );
+      await reproductor.playContext('spotify:playlist:abc', offset: 2);
+
+      expect(
+        peticiones.map((p) => p.url.path),
+        List.filled(2, '/v1/me/player/play'),
+      );
+      expect(jsonDecode(peticiones[0].body), {
+        'uris': ['spotify:track:b', 'spotify:track:c'],
+        'position_ms': 1500,
+      });
+      expect(jsonDecode(peticiones[1].body), {
+        'context_uri': 'spotify:playlist:abc',
+        'offset': {'position': 2},
+      });
+    });
+
+    test('si Connect rechaza la cola, reproduce la pista elegida en su álbum',
+        () async {
+      final peticiones = <http.Request>[];
+      final cliente = MockClient((peticion) async {
+        peticiones.add(peticion);
+        if (peticion.method == 'GET') {
+          return http.Response(
+            '{"uri":"spotify:track:b","album":{"uri":"spotify:album:disco"}}',
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }
+        if (peticiones.length == 1) {
+          return http.Response(
+            '{"error":{"message":"Player command failed: Restriction violated"}}',
+            403,
+          );
+        }
+        return http.Response('', 204);
+      });
+      addTearDown(cliente.close);
+      final reproductor = PlayerController(
+        SpotifyApi(_AuthDePrueba(config), cliente: cliente),
+        config,
+      )..ourDeviceId = 'dev';
+      addTearDown(reproductor.dispose);
+
+      await reproductor.playLista(
+        const ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'],
+        desde: 1,
+        posicionMs: 1500,
+      );
+
+      expect(peticiones.map((p) => p.url.path), [
+        '/v1/me/player/play',
+        '/v1/tracks/b',
+        '/v1/me/player/play',
+      ]);
+      expect(peticiones.last.url.queryParameters['device_id'], 'dev');
+      expect(jsonDecode(peticiones.last.body), {
+        'context_uri': 'spotify:album:disco',
+        'offset': {'uri': 'spotify:track:b'},
+        'position_ms': 1500,
+      });
+      expect(reproductor.lastError, isNull);
+    });
+
+    test('un 403 de permisos conserva el aviso sin reintentar', () async {
+      final peticiones = <http.Request>[];
+      final cliente = MockClient((peticion) async {
+        peticiones.add(peticion);
+        return http.Response(
+          '{"error":{"message":"Insufficient client scope"}}',
+          403,
+        );
+      });
+      addTearDown(cliente.close);
+      final reproductor = PlayerController(
+        SpotifyApi(_AuthDePrueba(config), cliente: cliente),
+        config,
+      );
+      addTearDown(reproductor.dispose);
+
+      await reproductor.playTrack('spotify:track:b');
+
+      expect(peticiones, hasLength(1));
+      expect(reproductor.lastError, contains('Insufficient client scope'));
     });
 
     test('poner una cancion suelta despues olvida la tira', () async {
@@ -519,6 +641,57 @@ void main() {
   });
 
   group('el sondeo no reinicia la canción a los pocos segundos', () {
+    test('la API compensa el viaje de vuelta solo cuando suena', () async {
+      var sonando = true;
+      final cliente = MockClient((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        return http.Response(
+          jsonEncode({
+            'timestamp': 1,
+            'progress_ms': 10000,
+            'is_playing': sonando,
+            'item': {'uri': 'spotify:track:1', 'name': 'X', 'duration_ms': 200000},
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final remota = SpotifyApi(_AuthDePrueba(config), cliente: cliente);
+      final activo = await remota.playbackState();
+      expect(activo!.progressMs, inInclusiveRange(10020, 10450));
+      sonando = false;
+      expect((await remota.playbackState())!.progressMs, 10000);
+    });
+
+    test('una respuesta en vuelo conserva un salto que se hizo después', () async {
+      final consultada = Completer<void>();
+      final respuesta = Completer<Playback?>();
+      api.responderPlayback = () {
+        consultada.complete();
+        return respuesta.future;
+      };
+      player.state = _sonando(isPlaying: false, progressMs: 40000);
+      player.progressMs.value = 40000;
+      player.start();
+      await consultada.future.timeout(const Duration(seconds: 2));
+
+      await player.seek(41500);
+      respuesta.complete(_sonando(isPlaying: false, progressMs: 40000));
+      await Future<void>.delayed(Duration.zero);
+      expect(player.posicionActualMs, 41500);
+      expect(player.progressMs.value, 41500);
+    });
+
+    test('una posición a 1500 ms del salto no se toma como confirmación', () async {
+      player.state = _sonando(isPlaying: false, progressMs: 40000);
+      api.estadoRemoto = _sonando(isPlaying: false, progressMs: 40000);
+      await player.seek(41500);
+      player.start();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(api.llamadas, contains('playbackState'));
+      expect(player.posicionActualMs, 41500);
+    });
+
     test('un progress_ms 0 espurio no tira la barra atrás y se corrige con seek',
         () async {
       player.state = _sonando();

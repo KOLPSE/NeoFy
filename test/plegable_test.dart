@@ -4,7 +4,11 @@ import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
 import 'package:neofy/ui/movimiento.dart';
 
-Widget _envoltorio({required Tema tema, required bool abierto}) {
+Widget _envoltorio({
+  required Tema tema,
+  required bool abierto,
+  bool recorteDirecto = false,
+}) {
   return MaterialApp(
     theme: construirThemeData(tema),
     home: Scaffold(
@@ -14,6 +18,7 @@ Widget _envoltorio({required Tema tema, required bool abierto}) {
             child: Plegable(
               key: const ValueKey('plegable'),
               abierto: abierto,
+              recorteDirecto: recorteDirecto,
               contenidoAbierto: const Text('LA LISTA'),
               contenidoCerrado: const Text('PLEGADO'),
             ),
@@ -25,6 +30,37 @@ Widget _envoltorio({required Tema tema, required bool abierto}) {
 }
 
 void main() {
+  testWidgets('el recorte directo mantiene visible la lista al plegar', (
+    t,
+  ) async {
+    Widget envolver(bool abierto) => _envoltorio(
+      tema: temaNeoFyNocturno,
+      abierto: abierto,
+      recorteDirecto: true,
+    );
+    await t.pumpWidget(envolver(true));
+    await t.pumpWidget(envolver(false));
+    await t.pump(const Duration(milliseconds: 50));
+    final lista = find.text('LA LISTA');
+    final transicion = find.ancestor(
+      of: lista,
+      matching: find.byType(SizeTransition),
+    );
+    expect(transicion, findsOneWidget);
+    final factor = t.widget<SizeTransition>(transicion).sizeFactor.value;
+    expect(factor, allOf(greaterThan(0), lessThan(1)));
+    expect(
+      find.descendant(
+        of: find.byType(Plegable),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+    );
+    await t.pumpAndSettle();
+    expect(lista, findsNothing);
+    expect(find.text('PLEGADO'), findsOneWidget);
+  });
+
   testWidgets('plegado, el contenido abierto no está en el árbol', (t) async {
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
 
@@ -44,22 +80,27 @@ void main() {
     expect(find.text('PLEGADO'), findsNothing);
   });
 
-  testWidgets('durante la transición conviven los dos, y acaba asentando',
-      (t) async {
+  testWidgets('durante la transición conviven los dos, y acaba asentando', (
+    t,
+  ) async {
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
 
     await t.pump(const Duration(milliseconds: 16));
     expect(find.text('LA LISTA'), findsOneWidget);
-    expect(find.text('PLEGADO'), findsOneWidget,
-        reason: 'se cruzan, no se cortan de golpe');
+    expect(
+      find.text('PLEGADO'),
+      findsOneWidget,
+      reason: 'se cruzan, no se cortan de golpe',
+    );
 
     await t.pump(const Duration(seconds: 2));
     expect(find.text('PLEGADO'), findsNothing);
   });
 
-  testWidgets('es un acordeón: la altura del contenido crece de verdad',
-      (t) async {
+  testWidgets('es un acordeón: la altura del contenido crece de verdad', (
+    t,
+  ) async {
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
     await t.pump(const Duration(milliseconds: 16));
@@ -72,8 +113,7 @@ void main() {
     );
   });
 
-  testWidgets('el hueco recorta el overflow, como overflow:hidden',
-      (t) async {
+  testWidgets('el hueco recorta el overflow, como overflow:hidden', (t) async {
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
     await t.pump(const Duration(milliseconds: 40));
@@ -85,8 +125,9 @@ void main() {
     );
   });
 
-  testWidgets('van apiladas, no en columna: la lista tapa a la fijada',
-      (t) async {
+  testWidgets('van apiladas, no en columna: la lista tapa a la fijada', (
+    t,
+  ) async {
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
     await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
     await t.pump(const Duration(milliseconds: 40));
@@ -96,7 +137,8 @@ void main() {
     expect(
       t.getTopLeft(find.text('PLEGADO')).dy,
       closeTo(t.getTopLeft(find.text('LA LISTA')).dy, 1),
-      reason: 'si estuvieran en columna, la fijada bajaría al crecer la '
+      reason:
+          'si estuvieran en columna, la fijada bajaría al crecer la '
           'lista y se vería aplastada debajo',
     );
   });
@@ -125,7 +167,10 @@ void main() {
     await t.pump();
 
     expect(find.text('LA LISTA'), findsOneWidget);
-    expect(find.text('PLEGADO'), findsNothing,
-        reason: 'sin movimiento no hay cruce: se cambia y ya');
+    expect(
+      find.text('PLEGADO'),
+      findsNothing,
+      reason: 'sin movimiento no hay cruce: se cambia y ya',
+    );
   });
 }

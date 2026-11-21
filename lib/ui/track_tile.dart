@@ -32,6 +32,7 @@ class TrackTile extends StatelessWidget {
     this.leadingNumber,
     this.showArt = true,
     this.contentPadding,
+    this.mostrarAlbum = false,
   });
 
   final Track track;
@@ -43,82 +44,157 @@ class TrackTile extends StatelessWidget {
 
   final bool showArt;
   final EdgeInsetsGeometry? contentPadding;
+  final bool mostrarAlbum;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DesplegableEnSitio(
-      icono: Icons.more_vert,
-      tooltip: 'Más opciones',
-      opciones: [
-        if (actions.onQueue != null)
-          OpcionEnSitio(
-            icono: Icons.queue_music,
-            texto: 'Añadir a la cola',
-            onTap: actions.onQueue!,
-          ),
-        if (actions.onAddToPlaylist != null)
-          OpcionEnSitio(
-            icono: Icons.playlist_add,
-            texto: 'Añadir a una playlist',
-            onTap: actions.onAddToPlaylist!,
-          ),
-        if (actions.onRemove != null)
-          OpcionEnSitio(
-            icono: Icons.remove_circle_outline,
-            texto: 'Quitar de esta playlist',
-            onTap: actions.onRemove!,
-            destructiva: true,
-            confirmacion: '¿Quitar «${track.name}» de esta playlist?',
-            textoConfirmar: 'Quitar',
-          ),
-      ],
-      constructor: (context, disparador) => ListTile(
-        dense: true,
-        onTap: actions.onPlay,
-        contentPadding: contentPadding,
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (leadingNumber != null)
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '$leadingNumber',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  textAlign: TextAlign.right,
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final albumVisible = mostrarAlbum && constraints.maxWidth >= 620;
+        return DesplegableEnSitio(
+          icono: mostrarAlbum ? Icons.more_horiz : Icons.more_vert,
+          tooltip: 'Más opciones',
+          opciones: [
+            if (actions.onQueue != null)
+              OpcionEnSitio(
+                icono: Icons.queue_music,
+                texto: 'Añadir a la cola',
+                onTap: actions.onQueue!,
               ),
-            const SizedBox(width: 8),
-            ArtImage(url: showArt ? track.artSmall : null, size: 40),
+            if (actions.onAddToPlaylist != null)
+              OpcionEnSitio(
+                icono: Icons.playlist_add,
+                texto: 'Añadir a una playlist',
+                onTap: actions.onAddToPlaylist!,
+              ),
+            if (actions.onRemove != null)
+              OpcionEnSitio(
+                icono: Icons.remove_circle_outline,
+                texto: 'Quitar de esta playlist',
+                onTap: actions.onRemove!,
+                destructiva: true,
+                confirmacion: '¿Quitar «${track.name}» de esta playlist?',
+                textoConfirmar: 'Quitar',
+              ),
           ],
-        ),
-        title: Text(
-          track.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: isCurrent
-              ? theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.primary, fontWeight: FontWeight.w600)
-              : null,
-        ),
-        subtitle: Text(
-          track.artists,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (likes != null && track.uri.isNotEmpty)
-              LikeButton(likes: likes!, uri: track.uri, pista: track),
-            Text(formatMs(track.durationMs), style: theme.textTheme.bodySmall),
-            disparador,
-          ],
-        ),
-      ),
+          constructor: (context, disparador) => ListTile(
+            dense: true,
+            onTap: actions.onPlay,
+            contentPadding: contentPadding,
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leadingNumber != null)
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '$leadingNumber',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                ArtImage(url: showArt ? track.artSmall : null, size: 40),
+              ],
+            ),
+            title: Text(
+              track.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: isCurrent
+                  ? theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    )
+                  : null,
+            ),
+            subtitle: Text(
+              track.artists,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (albumVisible)
+                  SizedBox(
+                    width: constraints.maxWidth * .26,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 14),
+                      child: Text(
+                        track.album,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (likes != null && track.uri.isNotEmpty)
+                  LikeButton(likes: likes!, uri: track.uri, pista: track),
+                Text(
+                  formatMs(track.durationMs),
+                  style: theme.textTheme.bodySmall,
+                ),
+                disparador,
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class EncabezadoPistas extends StatelessWidget {
+  const EncabezadoPistas({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainer,
+            border: Border(
+              bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Row(
+              children: [
+                SizedBox(width: 34, child: Text('#', style: style)),
+                Expanded(child: T('Canción', style: style)),
+                if (constraints.maxWidth >= 620)
+                  SizedBox(
+                    width: constraints.maxWidth * .26 + 26,
+                    child: T('Álbum', style: style),
+                  ),
+                SizedBox(
+                  width: 64,
+                  child: T(
+                    'Duración',
+                    style: style,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -140,7 +216,11 @@ Future<Playlist?> pickPlaylist(BuildContext context, List<Playlist> playlists) {
                   return ListTile(
                     dense: true,
                     leading: ArtImage(url: pl.art, size: 32),
-                    title: Text(pl.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(
+                      pl.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () => Navigator.of(context).pop(pl),
                   );
                 },
@@ -173,7 +253,9 @@ class PlaylistSearchTile extends StatelessWidget {
     final theme = Theme.of(context);
     final subtitulo = playlist.owner.isNotEmpty
         ? 'Playlist • ${playlist.owner}'
-        : (playlist.trackCount > 0 ? '${playlist.trackCount} canciones' : 'Playlist');
+        : (playlist.trackCount > 0
+              ? '${playlist.trackCount} canciones'
+              : 'Playlist');
 
     return ListTile(
       dense: true,
@@ -189,7 +271,9 @@ class PlaylistSearchTile extends StatelessWidget {
         playlist.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
       ),
       subtitle: T(
         subtitulo,
@@ -199,7 +283,8 @@ class PlaylistSearchTile extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
-      trailing: trailing ??
+      trailing:
+          trailing ??
           Icon(
             Icons.chevron_right,
             size: 18,
@@ -242,7 +327,9 @@ class ArtistSearchTile extends StatelessWidget {
         artista.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
       ),
       subtitle: T(
         subtitulo,
@@ -252,7 +339,8 @@ class ArtistSearchTile extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
-      trailing: trailing ??
+      trailing:
+          trailing ??
           Icon(
             Icons.chevron_right,
             size: 18,

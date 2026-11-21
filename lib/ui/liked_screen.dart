@@ -8,6 +8,8 @@ import '../core/liked_store.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/spotify_api.dart';
+import '../core/temas.dart';
+import 'cabecera_coleccion.dart';
 import 'texto_traducido.dart';
 import 'track_tile.dart';
 
@@ -71,8 +73,9 @@ class _LikedScreenState extends State<LikedScreen> {
     unawaited(() async {
       final t = await traducirTexto(context, message);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(t), duration: const Duration(seconds: 2)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t), duration: const Duration(seconds: 2)),
+      );
     }());
   }
 
@@ -92,16 +95,13 @@ class _LikedScreenState extends State<LikedScreen> {
     // Misma lista que ve el usuario: tras unlike/like el índice del contexto
     // remoto de Spotify queda desfasado y suena otra pista.
     if (likes.biblioteca.isNotEmpty) {
-      final desde =
-          (offset ?? 0).clamp(0, likes.biblioteca.length - 1);
+      final desde = (offset ?? 0).clamp(0, likes.biblioteca.length - 1);
       // La API de play admite como mucho ~100 uris por llamada.
       const maxUris = 100;
       final fin = (desde + maxUris > likes.biblioteca.length)
           ? likes.biblioteca.length
           : desde + maxUris;
-      final uris = [
-        for (var i = desde; i < fin; i++) likes.biblioteca[i].uri,
-      ];
+      final uris = [for (var i = desde; i < fin; i++) likes.biblioteca[i].uri];
       await widget.player.playLista(uris, desde: 0);
       return;
     }
@@ -110,15 +110,19 @@ class _LikedScreenState extends State<LikedScreen> {
       _toast('Todavía no sé el id de tu cuenta; espera un momento.');
       return;
     }
-    await widget.player
-        .playContext(SpotifyApi.likedContextUri(userId), offset: offset);
+    await widget.player.playContext(
+      SpotifyApi.likedContextUri(userId),
+      offset: offset,
+    );
   }
 
   String _textoProgreso(LikedStore likes) {
     if (likes.biblioteca.isEmpty) {
       return likes.cargandoBiblioteca ? 'Cargando…' : 'Tu biblioteca guardada';
     }
-    if (!likes.cargandoBiblioteca) return '${likes.biblioteca.length} canciones';
+    if (!likes.cargandoBiblioteca) {
+      return '${likes.biblioteca.length} canciones';
+    }
     final total = likes.totalBiblioteca;
     return total == null
         ? 'Cargando… ${likes.biblioteca.length}'
@@ -128,6 +132,7 @@ class _LikedScreenState extends State<LikedScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
 
     if (!widget.auth.hasScope(kScopeLibraryRead)) return _reauthNotice(theme);
 
@@ -138,84 +143,124 @@ class _LikedScreenState extends State<LikedScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          theme.colorScheme.primary,
-                          theme.colorScheme.tertiary,
-                        ],
-                      ),
-                    ),
-                    child: const Icon(Icons.favorite, color: Colors.white, size: 40),
+            if (nocturno) ...[
+              CabeceraColeccion(
+                caratula: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        T('Canciones que te gustan',
-                            style: theme.textTheme.headlineSmall),
-                        const SizedBox(height: 4),
-                        T(
-                          _textoProgreso(likes),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            FilledButton.icon(
-                              onPressed: () => _play(),
-                              icon: const Icon(Icons.play_arrow),
-                              label: T('Reproducir'),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              tooltip:
-                                  'Volver a leer la biblioteca desde Spotify',
-                              icon: const Icon(Icons.refresh),
-                              onPressed: likes.cargandoBiblioteca
-                                  ? null
-                                  : () => unawaited(
-                                      likes.cargarBiblioteca(forzar: true)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                  child: Icon(
+                    Icons.favorite_rounded,
+                    size: 42,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                titulo: const T('Canciones que te gustan'),
+                detalle: T(_textoProgreso(likes)),
+                onPlay: () => _play(),
+                acciones: [
+                  IconButton(
+                    tooltip: 'Volver a leer la biblioteca desde Spotify',
+                    icon: const Icon(Icons.refresh),
+                    onPressed: likes.cargandoBiblioteca
+                        ? null
+                        : () => unawaited(likes.cargarBiblioteca(forzar: true)),
                   ),
                 ],
               ),
-            ),
+              const EncabezadoPistas(),
+            ] else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            theme.colorScheme.primary,
+                            theme.colorScheme.tertiary,
+                          ],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.favorite,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          T(
+                            'Canciones que te gustan',
+                            style: theme.textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          T(
+                            _textoProgreso(likes),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              FilledButton.icon(
+                                onPressed: () => _play(),
+                                icon: const Icon(Icons.play_arrow),
+                                label: T('Reproducir'),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                tooltip:
+                                    'Volver a leer la biblioteca desde Spotify',
+                                icon: const Icon(Icons.refresh),
+                                onPressed: likes.cargandoBiblioteca
+                                    ? null
+                                    : () => unawaited(
+                                        likes.cargarBiblioteca(forzar: true),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (likes.cargandoBiblioteca)
               LinearProgressIndicator(
                 minHeight: 2,
                 value: (likes.totalBiblioteca ?? 0) > 0
-                    ? (likes.biblioteca.length / likes.totalBiblioteca!)
-                        .clamp(0.0, 1.0)
+                    ? (likes.biblioteca.length / likes.totalBiblioteca!).clamp(
+                        0.0,
+                        1.0,
+                      )
                     : null,
               )
-            else
+            else if (!nocturno)
               const Divider(height: 1),
             Expanded(
               child: likes.errorBiblioteca != null && likes.biblioteca.isEmpty
                   ? Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Text(likes.errorBiblioteca!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: theme.colorScheme.error)),
+                        child: Text(
+                          likes.errorBiblioteca!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       ),
                     )
                   : _lista(likes),
@@ -250,6 +295,7 @@ class _LikedScreenState extends State<LikedScreen> {
               track: t,
               likes: likes,
               leadingNumber: i + 1,
+              mostrarAlbum: EstiloNeoFy.de(context).usaInterfazNocturna,
               isCurrent: currentUri != null && currentUri == t.uri,
               showArt: (i - centro).abs() <= _radioPortadas,
               actions: tile,
@@ -270,15 +316,20 @@ class _LikedScreenState extends State<LikedScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.lock_outline, size: 40, color: theme.colorScheme.primary),
+              Icon(
+                Icons.lock_outline,
+                size: 40,
+                color: theme.colorScheme.primary,
+              ),
               const SizedBox(height: 16),
               T('Hace falta un permiso más', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
               T(
                 'Para ver tus canciones guardadas necesitas dar el permiso «user-library-read».\n\n'
                 'Solo tienes que volver a iniciar sesión en Spotify. No perderás nada.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 20),
               FilledButton.icon(

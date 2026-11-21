@@ -275,6 +275,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   bool _booting = true;
   bool _sessionStarted = false;
+  int _generacionSesion = 0;
   bool _reiniciandoAudio = false;
 
   bool _ventanaVisible = true;
@@ -393,6 +394,8 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Future<void> _startSession() async {
     if (_sessionStarted) return;
     _sessionStarted = true;
+    final generacion = ++_generacionSesion;
+    _player.aplicarPerfilSpotify(const {});
 
     final ultima = await _memoria.cargar();
     if (!mounted) return;
@@ -400,33 +403,29 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
     await _librespot.start();
 
-    unawaited(_cargarCuenta());
+    unawaited(_cargarCuenta(generacion));
     _player.start();
-    unawaited(_waitForDevice());
+    unawaited(_waitForDevice(generacion));
     unawaited(_startSidecar());
   }
 
-  Future<void> _cargarCuenta() async {
+  Future<void> _cargarCuenta(int generacion) async {
     try {
       final me = await _api.me();
-      if (!mounted) return;
-      final isPrem = (me['product'] as String?) == 'premium';
-      _player.isPremium = isPrem;
-      _player.currentUserId = me['id'] as String?;
-      _player.premiumChecked = true;
+      if (!mounted || generacion != _generacionSesion) return;
+      _player.aplicarPerfilSpotify(me);
 
-      if (!isPrem) {
-        final puente = PuenteYt(_ytApi);
+      if (!_player.isPremium) {
         _player.libre = ReproduccionLibre(
-          puente: puente,
+          puente: PuenteYt(_ytApi),
           ytPlayer: _ytPlayer,
           api: _api,
           controller: _player,
         );
+        _player.olvidarDispositivo();
         await _librespot.stop();
       }
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _reiniciarAudio({bool porElUsuario = false, String motivo = '?'}) async {
@@ -500,10 +499,19 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     }
   }
 
-  Future<void> _waitForDevice() async {
+  Future<void> _waitForDevice(int generacion) async {
     for (var i = 0; i < 15; i++) {
-      if (!mounted) return;
+      if (!mounted ||
+          generacion != _generacionSesion ||
+          _player.libre != null) {
+        return;
+      }
       if (await _player.resolveDevice()) {
+        if (!mounted ||
+            generacion != _generacionSesion ||
+            _player.libre != null) {
+          return;
+        }
         await _player.ensurePausedAtStartup();
         return;
       }
@@ -705,8 +713,12 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
         onReauth: _reauth,
         ytAuth: _ytAuth,
         onLogout: () async {
+          ++_generacionSesion;
           await _sidecar.stop();
           await _librespot.stop();
+          _player.libre?.dispose();
+          _player.libre = null;
+          _player.olvidarDispositivo();
           await _auth.logout();
           await _smtc.stop();
           _sessionStarted = false;

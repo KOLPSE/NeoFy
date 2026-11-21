@@ -179,11 +179,13 @@ class Plegable extends StatefulWidget {
     required this.abierto,
     required this.contenidoAbierto,
     required this.contenidoCerrado,
+    this.recorteDirecto = false,
   });
 
   final bool abierto;
   final Widget contenidoAbierto;
   final Widget contenidoCerrado;
+  final bool recorteDirecto;
 
   @override
   State<Plegable> createState() => _PlegableState();
@@ -196,15 +198,20 @@ class _PlegableState extends State<Plegable>
     duration: kDuracionDesplegable,
     value: widget.abierto ? 1 : 0,
   );
-  late final Animation<double> _alto = CurvedAnimation(
+  late final _alto = CurvedAnimation(
     parent: _c,
     curve: kCurvaDesplegable,
     reverseCurve: kCurvaDesplegable,
   );
-  late final Animation<double> _opacidad = CurvedAnimation(
+  late final _opacidad = CurvedAnimation(
     parent: _c,
     curve: const Interval(0, 2 / 3, curve: Curves.linear),
     reverseCurve: const Interval(0, 2 / 3, curve: Curves.linear),
+  );
+  late final _recorte = CurvedAnimation(
+    parent: _c,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
   );
 
   @override
@@ -216,14 +223,28 @@ class _PlegableState extends State<Plegable>
 
   @override
   void dispose() {
+    _alto.dispose();
+    _opacidad.dispose();
+    _recorte.dispose();
     _c.dispose();
     super.dispose();
   }
 
   void _lanzar(bool abrir) {
     final mueve =
-        EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value;
-    _c.duration = mueve ? kDuracionDesplegable : Duration.zero;
+        EstiloNeoFy.de(context).movimiento.seMueve &&
+        !modoRendimiento.value &&
+        !MediaQuery.disableAnimationsOf(context);
+    if (!mueve) {
+      _c.value = abrir ? 1 : 0;
+      return;
+    }
+    _c.duration = widget.recorteDirecto
+        ? const Duration(milliseconds: 205)
+        : kDuracionDesplegable;
+    _c.reverseDuration = widget.recorteDirecto
+        ? const Duration(milliseconds: 155)
+        : kDuracionDesplegable;
     if (abrir) {
       _c.forward();
     } else {
@@ -239,6 +260,28 @@ class _PlegableState extends State<Plegable>
       builder: (context, lista) {
         if (_c.value <= 0 && !widget.abierto) {
           return widget.contenidoCerrado;
+        }
+        if (widget.recorteDirecto) {
+          final opacidadFijada = (1 - _c.value * 5).clamp(0.0, 1.0);
+          return Stack(
+            children: [
+              if (opacidadFijada > 0)
+                IgnorePointer(
+                  child: Opacity(
+                    opacity: opacidadFijada,
+                    child: widget.contenidoCerrado,
+                  ),
+                ),
+              SizeTransition(
+                sizeFactor: _recorte,
+                alignment: Alignment.topCenter,
+                child: IgnorePointer(
+                  ignoring: !widget.abierto,
+                  child: ExcludeFocus(excluding: !widget.abierto, child: lista!),
+                ),
+              ),
+            ],
+          );
         }
         return Stack(
           children: [

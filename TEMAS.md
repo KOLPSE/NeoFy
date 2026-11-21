@@ -417,10 +417,11 @@ Cosas que conviene mirar antes de publicar:
 
 ## Los temas incluidos
 
-Vienen once, y sirven de referencia: **Claro**, **Oscuro**, **Verde claro**, **Verde
-oscuro**, **Azul claro**, **Azul oscuro**, **Rojo claro**, **Rojo oscuro**, **Material
-claro**, **Material oscuro** y **Liquid Glass**. Más la opción **Automático**, que va
-cambiando entre Claro y Oscuro según lo que diga Windows o tu escritorio.
+**NeoFy Nocturno** es el tema predeterminado. También se aplica al actualizar
+desde el antiguo Material oscuro de fábrica. En **Ajustes → Temas → Cambiar**,
+elige **Material oscuro** o **Material claro** para volver a la distribución
+clásica de NeoFy. La elección queda guardada. También puedes elegir **Liquid
+Glass** o **Automático** para seguir la apariencia de tu escritorio.
 
 Los dos **Material** son los más interesantes para copiar, porque enseñan dos cosas que el
 resto no hace:
