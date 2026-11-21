@@ -18,34 +18,54 @@ if (Buscar-AtlEnDisco) {
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
-if (-not (Test-Path $vswhere) -or -not (Test-Path $installer)) {
+if (-not (Test-Path $installer)) {
   throw 'Falta Visual Studio Installer en el runner de Windows.'
 }
 
-$atl = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.ATL -property installationPath | Select-Object -First 1
-if (-not $atl) {
-  $instance = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+$instance = $null
+if (Test-Path $vswhere) {
+  $instance = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1
   if (-not $instance) {
-    $instance = & $vswhere -all -products '*' -property installationPath |
-      Where-Object { Test-Path (Join-Path $_ 'VC\Tools\MSVC') } |
+    $instance = & $vswhere -products '*' -property installationPath 2>$null |
+      Where-Object { $_ -and (Test-Path (Join-Path $_ 'VC\Tools\MSVC')) } |
       Select-Object -First 1
   }
-  if (-not $instance) { throw 'Faltan las herramientas C++ de Visual Studio.' }
+}
 
-  Write-Host 'Añadiendo ATL al Visual Studio del runner de Windows.'
-  $process = Start-Process -FilePath $installer -ArgumentList @(
-    'modify', '--installPath', ('"' + $instance + '"'),
-    '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
-    '--quiet', '--norestart'
-  ) -Wait -PassThru -WindowStyle Hidden
-  if ($process.ExitCode -ne 0) { throw "No se pudo instalar ATL (código $($process.ExitCode))." }
+if (-not $instance -and $env:VSINSTALLDIR) {
+  $cand = $env:VSINSTALLDIR.TrimEnd('\')
+  if (Test-Path (Join-Path $cand 'VC\Tools\MSVC')) {
+    $instance = $cand
+  }
+}
 
-  if (-not (Buscar-AtlEnDisco)) {
-    $atl = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.ATL -property installationPath | Select-Object -First 1
-    if (-not $atl) { throw 'ATL no aparece instalado tras ejecutar Visual Studio Installer.' }
-  }
-  if (Test-Path 'C:\ci\msvc-env.ps1') {
-    & 'C:\ci\msvc-env.ps1'
-  }
+if (-not $instance) {
+  $instance = Get-ChildItem -Path @(
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*",
+    "${env:ProgramFiles}\Microsoft Visual Studio\*\*"
+  ) -Directory -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path (Join-Path $_.FullName 'VC\Tools\MSVC') } |
+    Select-Object -ExpandProperty FullName -First 1
+}
+
+if (-not $instance) {
+  throw 'Faltan las herramientas C++ de Visual Studio.'
+}
+
+Write-Host "Añadiendo ATL a Visual Studio ($instance) en el runner de Windows."
+$process = Start-Process -FilePath $installer -ArgumentList @(
+  'modify', '--installPath', ('"' + $instance + '"'),
+  '--add', 'Microsoft.VisualStudio.Component.VC.ATL',
+  '--quiet', '--norestart'
+) -Wait -PassThru -WindowStyle Hidden
+if ($process.ExitCode -ne 0) {
+  throw "No se pudo instalar ATL (código $($process.ExitCode))."
+}
+
+if (-not (Buscar-AtlEnDisco)) {
+  throw 'ATL no aparece instalado tras ejecutar Visual Studio Installer.'
+}
+if (Test-Path 'C:\ci\msvc-env.ps1') {
+  & 'C:\ci\msvc-env.ps1'
 }
 Write-Host 'ATL disponible para la compilación de Windows.'
