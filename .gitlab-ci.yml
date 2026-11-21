@@ -8,6 +8,14 @@
 #   arch    -> la VM de Arch     (paquete pacman + repositorio)
 #   publish -> el propio servidor (sube las releases a GitHub)
 
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+
 stages:
   - check
   - build
@@ -18,11 +26,39 @@ variables:
   FLUTTER_SUPPRESS_ANALYTICS: "true"
   PUB_CACHE: "$CI_PROJECT_DIR/.pub-cache"
 
+# Limpieza puntual de rutas largas en vm-windows cuando se lanza manualmente con CLEAN_WINDOWS_DIR=true
+cleanup:windows:
+  stage: check
+  tags:
+    - windows
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - |
+      $target = "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex\neofy"
+      if (Test-Path -LiteralPath "\\?\$target") {
+        $empty = Join-Path $env:TEMP "empty-ci-$PID"
+        New-Item -ItemType Directory -Force -Path $empty | Out-Null
+        & robocopy $empty $target /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+        $global:LASTEXITCODE = 0
+        Remove-Item -LiteralPath $empty -Force -Recurse -ErrorAction SilentlyContinue
+        cmd /c "rmdir /s /q `"$target`""
+        $global:LASTEXITCODE = 0
+      }
+      Write-Host "Directorio de build en vm-windows limpiado."
+
 # --------------------------------------------------------------------- checks
 check:windows:
   stage: check
   tags:
     - windows
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
   before_script:
@@ -50,9 +86,13 @@ check:ubuntu:
   stage: check
   tags:
     - ubuntu
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - when: on_success
   before_script:
-    - sudo apt-get update
-    - sudo apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev
+    - sudo apt-get -o DPkg::Lock::Timeout=180 update
+    - sudo apt-get -o DPkg::Lock::Timeout=180 install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev
   script:
     - flutter pub get
     - flutter analyze
@@ -68,6 +108,10 @@ build:windows:
   stage: build
   tags:
     - windows
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
   before_script:
@@ -89,11 +133,15 @@ build:linux:
   stage: build
   tags:
     - ubuntu
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - when: on_success
   needs:
     - job: check:ubuntu
   before_script:
-    - sudo apt-get update
-    - sudo apt-get install -y --no-install-recommends
+    - sudo apt-get -o DPkg::Lock::Timeout=180 update
+    - sudo apt-get -o DPkg::Lock::Timeout=180 install -y --no-install-recommends
       clang cmake ninja-build pkg-config libgtk-3-dev
       libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev libsecret-1-dev
       libmpv2 xvfb xauth
@@ -151,6 +199,10 @@ build:arch:
   stage: build
   tags:
     - arch
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - when: on_success
   needs:
     - job: build:linux
       artifacts: true
@@ -290,6 +342,8 @@ publish:github:
   tags:
     - publish
   rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
     - if: $CI_COMMIT_TAG
       when: manual
       allow_failure: false
@@ -358,13 +412,13 @@ publish:github:
       NOTAS
       sed -i 's/^          //' /tmp/notas-repo.md
 
-      if ! gh release view repo >/dev/null 2>&1; then
-        gh release create repo --latest=false \
+      if ! gh release view repo --repo "$REPO" >/dev/null 2>&1; then
+        gh release create repo --repo "$REPO" --latest=false \
           --title 'Repositorio pacman para Arch (no es una version)' \
           --notes-file /tmp/notas-repo.md
       fi
 
-      gh release upload repo \
+      gh release upload repo --repo "$REPO" \
         "$nombre" neofy.db neofy.files neofy.db.tar.gz neofy.files.tar.gz \
         --clobber
       echo "  repositorio pacman actualizado con $nombre"

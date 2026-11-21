@@ -1,8 +1,9 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# El SDK vive en el directorio de trabajo del runner, no en el sistema.
-$toolsDir = Join-Path $env:CI_PROJECT_DIR '.ci-tools\flutter-3.44.6-tar'
+# El SDK vive fuera del directorio del repo en una ruta corta para evitar
+# errores de MAX_PATH (>260 caracteres) al limpiar el workspace del runner.
+$toolsDir = if ($env:NEOFY_CI_TOOLS_DIR) { $env:NEOFY_CI_TOOLS_DIR } else { 'C:\ci\flutter-3.44.6' }
 $sdkRoot = Join-Path $toolsDir 'flutter'
 $completed = Join-Path $toolsDir 'sdk-ready'
 if (-not (Test-Path $completed)) {
