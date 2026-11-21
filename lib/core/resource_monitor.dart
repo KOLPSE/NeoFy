@@ -85,6 +85,8 @@ class ResourceMonitor extends ChangeNotifier {
 
   UsoDeRecursos uso = const UsoDeRecursos();
   Timer? _timer;
+  bool _activo = false;
+  bool _visible = true;
 
   int? techoBytes;
 
@@ -125,8 +127,24 @@ class ResourceMonitor extends ChangeNotifier {
   }
 
   void start() {
+    _activo = true;
+    if (!_visible) return;
     _muestrear();
     _timer ??= Timer.periodic(_intervalo, (_) => _muestrear());
+  }
+
+  void setVisible(bool visible) {
+    if (_visible == visible) return;
+    _visible = visible;
+    if (!visible) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    if (_activo) {
+      _muestrear();
+      _timer ??= Timer.periodic(_intervalo, (_) => _muestrear());
+    }
   }
 
   void _muestrear() {
@@ -214,6 +232,8 @@ class ResourceMonitor extends ChangeNotifier {
     }
   }
 
+  static final _reEspacios = RegExp(r'\s+');
+
   @visibleForTesting
   static int pssDeSmapsRollup(String rollup) {
     for (final linea in const LineSplitter().convert(rollup)) {
@@ -221,7 +241,7 @@ class ResourceMonitor extends ChangeNotifier {
       if (dosPuntos < 0) continue;
       if (linea.substring(0, dosPuntos).trim() != 'Pss') continue;
       final resto = linea.substring(dosPuntos + 1).trim();
-      final numero = resto.split(RegExp(r'\s+')).first;
+      final numero = resto.split(_reEspacios).first;
       final kb = int.tryParse(numero);
       return kb == null ? 0 : kb * 1024;
     }
@@ -230,7 +250,7 @@ class ResourceMonitor extends ChangeNotifier {
 
   @visibleForTesting
   static int rssDeStatm(String statm) {
-    final campos = statm.trim().split(RegExp(r'\s+'));
+    final campos = statm.trim().split(_reEspacios);
     if (campos.length < 2) return 0;
     return (int.tryParse(campos[1]) ?? 0) * _tamanoDePagina;
   }
@@ -239,7 +259,7 @@ class ResourceMonitor extends ChangeNotifier {
   static int ticksDeStat(String stat) {
     final cierre = stat.lastIndexOf(')');
     if (cierre < 0) return 0;
-    final campos = stat.substring(cierre + 1).trim().split(RegExp(r'\s+'));
+    final campos = stat.substring(cierre + 1).trim().split(_reEspacios);
     if (campos.length < 13) return 0;
     final utime = int.tryParse(campos[11]) ?? 0;
     final stime = int.tryParse(campos[12]) ?? 0;

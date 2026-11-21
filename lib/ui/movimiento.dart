@@ -329,6 +329,14 @@ class _GiroConMuelleState extends State<GiroConMuelle>
     duration: kDuracionDesplegable,
     value: widget.abierto ? 1 : 0,
   );
+  late final CurvedAnimation _curva = CurvedAnimation(
+    parent: _c,
+    curve: kCurvaDesplegable,
+  );
+  late final Animation<double> _giro = Tween<double>(
+    begin: 0.5,
+    end: 0,
+  ).animate(_curva);
 
   @override
   void didUpdateWidget(covariant GiroConMuelle viejo) {
@@ -346,6 +354,7 @@ class _GiroConMuelleState extends State<GiroConMuelle>
 
   @override
   void dispose() {
+    _curva.dispose();
     _c.dispose();
     super.dispose();
   }
@@ -353,9 +362,7 @@ class _GiroConMuelleState extends State<GiroConMuelle>
   @override
   Widget build(BuildContext context) {
     return RotationTransition(
-      turns: Tween<double>(begin: 0.5, end: 0).animate(
-        CurvedAnimation(parent: _c, curve: kCurvaDesplegable),
-      ),
+      turns: _giro,
       child: widget.child,
     );
   }

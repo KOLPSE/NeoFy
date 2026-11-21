@@ -94,8 +94,10 @@ class MprisService {
   }
 }
 
+final _reRutaMpris = RegExp(r'[^A-Za-z0-9_]');
+
 String _rutaDeTrack(String id) {
-  final limpio = id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+  final limpio = id.replaceAll(_reRutaMpris, '_');
   return limpio.isEmpty
       ? '/xyz/neogex/neofy/desconocida'
       : '/xyz/neogex/neofy/track/$limpio';

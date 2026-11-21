@@ -66,15 +66,25 @@ class _DialogoDeIdiomaState extends State<_DialogoDeIdioma> {
   final _busqueda = TextEditingController();
   final _focoBusqueda = FocusNode();
   String _filtro = '';
+  List<IdiomaSpotify> _filtrados = idiomasFiltrados('');
 
   @override
   void initState() {
     super.initState();
-    _busqueda.addListener(() => setState(() => _filtro = _busqueda.text));
+    _busqueda.addListener(_alCambiarBusqueda);
+  }
+
+  void _alCambiarBusqueda() {
+    if (_busqueda.text == _filtro) return;
+    setState(() {
+      _filtro = _busqueda.text;
+      _filtrados = idiomasFiltrados(_filtro);
+    });
   }
 
   @override
   void dispose() {
+    _busqueda.removeListener(_alCambiarBusqueda);
     _focoBusqueda.dispose();
     _busqueda.dispose();
     super.dispose();
@@ -89,7 +99,7 @@ class _DialogoDeIdiomaState extends State<_DialogoDeIdioma> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final preferido = widget.settings.idiomaPreferido;
-    final lista = idiomasFiltrados(_filtro);
+    final lista = _filtrados;
 
     return AlertDialog(
       title: T('Idioma de Spotify'),
@@ -116,17 +126,20 @@ class _DialogoDeIdiomaState extends State<_DialogoDeIdioma> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: ListView(
-                children: [
-                  _FilaDeIdioma(
-                    nombre: nombreIdiomaPreferido(kIdiomaSistema),
-                    codigo: 'Automático',
-                    elegido: preferido.isEmpty,
-                    onTap: () => _elegir(kIdiomaSistema),
-                  ),
-                  const Divider(height: 16),
-                  if (lista.isEmpty)
-                    Padding(
+              child: ListView.builder(
+                itemCount: lista.isEmpty ? 3 : lista.length + 2,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _FilaDeIdioma(
+                      nombre: nombreIdiomaPreferido(kIdiomaSistema),
+                      codigo: 'Automático',
+                      elegido: preferido.isEmpty,
+                      onTap: () => _elegir(kIdiomaSistema),
+                    );
+                  }
+                  if (index == 1) return const Divider(height: 16);
+                  if (lista.isEmpty) {
+                    return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       child: T(
                         'Ningún idioma coincide con «$_filtro».',
@@ -134,15 +147,16 @@ class _DialogoDeIdiomaState extends State<_DialogoDeIdioma> {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    ),
-                  for (final idioma in lista)
-                    _FilaDeIdioma(
-                      nombre: idioma.nombre,
-                      codigo: idioma.codigo,
-                      elegido: preferido == idioma.codigo,
-                      onTap: () => _elegir(idioma.codigo),
-                    ),
-                ],
+                    );
+                  }
+                  final idioma = lista[index - 2];
+                  return _FilaDeIdioma(
+                    nombre: idioma.nombre,
+                    codigo: idioma.codigo,
+                    elegido: preferido == idioma.codigo,
+                    onTap: () => _elegir(idioma.codigo),
+                  );
+                },
               ),
             ),
           ],

@@ -78,17 +78,26 @@ class YtPlayer extends ChangeNotifier {
 
   final Map<String, ({String url, DateTime hasta})> _urls = {};
   static const _vidaDeUrl = Duration(minutes: 45);
+  static File? _ytDlpCache;
+  bool _disposed = false;
 
   static File? findYtDlpBinary() {
+    final cache = _ytDlpCache;
+    if (cache != null && cache.existsSync()) return cache;
     final nombre = 'yt-dlp$sufijoEjecutable';
     for (final c in [
       p.join(p.dirname(Platform.resolvedExecutable), nombre),
       p.join(Directory.current.path, 'tool', 'ytdlp-build', 'bin', nombre),
     ]) {
       final f = File(c);
-      if (f.existsSync()) return f;
+      if (f.existsSync()) {
+        _ytDlpCache = f;
+        return f;
+      }
     }
-    return _enElPath(nombre);
+    final enPath = _enElPath(nombre);
+    if (enPath != null) _ytDlpCache = enPath;
+    return enPath;
   }
 
   static File? _enElPath(String nombre) {
@@ -186,16 +195,6 @@ class YtPlayer extends ChangeNotifier {
 
   Future<void> reproducirPista(YtTrack t) => reproducirLista([t]);
 
-  void anexar(List<YtTrack> pistas) {
-    if (pistas.isEmpty || cola.isEmpty) return;
-    final vistos = cola.map((t) => t.videoId).toSet();
-    final nuevas = pistas.where((t) => vistos.add(t.videoId)).toList();
-    if (nuevas.isEmpty) return;
-    cola = List.unmodifiable([...cola, ...nuevas]);
-    notifyListeners();
-    _adelantarSiguiente();
-  }
-
   Future<void> _abrirActual() async {
     final t = actual;
     final mpv = _mpv;
@@ -253,12 +252,6 @@ class YtPlayer extends ChangeNotifier {
     await _abrirActual();
   }
 
-  Future<void> saltarA(int i) async {
-    if (i < 0 || i >= cola.length) return;
-    indice = i;
-    await _abrirActual();
-  }
-
   Future<void> alternar() async {
     final mpv = _mpv;
     if (mpv == null) return;
@@ -281,7 +274,8 @@ class YtPlayer extends ChangeNotifier {
     final nuevo = v.clamp(0, 100);
     if (nuevo == volumen) return;
     volumen = nuevo;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
+    onVolumenFijado?.call(nuevo);
     await _mpv?.setVolume(nuevo.toDouble());
   }
 
@@ -300,11 +294,12 @@ class YtPlayer extends ChangeNotifier {
     indice = -1;
     contexto = null;
     error = null;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     unawaited(_subCompletado?.cancel());
     unawaited(_subError?.cancel());
     unawaited(_mpv?.dispose());

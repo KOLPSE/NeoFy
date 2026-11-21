@@ -24,7 +24,7 @@ class PersonalizacionTema extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AnimatedBuilder(
-      animation: Listenable.merge([temas, settings]),
+      animation: temas,
       builder: (context, _) {
         final activo = temas.porId(temas.idSeleccionado);
         final esMaterial =

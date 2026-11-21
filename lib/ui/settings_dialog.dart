@@ -208,7 +208,7 @@ class PanelAjustes extends StatelessWidget {
   }
 
   List<Widget> _soporte() => [
-    _EnviarReporte(neoreport: NeoReport(), trackUri: trackUri),
+    _EnviarReporte(trackUri: trackUri),
     _Actualizaciones(
       updater: updater,
       onSalirParaActualizar: onSalirParaActualizar,
@@ -320,8 +320,7 @@ class _SeccionDeAjustes extends StatelessWidget {
 }
 
 class _EnviarReporte extends StatefulWidget {
-  const _EnviarReporte({required this.neoreport, required this.trackUri});
-  final NeoReport neoreport;
+  const _EnviarReporte({required this.trackUri});
   final String? trackUri;
 
   @override
@@ -329,6 +328,7 @@ class _EnviarReporte extends StatefulWidget {
 }
 
 class _EnviarReporteState extends State<_EnviarReporte> {
+  final _neoreport = NeoReport();
   final _title = TextEditingController();
   final _body = TextEditingController();
   String _category = 'bug';
@@ -337,6 +337,7 @@ class _EnviarReporteState extends State<_EnviarReporte> {
 
   @override
   void dispose() {
+    _neoreport.close();
     _title.dispose();
     _body.dispose();
     super.dispose();
@@ -352,7 +353,7 @@ class _EnviarReporteState extends State<_EnviarReporte> {
       _error = null;
     });
     try {
-      final uri = await widget.neoreport.enviar(
+      final uri = await _neoreport.enviar(
         title: _title.text,
         body: _body.text,
         category: _category,
@@ -367,7 +368,7 @@ class _EnviarReporteState extends State<_EnviarReporte> {
         );
       }
       try {
-        await widget.neoreport.abrir(uri);
+        await _neoreport.abrir(uri);
       } catch (_) {
         if (mounted) {
           setState(
@@ -502,7 +503,7 @@ class _Actualizaciones extends StatelessWidget {
   final Updater updater;
   final Future<void> Function() onSalirParaActualizar;
 
-  Future<void> _actualizar(BuildContext context) async {
+  Future<void> _actualizar() async {
     await updater.descargar();
     if (updater.estado != EstadoActualizacion.listaParaInstalar) return;
     if (await updater.instalar()) {
@@ -575,7 +576,7 @@ class _Actualizaciones extends StatelessWidget {
             if (estado == EstadoActualizacion.disponible &&
                 Updater.seInstalaSolo)
               FilledButton(
-                onPressed: () => _actualizar(context),
+                onPressed: _actualizar,
                 child: T('Actualizar'),
               )
             else if (estado != EstadoActualizacion.descargando &&
@@ -653,7 +654,7 @@ class _CampoDiscordClientIdState extends State<_CampoDiscordClientId> {
   @override
   void didUpdateWidget(covariant _CampoDiscordClientId oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.settings.discordClientId != _controller.text) {
+    if (!_foco.hasFocus && widget.settings.discordClientId != _controller.text) {
       _controller.text = widget.settings.discordClientId;
     }
   }

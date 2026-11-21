@@ -50,6 +50,8 @@ class VolumenLocal {
   }
 }
 
+final _reSinkInput = RegExp(r'^Sink Input #(\d+)');
+
 /// Ids de sink-input cuyo proceso es librespot. El formato es el de
 /// `pactl list sink-inputs`, no el JSON: PipeWire a veces no lo da.
 List<String> entradasDeLibrespot(String listado) {
@@ -65,7 +67,7 @@ List<String> entradasDeLibrespot(String listado) {
 
   for (final cruda in listado.split('\n')) {
     final linea = cruda.trim();
-    final cabecera = RegExp(r'^Sink Input #(\d+)').firstMatch(linea);
+    final cabecera = _reSinkInput.firstMatch(linea);
     if (cabecera != null) {
       cerrar();
       actual = cabecera.group(1);

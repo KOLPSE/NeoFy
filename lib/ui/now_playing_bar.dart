@@ -53,16 +53,38 @@ class NowPlayingBar extends StatefulWidget {
 }
 
 class _NowPlayingBarState extends State<NowPlayingBar> {
-  double? _dragMs;
-
-  double? _dragVolume;
+  final ValueNotifier<double?> _dragMs = ValueNotifier(null);
+  final ValueNotifier<double?> _dragVolume = ValueNotifier(null);
+  late Listenable _escucha;
 
   bool _cuotaIgnorada = false;
 
   @override
+  void initState() {
+    super.initState();
+    _escucha = Listenable.merge([widget.player, widget.librespot]);
+  }
+
+  @override
+  void didUpdateWidget(covariant NowPlayingBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player ||
+        oldWidget.librespot != widget.librespot) {
+      _escucha = Listenable.merge([widget.player, widget.librespot]);
+    }
+  }
+
+  @override
+  void dispose() {
+    _dragMs.dispose();
+    _dragVolume.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.player, widget.librespot]),
+      animation: _escucha,
       builder: (context, _) {
         final theme = Theme.of(context);
         final estilo = EstiloNeoFy.de(context);
@@ -328,41 +350,44 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
     );
     return ValueListenableBuilder<int>(
       valueListenable: player.progressMs,
-      builder: (context, progress, _) {
-        final shown = _dragMs ?? progress.toDouble();
-        final max = durationMs <= 0 ? 1.0 : durationMs.toDouble();
-        return Row(
-          children: [
-            SizedBox(
-              width: 40,
-              child: Text(
-                formatMs(shown.round()),
-                style: tiempo,
-                textAlign: TextAlign.right,
+      builder: (context, progress, _) => ValueListenableBuilder<double?>(
+        valueListenable: _dragMs,
+        builder: (context, dragMs, _) {
+          final shown = dragMs ?? progress.toDouble();
+          final max = durationMs <= 0 ? 1.0 : durationMs.toDouble();
+          return Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Text(
+                  formatMs(shown.round()),
+                  style: tiempo,
+                  textAlign: TextAlign.right,
+                ),
               ),
-            ),
-            Expanded(
-              child: BarraDeProgreso(
-                clavePista: state.track?.uri,
-                valor: shown.clamp(0, max),
-                maximo: max,
-                enMarcha: state.isPlaying,
-                onCambio: durationMs <= 0
-                    ? null
-                    : (v) => setState(() => _dragMs = v),
-                onFinDelCambio: (v) {
-                  setState(() => _dragMs = null);
-                  player.seek(v.round());
-                },
+              Expanded(
+                child: BarraDeProgreso(
+                  clavePista: state.track?.uri,
+                  valor: shown.clamp(0, max),
+                  maximo: max,
+                  enMarcha: state.isPlaying,
+                  onCambio: durationMs <= 0
+                      ? null
+                      : (v) => _dragMs.value = v,
+                  onFinDelCambio: (v) {
+                    _dragMs.value = null;
+                    player.seek(v.round());
+                  },
+                ),
               ),
-            ),
-            SizedBox(
-              width: 40,
-              child: Text(formatMs(durationMs), style: tiempo),
-            ),
-          ],
-        );
-      },
+              SizedBox(
+                width: 40,
+                child: Text(formatMs(durationMs), style: tiempo),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -377,46 +402,51 @@ class _NowPlayingBarState extends State<NowPlayingBar> {
   Widget _volume(int percent, {bool compacto = false}) {
     final player = widget.player;
     final muteado = player.muteado;
-    final shown = _dragVolume ?? percent.toDouble().clamp(0, 100);
-    return SizedBox(
-      width: 150,
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: muteado ? 'Activar sonido' : 'Silenciar',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-            icon: IconoDeVolumen(
-              volumen: shown,
-              muteado: muteado,
-              tamano: 20,
-            ),
-            onPressed: () => unawaited(player.alternarMute()),
-          ),
-          Expanded(
-            child: Slider(
-              value: shown,
-              max: 100,
-              onChanged: (v) {
-                setState(() => _dragVolume = v);
-                player.previsualizarVolumen(v.round());
-              },
-              onChangeEnd: (v) {
-                setState(() => _dragVolume = null);
-                unawaited(player.setVolume(v.round()));
-              },
-            ),
-          ),
-          if (!compacto)
-            SizedBox(
-              width: 26,
-              child: Text(
-                '${shown.round()}',
-                style: Theme.of(context).textTheme.bodySmall,
+    return ValueListenableBuilder<double?>(
+      valueListenable: _dragVolume,
+      builder: (context, dragVol, _) {
+        final shown = dragVol ?? percent.toDouble().clamp(0, 100);
+        return SizedBox(
+          width: 150,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: muteado ? 'Activar sonido' : 'Silenciar',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                icon: IconoDeVolumen(
+                  volumen: shown,
+                  muteado: muteado,
+                  tamano: 20,
+                ),
+                onPressed: () => unawaited(player.alternarMute()),
               ),
-            ),
-        ],
-      ),
+              Expanded(
+                child: Slider(
+                  value: shown,
+                  max: 100,
+                  onChanged: (v) {
+                    _dragVolume.value = v;
+                    player.previsualizarVolumen(v.round());
+                  },
+                  onChangeEnd: (v) {
+                    _dragVolume.value = null;
+                    unawaited(player.setVolume(v.round()));
+                  },
+                ),
+              ),
+              if (!compacto)
+                SizedBox(
+                  width: 26,
+                  child: Text(
+                    '${shown.round()}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 

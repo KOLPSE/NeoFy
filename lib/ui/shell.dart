@@ -155,12 +155,32 @@ class _AppShellState extends State<AppShell> {
   final Set<String> _carpetasPlegadas = {};
 
   int _offset = 0;
+  late Listenable _escuchaSidebar;
 
   @override
   void initState() {
     super.initState();
+    _escuchaSidebar = Listenable.merge([
+      widget.carpetas,
+      widget.favoritos,
+      widget.settings,
+    ]);
     _scroll.addListener(_onScroll);
     unawaited(_loadMore());
+  }
+
+  @override
+  void didUpdateWidget(covariant AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.carpetas != widget.carpetas ||
+        oldWidget.favoritos != widget.favoritos ||
+        oldWidget.settings != widget.settings) {
+      _escuchaSidebar = Listenable.merge([
+        widget.carpetas,
+        widget.favoritos,
+        widget.settings,
+      ]);
+    }
   }
 
   @override
@@ -328,34 +348,16 @@ class _AppShellState extends State<AppShell> {
     String pista = 'Mi playlist',
     String inicial = '',
   }) {
-    final controlador = TextEditingController(text: inicial);
     return showDialogTraducido<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: T(titulo),
-        content: TextField(
-          controller: controlador,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: etiqueta,
-            hintText: pista,
-          ),
-          onSubmitted: (v) => Navigator.of(context).pop(v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: T('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controlador.text),
-            child: T(boton),
-          ),
-        ],
+      builder: (context) => _DialogoNombre(
+        titulo: titulo,
+        etiqueta: etiqueta,
+        boton: boton,
+        pista: pista,
+        inicial: inicial,
       ),
-    ).whenComplete(() {
-      controlador.dispose();
-    });
+    );
   }
 
   Future<void> _crearCarpeta() async {
@@ -469,11 +471,7 @@ class _AppShellState extends State<AppShell> {
                       _panelLateral(
                         hayCristal,
                         AnimatedBuilder(
-                          animation: Listenable.merge([
-                            widget.carpetas,
-                            widget.favoritos,
-                            widget.settings,
-                          ]),
+                          animation: _escuchaSidebar,
                           builder: (context, _) => _EscuchaReproductor(
                             player: widget.player,
                             builder: (context, playingContextUri, sinPremium) =>
@@ -769,10 +767,10 @@ class _AppShellState extends State<AppShell> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
-    return AnimatedBuilder(
-      animation: widget.player,
-      builder: (context, _) {
-        final nombre = widget.player.currentDisplayName?.trim() ?? '';
+    return _SelectorDeReproductor<String>(
+      player: widget.player,
+      selector: (p) => p.currentDisplayName?.trim() ?? '',
+      builder: (context, nombre) {
         final iconoCuenta = nombre.isEmpty
             ? const Icon(Icons.person_outline, size: 19)
             : Text(nombre.characters.first.toUpperCase());
@@ -949,31 +947,40 @@ class _AppShellState extends State<AppShell> {
   Widget _content(bool nocturno) {
     switch (_view) {
       case _View.settings:
-        return AnimatedBuilder(
-          animation: widget.player,
-          builder: (context, _) => PanelAjustes(
-            monitor: widget.ram,
-            settings: widget.settings,
-            updater: widget.updater,
-            onSalirParaActualizar: widget.onSalirParaActualizar,
-            trackUri: widget.player.state.track?.uri,
-            enPagina: true,
-            onCuenta: () => _navegar(_View.account),
-            apariencia: [
-              BotonDeTemas(temas: widget.temas, settings: widget.settings),
-              BotonDeIdioma(settings: widget.settings),
-            ],
-            audio: [
-              if (widget.player.premiumChecked && !widget.player.isPremium)
-                ConectarYouTubeMusic(auth: widget.ytAuth),
-              if (widget.player.libre == null)
-                CalidadDeAudio(
-                  settings: widget.settings,
-                  onReiniciar: widget.onReiniciarAudio,
-                ),
-              ReiniciarAudioDeNeoFy(onReiniciar: widget.onReiniciarAudio),
-            ],
+        return _SelectorDeReproductor<(String?, bool, bool, bool)>(
+          player: widget.player,
+          selector: (p) => (
+            p.state.track?.uri,
+            p.premiumChecked,
+            p.isPremium,
+            p.libre != null,
           ),
+          builder: (context, datos) {
+            final (trackUri, premiumChecked, isPremium, enLibre) = datos;
+            return PanelAjustes(
+              monitor: widget.ram,
+              settings: widget.settings,
+              updater: widget.updater,
+              onSalirParaActualizar: widget.onSalirParaActualizar,
+              trackUri: trackUri,
+              enPagina: true,
+              onCuenta: () => _navegar(_View.account),
+              apariencia: [
+                BotonDeTemas(temas: widget.temas, settings: widget.settings),
+                BotonDeIdioma(settings: widget.settings),
+              ],
+              audio: [
+                if (premiumChecked && !isPremium)
+                  ConectarYouTubeMusic(auth: widget.ytAuth),
+                if (!enLibre)
+                  CalidadDeAudio(
+                    settings: widget.settings,
+                    onReiniciar: widget.onReiniciarAudio,
+                  ),
+                ReiniciarAudioDeNeoFy(onReiniciar: widget.onReiniciarAudio),
+              ],
+            );
+          },
         );
       case _View.account:
         return _cuenta();
@@ -1077,11 +1084,15 @@ class _AppShellState extends State<AppShell> {
 
   Widget _cuenta() {
     final theme = Theme.of(context);
-    return AnimatedBuilder(
-      animation: widget.player,
-      builder: (context, _) {
-        final player = widget.player;
-        final nombre = player.currentDisplayName?.trim() ?? '';
+    return _SelectorDeReproductor<(String, bool, bool)>(
+      player: widget.player,
+      selector: (p) => (
+        p.currentDisplayName?.trim() ?? '',
+        p.premiumChecked,
+        p.isPremium,
+      ),
+      builder: (context, datos) {
+        final (nombre, premiumChecked, isPremium) = datos;
         return ListView(
           padding: const EdgeInsets.all(24),
           children: [
@@ -1094,8 +1105,8 @@ class _AppShellState extends State<AppShell> {
                   ? const T('Sesión conectada')
                   : Text(nombre),
               subtitle: T(
-                player.premiumChecked
-                    ? player.isPremium
+                premiumChecked
+                    ? isPremium
                           ? 'Spotify Premium'
                           : 'Spotify Free'
                     : 'Plan no disponible desde la API de Spotify',
@@ -1137,15 +1148,15 @@ class _CajonLateral extends StatefulWidget {
   const _CajonLateral({
     required this.plegado,
     required this.anchoExpandido,
-    required this.expandido,
-    required this.rail,
+    required this.expandidoBuilder,
+    required this.railBuilder,
     this.cabecera,
   });
 
   final bool plegado;
   final double anchoExpandido;
-  final Widget expandido;
-  final Widget rail;
+  final WidgetBuilder expandidoBuilder;
+  final WidgetBuilder railBuilder;
   final Widget? cabecera;
 
   @override
@@ -1211,16 +1222,16 @@ class _CajonLateralState extends State<_CajonLateral>
     super.dispose();
   }
 
-  Widget _railColumna() => SizedBox(
+  Widget _railColumna(BuildContext context) => SizedBox(
         width: _Sidebar.anchoRail,
         height: double.infinity,
-        child: KeyedSubtree(key: _claveRail, child: widget.rail),
+        child: KeyedSubtree(key: _claveRail, child: widget.railBuilder(context)),
       );
 
   Widget _revelarBiblioteca(
+    BuildContext context,
     double ancho,
     Widget cabecera,
-    Widget lista,
   ) {
     final revelado = ((ancho - _Sidebar.anchoRail - 8) / 68).clamp(0.0, 1.0);
     return SizedBox(
@@ -1240,7 +1251,7 @@ class _CajonLateralState extends State<_CajonLateral>
                       ancho: _Sidebar.anchoRail,
                       opacidad: 1 - revelado,
                       interactiva: revelado < .5,
-                      hijo: widget.rail,
+                      hijo: widget.railBuilder(context),
                     ),
                   if (revelado > 0)
                     _capaBiblioteca(
@@ -1248,7 +1259,7 @@ class _CajonLateralState extends State<_CajonLateral>
                       ancho: widget.anchoExpandido,
                       opacidad: revelado,
                       interactiva: revelado >= .5,
-                      hijo: lista,
+                      hijo: widget.expandidoBuilder(context),
                     ),
                 ],
               ),
@@ -1292,14 +1303,12 @@ class _CajonLateralState extends State<_CajonLateral>
     final cristal = EstiloNeoFy.de(context).hayCristal;
     return AnimatedBuilder(
       animation: _ancho,
-      child: widget.expandido,
-      builder: (context, expandido) {
+      builder: (context, _) {
         final w = (_ancho.isAnimating ? _ancho.value : _destino)
             .clamp(_Sidebar.anchoRail, widget.anchoExpandido);
-        final hijoExpandido = expandido ?? widget.expandido;
         final cabecera = widget.cabecera;
         if (cabecera != null) {
-          return _revelarBiblioteca(w, cabecera, hijoExpandido);
+          return _revelarBiblioteca(context, w, cabecera);
         }
         final pintarRail = widget.plegado || _ancho.isAnimating;
 
@@ -1307,7 +1316,7 @@ class _CajonLateralState extends State<_CajonLateral>
         if (pintarRail) {
           interior = Align(
             alignment: Alignment.topLeft,
-            child: _railColumna(),
+            child: _railColumna(context),
           );
           if (!widget.plegado) {
             interior = Stack(
@@ -1321,7 +1330,7 @@ class _CajonLateralState extends State<_CajonLateral>
                       alignment: Alignment.topLeft,
                       minWidth: widget.anchoExpandido,
                       maxWidth: widget.anchoExpandido,
-                      child: hijoExpandido,
+                      child: widget.expandidoBuilder(context),
                     ),
                   ),
                 ),
@@ -1329,7 +1338,7 @@ class _CajonLateralState extends State<_CajonLateral>
             );
           }
         } else {
-          interior = RepaintBoundary(child: hijoExpandido);
+          interior = RepaintBoundary(child: widget.expandidoBuilder(context));
         }
 
         if (!cristal) {
@@ -1361,6 +1370,117 @@ class _CajonLateralState extends State<_CajonLateral>
           ),
         );
       },
+    );
+  }
+}
+
+/// Filtra notificaciones del reproductor para reconstruir solo cuando cambia
+/// el subconjunto de estado realmente usado por el subárbol.
+class _SelectorDeReproductor<V> extends StatefulWidget {
+  const _SelectorDeReproductor({
+    required this.player,
+    required this.selector,
+    required this.builder,
+  });
+
+  final PlayerController player;
+  final V Function(PlayerController player) selector;
+  final Widget Function(BuildContext context, V valor) builder;
+
+  @override
+  State<_SelectorDeReproductor<V>> createState() =>
+      _SelectorDeReproductorState<V>();
+}
+
+class _SelectorDeReproductorState<V> extends State<_SelectorDeReproductor<V>> {
+  late V _valor;
+
+  @override
+  void initState() {
+    super.initState();
+    _valor = widget.selector(widget.player);
+    widget.player.addListener(_alReproductor);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SelectorDeReproductor<V> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      oldWidget.player.removeListener(_alReproductor);
+      widget.player.addListener(_alReproductor);
+    }
+    _valor = widget.selector(widget.player);
+  }
+
+  @override
+  void dispose() {
+    widget.player.removeListener(_alReproductor);
+    super.dispose();
+  }
+
+  void _alReproductor() {
+    final siguiente = widget.selector(widget.player);
+    if (siguiente == _valor) return;
+    _valor = siguiente;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _valor);
+}
+
+class _DialogoNombre extends StatefulWidget {
+  const _DialogoNombre({
+    required this.titulo,
+    required this.etiqueta,
+    required this.boton,
+    required this.pista,
+    required this.inicial,
+  });
+
+  final String titulo;
+  final String etiqueta;
+  final String boton;
+  final String pista;
+  final String inicial;
+
+  @override
+  State<_DialogoNombre> createState() => _DialogoNombreState();
+}
+
+class _DialogoNombreState extends State<_DialogoNombre> {
+  late final TextEditingController _controlador =
+      TextEditingController(text: widget.inicial);
+
+  @override
+  void dispose() {
+    _controlador.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: T(widget.titulo),
+      content: TextField(
+        controller: _controlador,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: widget.etiqueta,
+          hintText: widget.pista,
+        ),
+        onSubmitted: (v) => Navigator.of(context).pop(v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: T('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controlador.text),
+          child: T(widget.boton),
+        ),
+      ],
     );
   }
 }
@@ -1531,8 +1651,8 @@ class _Sidebar extends StatelessWidget {
       anchoExpandido: nocturno
           ? (MediaQuery.sizeOf(context).width * .17).clamp(anchoExpandido, 320)
           : anchoExpandido,
-      expandido: _contenidoExpandido(context),
-      rail: _contenidoRail(context),
+      expandidoBuilder: _contenidoExpandido,
+      railBuilder: _contenidoRail,
       cabecera: nocturno ? _cabeceraBiblioteca(context) : null,
     );
   }

@@ -22,6 +22,13 @@ class TemaStore extends ChangeNotifier {
 
   StreamSubscription<FileSystemEvent>? _vigilante;
   Timer? _rebote;
+  ThemeData? _cacheClaro;
+  ThemeData? _cacheOscuro;
+
+  void _invalidarCache() {
+    _cacheClaro = null;
+    _cacheOscuro = null;
+  }
 
   List<Tema> get temasDeDisco => List.unmodifiable(_deDisco);
 
@@ -63,12 +70,14 @@ class TemaStore extends ChangeNotifier {
     } else {
       retoques[clave] = colorHex;
     }
+    _invalidarCache();
     notifyListeners();
     await config.save();
   }
 
   Future<void> restablecerColores(String idTema) async {
     if (config.temaColores.remove(idTema) == null) return;
+    _invalidarCache();
     notifyListeners();
     await config.save();
   }
@@ -89,14 +98,15 @@ class TemaStore extends ChangeNotifier {
     return porId(idSeleccionado)!.esOscuro ? ThemeMode.dark : ThemeMode.light;
   }
 
-  ThemeData get themeDataClaro => construirThemeData(temaParaClaro);
+  ThemeData get themeDataClaro => _cacheClaro ??= construirThemeData(temaParaClaro);
 
-  ThemeData get themeDataOscuro => construirThemeData(temaParaOscuro);
+  ThemeData get themeDataOscuro => _cacheOscuro ??= construirThemeData(temaParaOscuro);
 
   Future<void> cargar() async {
     await _migrarTemaRetirado();
     await recargar(notificar: false);
     await _cargarFuentes();
+    _invalidarCache();
     notifyListeners();
   }
 
@@ -106,6 +116,7 @@ class TemaStore extends ChangeNotifier {
     final sustituto = kTemasRetirados[config.tema];
     if (sustituto == null) return;
     config.tema = sustituto;
+    _invalidarCache();
     await config.save();
   }
 
@@ -139,6 +150,7 @@ class TemaStore extends ChangeNotifier {
     _deDisco
       ..clear()
       ..addAll(encontrados);
+    _invalidarCache();
 
     if (notificar) {
       await _cargarFuentes();
@@ -150,6 +162,7 @@ class TemaStore extends ChangeNotifier {
     if (config.tema == id && config.temaElegido) return;
     config.tema = id;
     config.temaElegido = true;
+    _invalidarCache();
     await _cargarFuentes();
     notifyListeners();
     await config.save();

@@ -54,9 +54,6 @@ class YtItem {
 
   bool get tieneDestino => videoId != null || playlistId != null || browseId != null;
 
-  bool get esNavegable =>
-      esCancion || playlistId != null || (tipo == YtTipo.album && browseId != null);
-
   YtTrack? get comoPista => esCancion
       ? YtTrack(
           videoId: videoId!,
@@ -73,18 +70,4 @@ class YtSection {
 
   final String titulo;
   final List<YtItem> items;
-}
-
-class YtColeccion {
-  const YtColeccion({
-    required this.titulo,
-    required this.subtitulo,
-    required this.pistas,
-    this.miniatura,
-  });
-
-  final String titulo;
-  final String subtitulo;
-  final List<YtTrack> pistas;
-  final String? miniatura;
 }

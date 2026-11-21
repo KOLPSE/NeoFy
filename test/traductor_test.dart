@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/traductor.dart';
 import 'package:neofy/ui/texto_traducido.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   testWidgets('T muestra el texto en español si el idioma objetivo es es', (tester) async {
@@ -68,5 +72,29 @@ void main() {
       alternativas: [ingles, espanol],
     );
     expect(bio, espanol);
+  });
+
+  test('claveBiografia es estable y descarta claves antiguas por hashCode', () async {
+    final claveA = Traductor.claveBiografia('es', 'Texto de biografía');
+    final claveB = Traductor.claveBiografia('es', 'Texto de biografía');
+    expect(claveA, claveB);
+    expect(claveA, matches(RegExp(r'^bio\|es\|[0-9a-f]{16}$')));
+
+    final dir = Directory.systemTemp.createTempSync('neofy_traductor_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final fichero = File(p.join(dir.path, 'traducciones.json'));
+    fichero.writeAsStringSync(jsonEncode({
+      'bio|es|123456789': 'obsoleta',
+      'ui|en|Ajustes': 'Settings',
+    }));
+
+    final traductor = Traductor(
+      localeEfectivo: () => 'en_US',
+      directorio: dir,
+    );
+    addTearDown(traductor.dispose);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(traductor.cacheUi('Ajustes'), 'Settings');
   });
 }

@@ -39,9 +39,13 @@ class _LikeButtonState extends State<LikeButton> {
   @override
   void didUpdateWidget(covariant LikeButton old) {
     super.didUpdateWidget(old);
-    if (old.uri == widget.uri) return;
-    widget.likes.ensureKnown(widget.uri);
-    setState(() {});
+    if (old.likes != widget.likes) {
+      old.likes.removeListener(_sincronizar);
+      widget.likes.addListener(_sincronizar);
+    }
+    if (old.uri != widget.uri || old.likes != widget.likes) {
+      widget.likes.ensureKnown(widget.uri);
+    }
   }
 
   @override

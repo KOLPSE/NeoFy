@@ -48,15 +48,17 @@ class CabeceraColeccion extends StatelessWidget {
                       valueListenable: modoRendimiento,
                       builder: (context, rendimiento, _) => rendimiento
                           ? const SizedBox.shrink()
-                          : ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: 28,
-                                sigmaY: 28,
-                              ),
-                              child: ArtImage(
-                                url: portada,
-                                size: 192,
-                                radius: 0,
+                          : RepaintBoundary(
+                              child: ImageFiltered(
+                                imageFilter: ImageFilter.blur(
+                                  sigmaX: 28,
+                                  sigmaY: 28,
+                                ),
+                                child: ArtImage(
+                                  url: portada,
+                                  size: 192,
+                                  radius: 0,
+                                ),
                               ),
                             ),
                     ),

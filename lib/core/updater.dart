@@ -18,11 +18,17 @@ enum EstadoActualizacion {
 }
 
 class Updater extends ChangeNotifier {
-  Updater({http.Client? cliente}) : _http = cliente ?? http.Client();
+  Updater({http.Client? cliente})
+      : _http = cliente ?? http.Client(),
+        _httpPropio = cliente == null;
 
   final http.Client _http;
+  final bool _httpPropio;
+  bool _disposed = false;
 
   static const _hostFiable = 'github.com';
+  static final _rePrefijoV = RegExp('^v');
+  static final _reSeparadorVersion = RegExp(r'[.+-]');
 
   EstadoActualizacion estado = EstadoActualizacion.reposo;
   String? versionDisponible;
@@ -36,8 +42,6 @@ class Updater extends ChangeNotifier {
   String get versionActual => kVersion;
 
   static bool get seInstalaSolo => Platform.isWindows;
-
-  static const String comandoDeActualizacion = 'sudo pacman -Syu neofy-bin';
 
   Future<void> buscar() async {
     if (estado == EstadoActualizacion.buscando ||
@@ -61,7 +65,7 @@ class Updater extends ChangeNotifier {
 
       final j = jsonDecode(res.body) as Map<String, dynamic>;
       final etiqueta = (j['tag_name'] as String?) ?? '';
-      final version = etiqueta.replaceFirst(RegExp('^v'), '');
+      final version = etiqueta.replaceFirst(_rePrefijoV, '');
       if (version.isEmpty) throw 'La release no tiene versión';
 
       if (!esMasNueva(version, kVersion)) {
@@ -106,18 +110,38 @@ class Updater extends ChangeNotifier {
       if (res.statusCode != 200) throw 'La descarga falló (${res.statusCode})';
 
       final total = res.contentLength ?? 0;
-      final bytes = <int>[];
-      await for (final trozo in res.stream) {
-        bytes.addAll(trozo);
-        if (total > 0) {
-          progreso = bytes.length / total;
-          notifyListeners();
-        }
-      }
-
       final destino = File(p.join(
           Directory.systemTemp.path, 'NeoFy-$versionDisponible-setup.exe'));
-      await destino.writeAsBytes(bytes, flush: true);
+      final temporal = File('${destino.path}.part');
+      final sink = temporal.openWrite();
+      var recibidos = 0;
+      var ultimoNotificado = -1.0;
+      try {
+        await for (final trozo in res.stream) {
+          sink.add(trozo);
+          recibidos += trozo.length;
+          if (total > 0) {
+            progreso = (recibidos / total).clamp(0.0, 1.0);
+            if (!_disposed &&
+                (progreso - ultimoNotificado >= 0.01 || progreso >= 1.0)) {
+              ultimoNotificado = progreso;
+              notifyListeners();
+            }
+          }
+        }
+        await sink.flush();
+      } catch (_) {
+        await sink.close();
+        if (await temporal.exists()) {
+          await temporal.delete().catchError((_) => temporal);
+        }
+        rethrow;
+      }
+      await sink.close();
+      if (await destino.exists()) {
+        await destino.delete().catchError((_) => destino);
+      }
+      await temporal.rename(destino.path);
       _instalador = destino;
       _cambiar(EstadoActualizacion.listaParaInstalar);
     } catch (e) {
@@ -145,7 +169,7 @@ class Updater extends ChangeNotifier {
 
   static bool esMasNueva(String candidata, String actual) {
     List<int> tramos(String v) => v
-        .split(RegExp(r'[.+-]'))
+        .split(_reSeparadorVersion)
         .map((t) => int.tryParse(t) ?? 0)
         .toList();
     final a = tramos(candidata);
@@ -161,6 +185,13 @@ class Updater extends ChangeNotifier {
   void _cambiar(EstadoActualizacion nuevo) {
     estado = nuevo;
     if (nuevo != EstadoActualizacion.fallo) error = null;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    if (_httpPropio) _http.close();
+    super.dispose();
   }
 }

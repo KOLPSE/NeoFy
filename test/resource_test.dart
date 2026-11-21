@@ -86,4 +86,13 @@ void main() {
       expect(ResourceMonitor.ticksDeStat('4242 (librespot) S 1 2 3'), 0);
     });
   });
+
+  test('pausar y reanudar visibilidad del monitor no falla', () {
+    final monitor = ResourceMonitor(pidsDeSidecars: () => const []);
+    addTearDown(monitor.dispose);
+    monitor.start();
+    monitor.setVisible(false);
+    monitor.setVisible(true);
+    expect(monitor.uso.total, greaterThanOrEqualTo(0));
+  });
 }

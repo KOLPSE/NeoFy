@@ -20,7 +20,7 @@ class BotonDeTemas extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AnimatedBuilder(
-      animation: Listenable.merge([temas, settings]),
+      animation: temas,
       builder: (context, _) {
         final activo = temas.porId(temas.idSeleccionado);
         final nombre = activo?.nombre ?? 'Automático (sigue al sistema)';

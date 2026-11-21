@@ -48,105 +48,110 @@ class TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    if (!mostrarAlbum) return _construir(context, null);
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final albumVisible = mostrarAlbum && constraints.maxWidth >= 620;
-        return DesplegableEnSitio(
-          icono: mostrarAlbum ? Icons.more_horiz : Icons.more_vert,
-          tooltip: 'Más opciones',
-          opciones: [
-            if (actions.onQueue != null)
-              OpcionEnSitio(
-                icono: Icons.queue_music,
-                texto: 'Añadir a la cola',
-                onTap: actions.onQueue!,
+      builder: (context, constraints) => _construir(
+        context,
+        constraints.maxWidth >= 620 ? constraints.maxWidth * .26 : null,
+      ),
+    );
+  }
+
+  Widget _construir(BuildContext context, double? anchoAlbum) {
+    final theme = Theme.of(context);
+    return DesplegableEnSitio(
+      icono: mostrarAlbum ? Icons.more_horiz : Icons.more_vert,
+      tooltip: 'Más opciones',
+      opciones: [
+        if (actions.onQueue != null)
+          OpcionEnSitio(
+            icono: Icons.queue_music,
+            texto: 'Añadir a la cola',
+            onTap: actions.onQueue!,
+          ),
+        if (actions.onAddToPlaylist != null)
+          OpcionEnSitio(
+            icono: Icons.playlist_add,
+            texto: 'Añadir a una playlist',
+            onTap: actions.onAddToPlaylist!,
+          ),
+        if (actions.onRemove != null)
+          OpcionEnSitio(
+            icono: Icons.remove_circle_outline,
+            texto: 'Quitar de esta playlist',
+            onTap: actions.onRemove!,
+            destructiva: true,
+            confirmacion: '¿Quitar «${track.name}» de esta playlist?',
+            textoConfirmar: 'Quitar',
+          ),
+      ],
+      constructor: (context, disparador) => ListTile(
+        dense: true,
+        onTap: actions.onPlay,
+        contentPadding: contentPadding,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (leadingNumber != null)
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '$leadingNumber',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.right,
+                ),
               ),
-            if (actions.onAddToPlaylist != null)
-              OpcionEnSitio(
-                icono: Icons.playlist_add,
-                texto: 'Añadir a una playlist',
-                onTap: actions.onAddToPlaylist!,
-              ),
-            if (actions.onRemove != null)
-              OpcionEnSitio(
-                icono: Icons.remove_circle_outline,
-                texto: 'Quitar de esta playlist',
-                onTap: actions.onRemove!,
-                destructiva: true,
-                confirmacion: '¿Quitar «${track.name}» de esta playlist?',
-                textoConfirmar: 'Quitar',
-              ),
+            const SizedBox(width: 8),
+            ArtImage(url: showArt ? track.artSmall : null, size: 40),
           ],
-          constructor: (context, disparador) => ListTile(
-            dense: true,
-            onTap: actions.onPlay,
-            contentPadding: contentPadding,
-            leading: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leadingNumber != null)
-                  SizedBox(
-                    width: 28,
-                    child: Text(
-                      '$leadingNumber',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.right,
+        ),
+        title: Text(
+          track.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: isCurrent
+              ? theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                )
+              : null,
+        ),
+        subtitle: Text(
+          track.artists,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (anchoAlbum != null)
+              SizedBox(
+                width: anchoAlbum,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Text(
+                    track.album,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                const SizedBox(width: 8),
-                ArtImage(url: showArt ? track.artSmall : null, size: 40),
-              ],
-            ),
-            title: Text(
-              track.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: isCurrent
-                  ? theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    )
-                  : null,
-            ),
-            subtitle: Text(
-              track.artists,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            if (likes != null && track.uri.isNotEmpty)
+              LikeButton(likes: likes!, uri: track.uri, pista: track),
+            Text(
+              formatMs(track.durationMs),
               style: theme.textTheme.bodySmall,
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (albumVisible)
-                  SizedBox(
-                    width: constraints.maxWidth * .26,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 14),
-                      child: Text(
-                        track.album,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (likes != null && track.uri.isNotEmpty)
-                  LikeButton(likes: likes!, uri: track.uri, pista: track),
-                Text(
-                  formatMs(track.durationMs),
-                  style: theme.textTheme.bodySmall,
-                ),
-                disparador,
-              ],
-            ),
-          ),
-        );
-      },
+            disparador,
+          ],
+        ),
+      ),
     );
   }
 }

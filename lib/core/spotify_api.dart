@@ -29,11 +29,17 @@ class SpotifyApi {
     http.Client? cliente,
     String Function()? localeEfectivo,
   })  : _http = cliente ?? http.Client(),
+        _httpPropio = cliente == null,
         _localeEfectivo = localeEfectivo ?? localeSpotifyDesdePc;
 
   final SpotifyAuth auth;
   final http.Client _http;
+  final bool _httpPropio;
   final String Function() _localeEfectivo;
+
+  void close() {
+    if (_httpPropio) _http.close();
+  }
 
   static const _base = 'api.spotify.com';
 
@@ -689,14 +695,5 @@ class SpotifyApi {
       rawCount: raw.length,
       total: (page['total'] as num?)?.toInt(),
     );
-  }
-
-  Future<ApiPage<Track>> searchTracks(
-    String query, {
-    int limit = 10,
-    int offset = 0,
-  }) async {
-    final res = await search(query, types: const ['track'], limit: limit, offset: offset);
-    return res.tracks;
   }
 }

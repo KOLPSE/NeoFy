@@ -39,9 +39,13 @@ class _PlaylistFollowButtonState extends State<PlaylistFollowButton> {
   @override
   void didUpdateWidget(covariant PlaylistFollowButton old) {
     super.didUpdateWidget(old);
-    if (old.playlist.id == widget.playlist.id) return;
-    unawaited(widget.followed.ensureKnown(widget.playlist.id));
-    setState(() {});
+    if (old.followed != widget.followed) {
+      old.followed.removeListener(_sincronizar);
+      widget.followed.addListener(_sincronizar);
+    }
+    if (old.playlist.id != widget.playlist.id || old.followed != widget.followed) {
+      unawaited(widget.followed.ensureKnown(widget.playlist.id));
+    }
   }
 
   @override

@@ -206,16 +206,6 @@ class Cristal {
 
   static const Cristal ninguno = Cristal();
 
-  Cristal escalar(double factor) => Cristal(
-        activo: activo,
-        desenfoque: desenfoque * factor,
-        opacidad: opacidad,
-        saturacion: saturacion,
-        brillo: brillo,
-        borde: borde,
-        radio: radio,
-      );
-
   static Cristal lerp(Cristal a, Cristal b, double t) => Cristal(
         activo: t < 0.5 ? a.activo : b.activo,
         desenfoque: _lerpD(a.desenfoque, b.desenfoque, t),

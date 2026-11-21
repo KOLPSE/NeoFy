@@ -36,17 +36,23 @@ class LyricsView extends StatefulWidget {
   State<LyricsView> createState() => _LyricsViewState();
 }
 
+typedef _SegmentoKaraoke = ({String anterior, String actual, String siguiente});
+
 class _LyricsViewState extends State<LyricsView>
     with SingleTickerProviderStateMixin {
+  static final _reNormalizar = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+
   late Future<_Lyrics?> _request;
   late final http.Client _client = widget.cliente ?? http.Client();
   final _activeLine = GlobalKey();
-  final _tiempo = ValueNotifier<int>(0);
+  final _segmento = ValueNotifier<_SegmentoKaraoke>(
+    (anterior: '', actual: '', siguiente: ''),
+  );
   final _indice = ValueNotifier<int>(-1);
   final _desfaseVoz = ValueNotifier<int>(0);
   late final Ticker _latido = createTicker((_) => _sincronizarTiempo());
-  late final FuenteDeteccionVoz _fuenteVoz;
-  late final bool _fuentePropia;
+  late FuenteDeteccionVoz _fuenteVoz;
+  late bool _fuentePropia;
   final _controladorVoz = ControladorSincronizacionPorVoz();
   var _lineas = const <LineaDeLetra>[];
   late int _desfaseGuardado;
@@ -77,6 +83,29 @@ class _LyricsViewState extends State<LyricsView>
   }
 
   @override
+  void didUpdateWidget(covariant LyricsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      oldWidget.player.progressMs.removeListener(_sincronizarTiempo);
+      oldWidget.player.removeListener(_actualizarLatido);
+      widget.player.progressMs.addListener(_sincronizarTiempo);
+      widget.player.addListener(_actualizarLatido);
+    }
+    if (oldWidget.fuenteVoz != widget.fuenteVoz) {
+      _fuenteVoz.estado.removeListener(_sincronizarTiempo);
+      if (_fuentePropia) {
+        _fuenteVoz.dispose();
+      } else {
+        unawaited(_fuenteVoz.detener());
+      }
+      _fuentePropia = widget.fuenteVoz == null;
+      _fuenteVoz = widget.fuenteVoz ?? CapturaVozWasapi();
+      _fuenteVoz.estado.addListener(_sincronizarTiempo);
+      if (_sincVoz) unawaited(_fuenteVoz.iniciar());
+    }
+  }
+
+  @override
   void dispose() {
     widget.player.progressMs.removeListener(_sincronizarTiempo);
     widget.player.removeListener(_actualizarLatido);
@@ -87,7 +116,7 @@ class _LyricsViewState extends State<LyricsView>
       unawaited(_fuenteVoz.detener());
     }
     _latido.dispose();
-    _tiempo.dispose();
+    _segmento.dispose();
     _indice.dispose();
     _desfaseVoz.dispose();
     if (widget.cliente == null) _client.close();
@@ -123,12 +152,42 @@ class _LyricsViewState extends State<LyricsView>
     }
   }
 
+  int _buscarIndiceLinea(int ms) {
+    final n = _lineas.length;
+    if (n == 0 || ms < _lineas.first.inicioMs) return -1;
+    final actual = _indice.value;
+    if (actual >= 0 && actual < n && _lineas[actual].inicioMs <= ms) {
+      if (actual + 1 >= n || _lineas[actual + 1].inicioMs > ms) return actual;
+      if (actual + 2 >= n || _lineas[actual + 2].inicioMs > ms) {
+        return actual + 1;
+      }
+    }
+    var izq = 0;
+    var der = n - 1;
+    var res = -1;
+    while (izq <= der) {
+      final mid = (izq + der) >> 1;
+      if (_lineas[mid].inicioMs <= ms) {
+        res = mid;
+        izq = mid + 1;
+      } else {
+        der = mid - 1;
+      }
+    }
+    return res;
+  }
+
   void _mostrarTiempo(int ms) {
-    _tiempo.value = ms;
-    final actual = _lineas.lastIndexWhere((linea) => linea.inicioMs <= ms);
+    final actual = _buscarIndiceLinea(ms);
     if (actual != _indice.value) {
       _indice.value = actual;
       _centerLine();
+    }
+    if (actual >= 0 && actual < _lineas.length) {
+      final linea = _lineas[actual];
+      if (linea.texto.isNotEmpty) {
+        _segmento.value = linea.en(ms, modo: _modoLetra);
+      }
     }
   }
 
@@ -284,9 +343,8 @@ class _LyricsViewState extends State<LyricsView>
     return _Lyrics(lines, plain);
   }
 
-  String _normalizar(Object? texto) => (texto as String? ?? '')
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '');
+  String _normalizar(Object? texto) =>
+      (texto as String? ?? '').toLowerCase().replaceAll(_reNormalizar, '');
 
   void _centerLine() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -647,31 +705,32 @@ class _LyricsViewState extends State<LyricsView>
 
   Widget _pintarKaraoke(LineaDeLetra linea, TextStyle? estilo) {
     final colores = Theme.of(context).colorScheme;
-    return ValueListenableBuilder<int>(
-      valueListenable: _tiempo,
-      builder: (context, ms, _) {
-        final texto = linea.en(ms, modo: _modoLetra);
-        return Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: texto.anterior,
-                style: TextStyle(color: colores.primary),
-              ),
-              TextSpan(
-                text: texto.actual,
-                style: TextStyle(
-                  color: colores.onSurface,
-                  shadows: [Shadow(color: colores.primary, blurRadius: 9)],
+    return RepaintBoundary(
+      child: ValueListenableBuilder<_SegmentoKaraoke>(
+        valueListenable: _segmento,
+        builder: (context, texto, _) {
+          return Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: texto.anterior,
+                  style: TextStyle(color: colores.primary),
                 ),
-              ),
-              TextSpan(text: texto.siguiente),
-            ],
-          ),
-          style: estilo?.copyWith(color: colores.onSurfaceVariant),
-          semanticsLabel: linea.texto,
-        );
-      },
+                TextSpan(
+                  text: texto.actual,
+                  style: TextStyle(
+                    color: colores.onSurface,
+                    shadows: [Shadow(color: colores.primary, blurRadius: 9)],
+                  ),
+                ),
+                TextSpan(text: texto.siguiente),
+              ],
+            ),
+            style: estilo?.copyWith(color: colores.onSurfaceVariant),
+            semanticsLabel: linea.texto,
+          );
+        },
+      ),
     );
   }
 }

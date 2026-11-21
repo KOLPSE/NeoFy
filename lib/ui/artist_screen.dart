@@ -60,6 +60,9 @@ class _ArtistScreenState extends State<ArtistScreen> {
   bool _cargando = true;
   String? _error;
   var _pendienteDeSidecar = false;
+  VoidCallback? _cancelarEsperaSidecar;
+  List<Track>? _tracksFuente;
+  List<Track> _popularesCache = const [];
 
   @override
   void initState() {
@@ -69,7 +72,18 @@ class _ArtistScreenState extends State<ArtistScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant ArtistScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sidecar != widget.sidecar) {
+      oldWidget.sidecar?.removeListener(_siSidecarListo);
+      widget.sidecar?.addListener(_siSidecarListo);
+    }
+  }
+
+  @override
   void dispose() {
+    _cancelarEsperaSidecar?.call();
+    _cancelarEsperaSidecar = null;
     widget.sidecar?.removeListener(_siSidecarListo);
     super.dispose();
   }
@@ -91,11 +105,19 @@ class _ArtistScreenState extends State<ArtistScreen> {
       if (s.ready && !listo.isCompleted) listo.complete(true);
     }
     s.addListener(ver);
+    void cancelar() {
+      s.removeListener(ver);
+      if (!listo.isCompleted) listo.complete(false);
+    }
+    _cancelarEsperaSidecar = cancelar;
     try {
       return await listo.future
           .timeout(const Duration(seconds: 12), onTimeout: () => s.ready);
     } finally {
       s.removeListener(ver);
+      if (identical(_cancelarEsperaSidecar, cancelar)) {
+        _cancelarEsperaSidecar = null;
+      }
     }
   }
 
@@ -245,9 +267,15 @@ class _ArtistScreenState extends State<ArtistScreen> {
     return playlistsDelArtista(res.playlists.items, artista.name);
   }
 
-  List<Track> get _populares => _tracks.length <= kPopularesDelPerfil
-      ? _tracks
-      : _tracks.sublist(0, kPopularesDelPerfil);
+  List<Track> get _populares {
+    if (!identical(_tracksFuente, _tracks)) {
+      _tracksFuente = _tracks;
+      _popularesCache = _tracks.length <= kPopularesDelPerfil
+          ? _tracks
+          : List.unmodifiable(_tracks.sublist(0, kPopularesDelPerfil));
+    }
+    return _popularesCache;
+  }
 
   List<String> get _urisPopulares => [for (final t in _populares) t.uri];
 
@@ -689,24 +717,6 @@ Future<R> _suave<R>(Future<R> futuro, R vacio) async {
     return vacio;
   }
 }
-
-String _resumen(List<Track> tracks) {
-  final ms = tracks.fold<int>(0, (suma, t) => suma + t.durationMs);
-  final minutos = (ms / 60000).round();
-  final canciones =
-      tracks.length == 1 ? '1 canción' : '${tracks.length} canciones';
-
-  if (minutos < 60) return '$canciones · $minutos min';
-  final horas = minutos ~/ 60;
-  final resto = minutos % 60;
-  final enHoras = horas == 1 ? '1 h' : '$horas h';
-  return resto == 0
-      ? '$canciones · $enHoras'
-      : '$canciones · $enHoras $resto min';
-}
-
-@visibleForTesting
-String resumenDeArtista(List<Track> tracks) => _resumen(tracks);
 
 @visibleForTesting
 List<Playlist> playlistsDelArtista(List<Playlist> listas, String nombre) {

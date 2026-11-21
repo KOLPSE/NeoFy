@@ -66,21 +66,16 @@ class _TState extends State<T> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: TraductorScope.of(context),
-      builder: (context, _) {
-        final traductor = TraductorScope.of(context);
-        final cache = traductor.cacheUi(widget.data);
-        final texto = cache ?? _visible;
-        return Text(
-          texto,
-          style: widget.style,
-          textAlign: widget.textAlign,
-          maxLines: widget.maxLines,
-          overflow: widget.overflow,
-          softWrap: widget.softWrap,
-        );
-      },
+    final traductor = TraductorScope.of(context);
+    final cache = traductor.cacheUi(widget.data);
+    final texto = cache ?? _visible;
+    return Text(
+      texto,
+      style: widget.style,
+      textAlign: widget.textAlign,
+      maxLines: widget.maxLines,
+      overflow: widget.overflow,
+      softWrap: widget.softWrap,
     );
   }
 }
@@ -135,37 +130,33 @@ class _BiografiaTraducidaState extends State<BiografiaTraducida> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: TraductorScope.of(context),
-      builder: (context, _) {
-        final texto = _traducida ?? widget.texto;
-        final theme = Theme.of(context);
-        final bio = formatearBiografia(texto);
-        if (bio.parrafos.isEmpty) return const SizedBox.shrink();
+    TraductorScope.of(context);
+    final texto = _traducida ?? widget.texto;
+    final theme = Theme.of(context);
+    final bio = formatearBiografia(texto);
+    if (bio.parrafos.isEmpty) return const SizedBox.shrink();
 
-        final cuerpo = theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          height: 1.45,
-        );
-        final atrib = theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
-          fontStyle: FontStyle.italic,
-        );
+    final cuerpo = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.45,
+    );
+    final atrib = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
+      fontStyle: FontStyle.italic,
+    );
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var i = 0; i < bio.parrafos.length; i++) ...[
-              if (i > 0) const SizedBox(height: 10),
-              Text(bio.parrafos[i], style: cuerpo),
-            ],
-            if (bio.atribucion != null) ...[
-              const SizedBox(height: 10),
-              Text('— ${bio.atribucion}', style: atrib),
-            ],
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < bio.parrafos.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          Text(bio.parrafos[i], style: cuerpo),
+        ],
+        if (bio.atribucion != null) ...[
+          const SizedBox(height: 10),
+          Text('— ${bio.atribucion}', style: atrib),
+        ],
+      ],
     );
   }
 }
@@ -286,33 +277,28 @@ class _CampoTextoTraducidoState extends State<CampoTextoTraducido> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: TraductorScope.of(context),
-      builder: (context, _) {
-        final traductor = TraductorScope.of(context);
-        final label = traductor.cacheUi(widget.label) ?? _label;
-        final hint = widget.hint == null
-            ? null
-            : traductor.cacheUi(widget.hint!) ?? _hint;
-        final helper = widget.helper == null
-            ? null
-            : traductor.cacheUi(widget.helper!) ?? _helper;
-        return TextField(
-          controller: widget.controller,
-          focusNode: widget.focusNode,
-          decoration: InputDecoration(
-            labelText: label.isEmpty ? null : label,
-            hintText: hint,
-            helperText: helper,
-            helperMaxLines: widget.helperMaxLines,
-            helperStyle: widget.helperStyle,
-            prefixIcon: widget.prefixIcon,
-            isDense: widget.isDense,
-            border: widget.border,
-          ),
-          onSubmitted: widget.onSubmitted,
-        );
-      },
+    final traductor = TraductorScope.of(context);
+    final label = traductor.cacheUi(widget.label) ?? _label;
+    final hint = widget.hint == null
+        ? null
+        : traductor.cacheUi(widget.hint!) ?? _hint;
+    final helper = widget.helper == null
+        ? null
+        : traductor.cacheUi(widget.helper!) ?? _helper;
+    return TextField(
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      decoration: InputDecoration(
+        labelText: label.isEmpty ? null : label,
+        hintText: hint,
+        helperText: helper,
+        helperMaxLines: widget.helperMaxLines,
+        helperStyle: widget.helperStyle,
+        prefixIcon: widget.prefixIcon,
+        isDense: widget.isDense,
+        border: widget.border,
+      ),
+      onSubmitted: widget.onSubmitted,
     );
   }
 }

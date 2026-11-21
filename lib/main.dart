@@ -104,8 +104,6 @@ Future<void> main(List<String> args) async {
   runApp(SpotifyNativeApp(config: config, temas: temas));
 }
 
-const Color kSeedNeoFy = Color(0xFF1DB954);
-
 class SpotifyNativeApp extends StatefulWidget {
   const SpotifyNativeApp({super.key, required this.config, required this.temas});
 
@@ -279,7 +277,6 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   bool _reiniciandoAudio = false;
 
   bool _ventanaVisible = true;
-  StreamSubscription<bool>? _subYtSonando;
   DateTime _ultimoReinicioDeAudio = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -310,8 +307,6 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       _mpris.notificarSalto(ms * 1000);
       _smtc.notificarSalto(ms);
     };
-    _ytPlayer.addListener(_avisarAlSistema);
-    _subYtSonando = _ytPlayer.cambiosDeSonando.listen((_) => _avisarAlSistema());
     _ram.start();
     unawaited(_updater.buscar());
     _aplicarTechoDeMemoria(_settings.performanceMode);
@@ -326,13 +321,17 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _mediaKeys.stop();
     _player.removeListener(_avisarAlSistema);
     _player.onSalto = null;
-    _ytPlayer.removeListener(_avisarAlSistema);
-    unawaited(_subYtSonando?.cancel());
+    _ytPlayer.alEmpezarAReproducir = null;
+    _ytPlayer.onVolumenFijado = null;
+    _ytPlayer.onSalto = null;
     unawaited(_mpris.stop());
     unawaited(_smtc.stop());
     _audio.stop();
     _player.dispose();
     _likes.dispose();
+    _followed.dispose();
+    _favoritos.dispose();
+    _traductor.dispose();
     _home.dispose();
     _carpetas.dispose();
     _ram.dispose();
@@ -342,6 +341,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _librespot.dispose();
     _sidecar.dispose();
     _ytPlayer.dispose();
+    _api.close();
+    _auth.close();
+    _ytApi.close();
     super.dispose();
   }
 
@@ -654,11 +656,13 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   void _alVerse() {
     _ventanaVisible = true;
+    _ram.setVisible(true);
     _ajustarSondeo();
   }
 
   void _alEsconderse() {
     _ventanaVisible = false;
+    _ram.setVisible(false);
     _ajustarSondeo();
     final cache = PaintingBinding.instance.imageCache;
     cache.clear();

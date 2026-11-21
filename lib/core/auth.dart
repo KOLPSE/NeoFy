@@ -23,18 +23,14 @@ class SpotifyAuth {
   final AppConfig config;
   final http.Client _http = http.Client();
 
+  void close() => _http.close();
+
   String? _accessToken;
   DateTime _expiresAt = DateTime.fromMillisecondsSinceEpoch(0);
   String? _refreshToken;
   Set<String> _grantedScopes = const {};
 
   bool get isLoggedIn => _refreshToken != null;
-
-  bool get needsReauth =>
-      isLoggedIn && !kScopes.every(_grantedScopes.contains);
-
-  List<String> get missingScopes =>
-      kScopes.where((s) => !_grantedScopes.contains(s)).toList();
 
   bool hasScope(String scope) => _grantedScopes.contains(scope);
 

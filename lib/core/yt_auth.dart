@@ -23,6 +23,7 @@ class YtAuth {
   bool get isLoggedIn => _sapisid != null;
 
   static const _nombresDeFirma = ['SAPISID', '__Secure-3PAPISID', '__Secure-1PAPISID'];
+  static final _reBasura = RegExp(r'[^\x21-\x7E]');
 
   String? get _sapisid {
     for (final nombre in _nombresDeFirma) {
@@ -41,9 +42,8 @@ class YtAuth {
     final resultado = <WebviewCookie>[];
     for (final c in cookies) {
       if (!c.domain.contains('youtube.com')) continue;
-      final basura = RegExp(r'[^\x21-\x7E]');
-      final nombre = c.name.replaceAll(basura, '');
-      final valor = c.value.replaceAll(basura, '');
+      final nombre = c.name.replaceAll(_reBasura, '');
+      final valor = c.value.replaceAll(_reBasura, '');
       if (!vistas.add(nombre)) continue;
       resultado.add(nombre == c.name && valor == c.value
           ? c
@@ -140,7 +140,10 @@ class YtAuth {
 
     await completer.future.timeout(
       const Duration(minutes: 5),
-      onTimeout: () => throw YtAuthException('Se agotó el tiempo esperando el login.'),
+      onTimeout: () {
+        webview.close();
+        throw YtAuthException('Se agotó el tiempo esperando el login.');
+      },
     );
   }
 }

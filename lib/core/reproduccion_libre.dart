@@ -93,7 +93,7 @@ class ReproduccionLibre {
 
     if (_indice + 1 < _colaSpotify.length) {
       final proxima = _colaSpotify[_indice + 1];
-      unawaited(puente.equivalenteDe(proxima));
+      unawaited(puente.equivalenteDe(proxima).catchError((_) => null));
     }
   }
 

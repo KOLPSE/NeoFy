@@ -68,11 +68,23 @@ String elegirBiografia(Iterable<String> bios, {String? locale}) {
   return mejor;
 }
 
+final _reSignosEs = RegExp(r'[ñ¿¡]');
+final _reHtmlTag = RegExp(r'<[^>]+>');
+final _reNbsp = RegExp(r'&nbsp;|&#160;');
+final _reApos = RegExp(r'&#39;|&apos;');
+final _reEspacioAntesSalto = RegExp(r'[ \t]+\n');
+final _reEspacioTrasSalto = RegExp(r'\n[ \t]+');
+final _reAtribucionBio = RegExp(r'\s*[~—–-]\s*([^~—]+)$');
+final _reParrafosBio = RegExp(r'\n\s*\n+');
+final _reEspaciosBio = RegExp(r'\s+');
+final _reOracionesBio = RegExp(r'(?<=[.!?])\s+');
+final _reAnio = RegExp(r'^\d{4}$');
+
 int puntajeBiografia(String texto, String idioma) {
   final t = ' ${texto.toLowerCase()} ';
   var puntaje = 0;
 
-  if (RegExp(r'[ñ¿¡]').hasMatch(t)) puntaje += 8;
+  if (_reSignosEs.hasMatch(t)) puntaje += 8;
 
   void sumar(List<String> marcadores, int valor) {
     for (final m in marcadores) {
@@ -198,24 +210,24 @@ BiografiaFormateada formatearBiografia(String raw) {
   var t = raw.trim();
   if (t.isEmpty) return const BiografiaFormateada(parrafos: []);
 
-  t = t.replaceAll(RegExp(r'<[^>]+>'), ' ');
-  t = t.replaceAll(RegExp(r'&nbsp;|&#160;'), ' ');
-  t = t.replaceAll(RegExp(r'&amp;'), '&');
-  t = t.replaceAll(RegExp(r'&quot;'), '"');
-  t = t.replaceAll(RegExp(r'&#39;|&apos;'), "'");
-  t = t.replaceAll(RegExp(r'[ \t]+\n'), '\n');
-  t = t.replaceAll(RegExp(r'\n[ \t]+'), '\n');
+  t = t.replaceAll(_reHtmlTag, ' ');
+  t = t.replaceAll(_reNbsp, ' ');
+  t = t.replaceAll('&amp;', '&');
+  t = t.replaceAll('&quot;', '"');
+  t = t.replaceAll(_reApos, "'");
+  t = t.replaceAll(_reEspacioAntesSalto, '\n');
+  t = t.replaceAll(_reEspacioTrasSalto, '\n');
 
   String? atribucion;
-  final fin = RegExp(r'\s*[~—–-]\s*([^~—]+)$').firstMatch(t);
+  final fin = _reAtribucionBio.firstMatch(t);
   if (fin != null) {
     atribucion = fin.group(1)?.trim();
     t = t.substring(0, fin.start).trim();
   }
 
   var parrafos = t
-      .split(RegExp(r'\n\s*\n+'))
-      .map((p) => p.replaceAll(RegExp(r'\s+'), ' ').trim())
+      .split(_reParrafosBio)
+      .map((p) => p.replaceAll(_reEspaciosBio, ' ').trim())
       .where((p) => p.isNotEmpty)
       .toList();
 
@@ -223,12 +235,12 @@ BiografiaFormateada formatearBiografia(String raw) {
     if (t.contains(' -- ')) {
       parrafos = t
           .split(' -- ')
-          .map((p) => p.replaceAll(RegExp(r'\s+'), ' ').trim())
+          .map((p) => p.replaceAll(_reEspaciosBio, ' ').trim())
           .where((p) => p.isNotEmpty)
           .toList();
     } else if (t.length > 180) {
       final oraciones = t
-          .split(RegExp(r'(?<=[.!?])\s+'))
+          .split(_reOracionesBio)
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty)
           .toList();
@@ -243,7 +255,7 @@ BiografiaFormateada formatearBiografia(String raw) {
         }
       }
     } else if (t.isNotEmpty) {
-      parrafos = [t.replaceAll(RegExp(r'\s+'), ' ').trim()];
+      parrafos = [t.replaceAll(_reEspaciosBio, ' ').trim()];
     }
   }
 
@@ -253,7 +265,7 @@ BiografiaFormateada formatearBiografia(String raw) {
 String? anioDeFecha(String? fecha) {
   if (fecha == null || fecha.length < 4) return null;
   final anio = fecha.substring(0, 4);
-  return RegExp(r'^\d{4}$').hasMatch(anio) ? anio : null;
+  return _reAnio.hasMatch(anio) ? anio : null;
 }
 
 String formatearCuenta(int n) {

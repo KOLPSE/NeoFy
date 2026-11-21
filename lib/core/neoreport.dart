@@ -13,6 +13,7 @@ import 'app_config.dart';
 class NeoReport {
   NeoReport({http.Client? cliente, String? clave, this.obtenerInstalacion})
     : _http = cliente ?? http.Client(),
+      _httpPropio = cliente == null,
       _clave = clave ?? _appKey;
 
   static const _base = 'https://report.neogex.xyz';
@@ -20,7 +21,9 @@ class NeoReport {
   static final _random = Random.secure();
   static const _storage = FlutterSecureStorage();
   static const _installationKey = 'neoreport_installation';
+  static final _reTrackId = RegExp(r'^[A-Za-z0-9]+$');
   final http.Client _http;
+  final bool _httpPropio;
   final String _clave;
   final Future<Map<String, String>> Function()? obtenerInstalacion;
   String? _pendingPayload;
@@ -71,7 +74,7 @@ class NeoReport {
       'os': Platform.operatingSystem,
       'meta': {
         'client': 'NeoFy',
-        if (trackId != null && RegExp(r'^[A-Za-z0-9]+$').hasMatch(trackId))
+        if (trackId != null && _reTrackId.hasMatch(trackId))
           'trackUri': 'https://open.spotify.com/track/$trackId',
       },
     });
@@ -137,5 +140,9 @@ class NeoReport {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       throw Exception('No se pudo abrir el enlace de NeoReport.');
     }
+  }
+
+  void close() {
+    if (_httpPropio) _http.close();
   }
 }

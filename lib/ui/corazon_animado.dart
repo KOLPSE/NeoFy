@@ -52,6 +52,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
   );
 
   late final AnimationController _resalte;
+  late final Listenable _animaciones;
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
       reverseDuration: kResaltadoDelCorazon,
       value: 0,
     );
+    _animaciones = Listenable.merge([_llenado, _onda, _resalte]);
     _nivel.addStatusListener(_alTerminarElLlenado);
   }
 
@@ -85,6 +87,11 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
   void didUpdateWidget(covariant CorazonAnimado old) {
     super.didUpdateWidget(old);
     if (old.lleno == widget.lleno) return;
+    if (!EstiloNeoFy.de(context).movimiento.seMueve || modoRendimiento.value) {
+      _onda.stop();
+      _nivel.value = widget.lleno ? 1 : 0;
+      return;
+    }
     _onda.repeat();
     if (widget.lleno) {
       _nivel.forward();
@@ -126,7 +133,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
             child: Center(
               child: RepaintBoundary(
                 child: AnimatedBuilder(
-                  animation: Listenable.merge([_llenado, _onda, _resalte]),
+                  animation: _animaciones,
                   builder: (context, _) {
                     final n = _llenado.value.clamp(0.0, 1.0);
                     final resalte = _resalte.value.clamp(0.0, 1.0);

@@ -10,8 +10,6 @@ const double kLongitudDeOnda = 40;
 
 const double kGrosorDeOnda = 4;
 
-const double kGrosorDeOndaHover = 9;
-
 const double kAmplitudDeOnda = 3;
 
 const double kHuecoTrasElPulgar = 6;
@@ -74,6 +72,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   late final AnimationController _amplitud;
   late final AnimationController _pintada;
   late final AnimationController _sobre;
+  late final Listenable _animaciones;
 
   bool _arrastrando = false;
   bool _rebobinando = false;
@@ -97,11 +96,24 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
       value: _fraccionDelWidget,
     );
     _sobre = AnimationController.unbounded(vsync: this);
+    _animaciones = Listenable.merge([_fase, _amplitud, _pintada, _sobre]);
+    modoRendimiento.addListener(_alCambiarRendimiento);
+  }
+
+  void _alCambiarRendimiento() {
+    if (mounted) _revisarLaOnda();
   }
 
   double get _fraccionDelWidget => widget.maximo <= 0
       ? 0
       : (widget.valor / widget.maximo).clamp(0.0, 1.0);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _revisarLaOnda();
+    _lanzarAvance();
+  }
 
   @override
   void didUpdateWidget(covariant BarraDeProgreso viejo) {
@@ -117,6 +129,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
 
   @override
   void dispose() {
+    modoRendimiento.removeListener(_alCambiarRendimiento);
     _fase.stop();
     _amplitud.stop();
     _pintada.stop();
@@ -258,8 +271,6 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
 
   @override
   Widget build(BuildContext context) {
-    _revisarLaOnda();
-    _lanzarAvance();
     final esquema = Theme.of(context).colorScheme;
 
     if (!_hayOnda) {
@@ -356,18 +367,19 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: kMargenLateral),
-                child: AnimatedBuilder(
-                  animation: Listenable.merge(
-                      [_fase, _amplitud, _pintada, _sobre]),
-                  builder: (context, _) => CustomPaint(
-                    size: Size(ancho, kAltoDeLaBarra),
-                    painter: PintorDeOnda(
-                      fraccion: _pintada.value.clamp(0.0, 1.0),
-                      fase: _fase.value,
-                      amplitud: _amplitud.value,
-                      sobre: _sobre.value.clamp(0.0, 1.2),
-                      activo: esquema.primary,
-                      pista: esquema.outlineVariant,
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: _animaciones,
+                    builder: (context, _) => CustomPaint(
+                      size: Size(ancho, kAltoDeLaBarra),
+                      painter: PintorDeOnda(
+                        fraccion: _pintada.value.clamp(0.0, 1.0),
+                        fase: _fase.value,
+                        amplitud: _amplitud.value,
+                        sobre: _sobre.value.clamp(0.0, 1.2),
+                        activo: esquema.primary,
+                        pista: esquema.outlineVariant,
+                      ),
                     ),
                   ),
                 ),
@@ -445,22 +457,33 @@ class PintorDeOnda extends CustomPainter {
     }
 
     if (finDeLaOnda > kAnchoDelPulgar) {
-      final alturaOnda = _alturaDeLaOnda(size.height) * amplitud;
-
-      double alturaEn(double x) =>
-          medio +
-          math.sin(2 * math.pi * (x / kLongitudDeOnda - fase)) *
-              alturaOnda *
-              envolventeDeLaOnda(finDeLaOnda - x);
-
       final arranque = kAnchoDelPulgar / 2;
-      final camino = Path()..moveTo(arranque, alturaEn(arranque));
-      const paso = 2.0;
-      for (var x = arranque + paso; x < finDeLaOnda; x += paso) {
-        camino.lineTo(x, alturaEn(x));
+      final alturaOnda = _alturaDeLaOnda(size.height) * amplitud;
+      if (alturaOnda <= 0.001) {
+        canvas.drawLine(
+          Offset(arranque, medio),
+          Offset(finDeLaOnda, medio),
+          trazoActivo,
+        );
+      } else {
+        double alturaEn(double x) =>
+            medio +
+            math.sin(2 * math.pi * (x / kLongitudDeOnda - fase)) *
+                alturaOnda *
+                envolventeDeLaOnda(finDeLaOnda - x);
+
+        final inicioOnda = math.max(arranque, finDeLaOnda - kAlcanceDeLaOnda);
+        final camino = Path()..moveTo(arranque, medio);
+        if (inicioOnda > arranque) {
+          camino.lineTo(inicioOnda, medio);
+        }
+        const paso = 2.0;
+        for (var x = inicioOnda + paso; x < finDeLaOnda; x += paso) {
+          camino.lineTo(x, alturaEn(x));
+        }
+        camino.lineTo(finDeLaOnda, medio);
+        canvas.drawPath(camino, trazoActivo);
       }
-      camino.lineTo(finDeLaOnda, medio);
-      canvas.drawPath(camino, trazoActivo);
     }
 
     {

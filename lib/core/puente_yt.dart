@@ -11,7 +11,38 @@ class PuenteYt {
 
   final Map<String, YtTrack?> _cache = {};
 
+  static const int _maxCache = 250;
   static const int umbralMinimo = 60;
+
+  static final _reA = RegExp(r'[áàäâ]');
+  static final _reE = RegExp(r'[éèëê]');
+  static final _reI = RegExp(r'[íìïî]');
+  static final _reO = RegExp(r'[óòöô]');
+  static final _reU = RegExp(r'[úùüû]');
+  static final _reFeat = RegExp(r'\b(feat|ft)\b\.?.*$', caseSensitive: false);
+  static final _reEtiquetas = RegExp(
+    r'[\-\(\[\{]\s*(remastered|remaster|official video|official music video|official audio|lyric video|lyrics|audio|hd|4k)\b[^\)\]\}]*[\)\]\}]?',
+    caseSensitive: false,
+  );
+  static final _reRemaster = RegExp(
+    r'\-\s*(\d{4}\s*)?remaster(ed)?(\s*\d{4})?',
+    caseSensitive: false,
+  );
+  static final _reParentesis = RegExp(r'[\(\[\{].*?[\)\]\}]');
+  static final _reNoPalabra = RegExp(r'[^\w\s]');
+  static final _reEspacios = RegExp(r'\s+');
+
+  static const _trampas = [
+    'live',
+    'en vivo',
+    'cover',
+    'karaoke',
+    'instrumental',
+    'sped up',
+    'slowed',
+    'remix',
+    '8d',
+  ];
 
   Future<YtTrack?> equivalenteDe(Track t) async {
     if (_cache.containsKey(t.id)) {
@@ -32,6 +63,9 @@ class PuenteYt {
     }
 
     final candidatoElegido = mejorCandidato(t, candidatos);
+    if (_cache.length >= _maxCache) {
+      _cache.remove(_cache.keys.first);
+    }
     _cache[t.id] = candidatoElegido;
     return candidatoElegido;
   }
@@ -39,11 +73,21 @@ class PuenteYt {
   static YtTrack? mejorCandidato(Track t, List<YtItem> candidatos) {
     if (candidatos.isEmpty) return null;
 
+    final normTrack = normalizar(t.name);
+    final normArtista = normalizar(t.artists.split(',').first.trim());
+    final trackNameLower = t.name.toLowerCase();
+
     YtItem? mejorItem;
     var maxPuntos = -1;
 
     for (final cand in candidatos) {
-      final puntos = puntuar(t, cand);
+      final puntos = _puntuarPreparado(
+        t,
+        cand,
+        normTrack: normTrack,
+        normArtista: normArtista,
+        trackNameLower: trackNameLower,
+      );
       if (puntos > maxPuntos) {
         maxPuntos = puntos;
         mejorItem = cand;
@@ -58,47 +102,44 @@ class PuenteYt {
 
   static String normalizar(String s) {
     if (s.isEmpty) return '';
-    var texto = s.toLowerCase();
-
-    texto = texto
-        .replaceAll(RegExp(r'[áàäâ]'), 'a')
-        .replaceAll(RegExp(r'[éèëê]'), 'e')
-        .replaceAll(RegExp(r'[íìïî]'), 'i')
-        .replaceAll(RegExp(r'[óòöô]'), 'o')
-        .replaceAll(RegExp(r'[úùüû]'), 'u')
+    var texto = s
+        .toLowerCase()
+        .replaceAll(_reA, 'a')
+        .replaceAll(_reE, 'e')
+        .replaceAll(_reI, 'i')
+        .replaceAll(_reO, 'o')
+        .replaceAll(_reU, 'u')
         .replaceAll('ñ', 'n');
 
-    texto = texto.replaceAll(RegExp(r'\b(feat|ft)\b\.?.*$', caseSensitive: false), '');
+    texto = texto.replaceAll(_reFeat, '');
+    texto = texto.replaceAll(_reEtiquetas, '');
+    texto = texto.replaceAll(_reRemaster, '');
+    texto = texto.replaceAll(_reParentesis, '');
+    texto = texto.replaceAll(_reNoPalabra, ' ');
 
-    texto = texto.replaceAll(
-      RegExp(
-        r'[\-\(\[\{]\s*(remastered|remaster|official video|official music video|official audio|lyric video|lyrics|audio|hd|4k)\b[^\)\]\}]*[\)\]\}]?',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    texto = texto.replaceAll(
-      RegExp(r'\-\s*(\d{4}\s*)?remaster(ed)?(\s*\d{4})?', caseSensitive: false),
-      '',
-    );
-
-    texto = texto.replaceAll(RegExp(r'[\(\[\{].*?[\)\]\}]'), '');
-
-    texto = texto.replaceAll(RegExp(r'[^\w\s]'), ' ');
-
-    return texto.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return texto.replaceAll(_reEspacios, ' ').trim();
   }
 
-  static int puntuar(Track t, YtItem candidato) {
-    final normTrack = normalizar(t.name);
+  static int puntuar(Track t, YtItem candidato) => _puntuarPreparado(
+        t,
+        candidato,
+        normTrack: normalizar(t.name),
+        normArtista: normalizar(t.artists.split(',').first.trim()),
+        trackNameLower: t.name.toLowerCase(),
+      );
+
+  static int _puntuarPreparado(
+    Track t,
+    YtItem candidato, {
+    required String normTrack,
+    required String normArtista,
+    required String trackNameLower,
+  }) {
     final normCand = normalizar(candidato.titulo);
 
     final simTitulo = _calcularSimilitud(normTrack, normCand);
     final puntosTitulo = (simTitulo * 55).round();
 
-    final primerArtista = t.artists.split(',').first.trim();
-    final normArtista = normalizar(primerArtista);
     final normSubtitulo = normalizar(candidato.subtitulo);
 
     var puntosArtista = 0;
@@ -127,23 +168,10 @@ class PuenteYt {
     }
 
     var penalizacionTrampas = 0;
-    final trampas = [
-      'live',
-      'en vivo',
-      'cover',
-      'karaoke',
-      'instrumental',
-      'sped up',
-      'slowed',
-      'remix',
-      '8d',
-    ];
-
     final candTituloLower = candidato.titulo.toLowerCase();
     final candSubLower = candidato.subtitulo.toLowerCase();
-    final trackNameLower = t.name.toLowerCase();
 
-    for (final trampa in trampas) {
+    for (final trampa in _trampas) {
       final enCandidato = candTituloLower.contains(trampa) || candSubLower.contains(trampa);
       final enSpotify = trackNameLower.contains(trampa);
 

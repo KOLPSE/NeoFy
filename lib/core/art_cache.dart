@@ -66,7 +66,9 @@ class ArtCache {
         await f.delete().catchError((_) => f);
       }
 
-      final res = await _http.get(Uri.parse(url));
+      final res = await _http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) return null;
 
       final tmp = File('${f.path}.${_tmpCounter++}.tmp');

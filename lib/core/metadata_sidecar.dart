@@ -22,6 +22,9 @@ class MetadataSidecar extends ChangeNotifier {
   bool _ready = false;
   String? _error;
   bool _stopping = false;
+  bool _disposed = false;
+  StreamSubscription<String>? _subOut;
+  StreamSubscription<String>? _subErr;
 
   final http.Client _http = http.Client();
 
@@ -64,10 +67,16 @@ class MetadataSidecar extends ChangeNotifier {
       anotarPid('metadata-sidecar', proc.pid);
 
       final listo = Completer<bool>();
-      proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+      _subOut = proc.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen((line) {
         if (line.startsWith('READY') && !listo.isCompleted) listo.complete(true);
       });
-      proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+      _subErr = proc.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen((line) {
         _error = line;
       });
 
@@ -78,7 +87,7 @@ class MetadataSidecar extends ChangeNotifier {
           _error ??= 'El sidecar de metadatos se cerró (código $code).';
         }
         if (!listo.isCompleted) listo.complete(false);
-        notifyListeners();
+        if (!_disposed) notifyListeners();
       }));
 
       _ready = await listo.future.timeout(
@@ -86,10 +95,10 @@ class MetadataSidecar extends ChangeNotifier {
         onTimeout: () => false,
       );
       if (_ready) _error = null;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     } catch (e) {
       _error = 'No se pudo lanzar el sidecar de metadatos: $e';
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -147,6 +156,10 @@ class MetadataSidecar extends ChangeNotifier {
 
   Future<void> stop() async {
     _stopping = true;
+    await _subOut?.cancel();
+    await _subErr?.cancel();
+    _subOut = null;
+    _subErr = null;
     final proc = _proc;
     _proc = null;
     _ready = false;
@@ -159,6 +172,8 @@ class MetadataSidecar extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _http.close();
     unawaited(stop());
     super.dispose();
   }

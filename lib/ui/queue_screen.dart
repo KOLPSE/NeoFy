@@ -40,21 +40,31 @@ class _QueueScreenState extends State<QueueScreen> {
   @override
   void initState() {
     super.initState();
-    _lastTrackUri = widget.player.state.track?.uri;
+    _lastTrackUri = widget.player.currentUri.value ?? widget.player.state.track?.uri;
     unawaited(_load());
-    widget.player.addListener(_onPlayerChanged);
+    widget.player.currentUri.addListener(_onPlayerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant QueueScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      oldWidget.player.currentUri.removeListener(_onPlayerChanged);
+      widget.player.currentUri.addListener(_onPlayerChanged);
+      _onPlayerChanged();
+    }
   }
 
   @override
   void dispose() {
-    widget.player.removeListener(_onPlayerChanged);
+    widget.player.currentUri.removeListener(_onPlayerChanged);
     super.dispose();
   }
 
   String? _lastTrackUri;
 
   void _onPlayerChanged() {
-    final uri = widget.player.state.track?.uri;
+    final uri = widget.player.currentUri.value ?? widget.player.state.track?.uri;
     if (uri != _lastTrackUri) {
       _lastTrackUri = uri;
       unawaited(_load());

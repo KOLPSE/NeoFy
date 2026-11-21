@@ -37,6 +37,11 @@ class LibrespotManager extends ChangeNotifier {
   DateTime? _startedAt;
   bool _stopping = false;
   bool _reiniciando = false;
+  bool _disposed = false;
+  StreamSubscription<String>? _subOut;
+  StreamSubscription<String>? _subErr;
+
+  static final _reOAuthUrl = RegExp(r'https://accounts\.spotify\.com/\S+');
 
   void Function(String linea)? onFalloDeAudio;
 
@@ -72,7 +77,7 @@ class LibrespotManager extends ChangeNotifier {
   void _setStatus(LibrespotStatus s, {String? error}) {
     _status = s;
     _lastError = error;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> start() async {
@@ -115,8 +120,14 @@ class LibrespotManager extends ChangeNotifier {
       _startedAt = DateTime.now();
       anotarPid('librespot', proc.pid);
 
-      proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
-      proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLogLine);
+      _subOut = proc.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen(_onLogLine);
+      _subErr = proc.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())
+          .listen(_onLogLine);
 
       unawaited(proc.exitCode.then((code) => _onExit(proc, code)));
       _setStatus(LibrespotStatus.running);
@@ -143,7 +154,7 @@ class LibrespotManager extends ChangeNotifier {
 
     if (esFalloDeAudio(line)) onFalloDeAudio?.call(line);
 
-    final match = RegExp(r'https://accounts\.spotify\.com/\S+').firstMatch(line);
+    final match = _reOAuthUrl.firstMatch(line);
     if (match != null) {
       final url = Uri.tryParse(match.group(0)!);
       if (url != null) unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
@@ -180,6 +191,10 @@ class LibrespotManager extends ChangeNotifier {
   Future<void> stop() async {
     _stopping = true;
     _restartTimer?.cancel();
+    await _subOut?.cancel();
+    await _subErr?.cancel();
+    _subOut = null;
+    _subErr = null;
     final proc = _proc;
     _proc = null;
     if (proc != null) {
@@ -195,6 +210,7 @@ class LibrespotManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _restartTimer?.cancel();
     unawaited(stop());
     super.dispose();

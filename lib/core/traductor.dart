@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:translator/translator.dart';
@@ -16,9 +17,12 @@ class Traductor extends ChangeNotifier {
     required this.localeEfectivo,
     this.simulado = false,
     Directory? directorio,
-  })  : _directorio = directorio ?? appDataDir() {
+  }) : _directorio = directorio ?? appDataDir() {
     unawaited(_cargarCache());
   }
+
+  static const int _maxEntradasCache = 600;
+  static final _reHashInestable = RegExp(r'^bio\|[^|]+\|\d+$');
 
   /// Callable que devuelve el idioma que hay en uso ahora mismo.
   ///
@@ -28,6 +32,8 @@ class Traductor extends ChangeNotifier {
   final Directory _directorio;
   final GoogleTranslator _motor = GoogleTranslator();
   final Map<String, String> _cache = {};
+  Timer? _guardadoAplazado;
+  bool _disposed = false;
 
   final bool simulado;
 
@@ -49,20 +55,57 @@ class Traductor extends ChangeNotifier {
     return _cache['ui|$idiomaObjetivo|$t'];
   }
 
+  void _anotarCache(String clave, String valor) {
+    _cache.remove(clave);
+    _cache[clave] = valor;
+    while (_cache.length > _maxEntradasCache) {
+      _cache.remove(_cache.keys.first);
+    }
+    _programarGuardado();
+  }
+
+  static String claveBiografia(String objetivo, String bio) {
+    final hash = sha1.convert(utf8.encode(bio)).toString().substring(0, 16);
+    return 'bio|$objetivo|$hash';
+  }
+
   Future<void> _cargarCache() async {
     try {
       final f = _fichero;
       if (!await f.exists()) return;
       final map = jsonDecode(await f.readAsString());
       if (map is! Map<String, dynamic>) return;
+      var descartadas = false;
       map.forEach((k, v) {
-        if (v is String) _cache[k] = v;
+        if (v is! String) return;
+        // Limpia claves antiguas basadas en String.hashCode (inestable entre arranques).
+        if (_reHashInestable.hasMatch(k)) {
+          descartadas = true;
+          return;
+        }
+        _cache[k] = v;
       });
+      while (_cache.length > _maxEntradasCache) {
+        _cache.remove(_cache.keys.first);
+        descartadas = true;
+      }
+      if (descartadas) _programarGuardado();
     } catch (_) {}
+  }
+
+  void _programarGuardado() {
+    if (_disposed) return;
+    _guardadoAplazado?.cancel();
+    _guardadoAplazado = Timer(const Duration(milliseconds: 500), () {
+      unawaited(_guardarCache());
+    });
   }
 
   Future<void> _guardarCache() async {
     try {
+      if (!await _directorio.exists()) {
+        await _directorio.create(recursive: true);
+      }
       await _fichero.writeAsString(jsonEncode(_cache));
     } catch (_) {}
   }
@@ -71,18 +114,13 @@ class Traductor extends ChangeNotifier {
     final t = texto.trim();
     if (t.isEmpty || !traduceUi) return texto;
     final fijada = traduccionUiFijada(idiomaObjetivo, t);
-    if (fijada != null) {
-      _cache['ui|$idiomaObjetivo|$t'] = fijada;
-      unawaited(_guardarCache());
-      return fijada;
-    }
+    if (fijada != null) return fijada;
     final clave = 'ui|$idiomaObjetivo|$t';
     final previa = _cache[clave];
     if (previa != null) return previa;
     try {
       final res = await _motor.translate(t, from: 'es', to: idiomaObjetivo);
-      _cache[clave] = res.text;
-      unawaited(_guardarCache());
+      _anotarCache(clave, res.text);
       return res.text;
     } catch (_) {
       return texto;
@@ -109,15 +147,14 @@ class Traductor extends ChangeNotifier {
     if (objetivo == 'es' && puntaje >= 3) return bio;
     if (objetivo != 'es' && puntaje >= 5) return bio;
 
-    final clave = 'bio|$objetivo|${bio.hashCode}';
+    final clave = claveBiografia(objetivo, bio);
     final previa = _cache[clave];
     if (previa != null) return previa;
 
     try {
       final origen = puntaje < 0 ? 'auto' : _idiomaOrigenProbable(bio);
       final res = await _motor.translate(bio, from: origen, to: objetivo);
-      _cache[clave] = res.text;
-      unawaited(_guardarCache());
+      _anotarCache(clave, res.text);
       return res.text;
     } catch (_) {
       return bio;
@@ -127,7 +164,7 @@ class Traductor extends ChangeNotifier {
   String _idiomaOrigenProbable(String texto) {
     var mejor = 'en';
     var puntaje = -999999;
-    for (final lang in ['en', 'es', 'fr', 'de', 'pt', 'it', 'ja', 'ko']) {
+    for (final lang in const ['en', 'es', 'fr', 'de', 'pt', 'it', 'ja', 'ko']) {
       final p = puntajeBiografia(texto, lang);
       if (p > puntaje) {
         puntaje = p;
@@ -137,7 +174,17 @@ class Traductor extends ChangeNotifier {
     return mejor;
   }
 
-  void refrescar() => notifyListeners();
+  void refrescar() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _guardadoAplazado?.cancel();
+    _guardadoAplazado = null;
+    super.dispose();
+  }
 
   static final Traductor _sinScope = Traductor(
     localeEfectivo: () => 'es_ES',

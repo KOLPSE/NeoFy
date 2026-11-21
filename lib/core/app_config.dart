@@ -7,8 +7,6 @@ import 'idiomas_spotify.dart';
 
 const String kDefaultClientId = '';
 
-bool get hayClientId => kDefaultClientId.isNotEmpty;
-
 const String kDiscordClientId = '1537557680024199198';
 
 const String kVersion = '1.3.3';

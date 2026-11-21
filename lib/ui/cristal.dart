@@ -81,6 +81,7 @@ class _ImagenDeFondo extends StatelessWidget {
         opacity: fondo.opacidad,
         child: Image.file(
           fichero,
+          cacheWidth: 960,
           fit: _ajuste(fondo.ajuste),
           repeat: fondo.ajuste == AjusteDeFondo.repetir
               ? ImageRepeat.repeat
@@ -92,31 +93,48 @@ class _ImagenDeFondo extends StatelessWidget {
   }
 }
 
-class _CaratulaDeFondo extends StatelessWidget {
+class _CaratulaDeFondo extends StatefulWidget {
   const _CaratulaDeFondo({required this.fondo});
 
   final FondoDeTema fondo;
+
+  @override
+  State<_CaratulaDeFondo> createState() => _CaratulaDeFondoState();
+}
+
+class _CaratulaDeFondoState extends State<_CaratulaDeFondo> {
+  String? _urlCargada;
+  Future<File?>? _futuro;
+
+  void _actualizarUrl(String? url) {
+    if (url == _urlCargada) return;
+    _urlCargada = url;
+    _futuro = url == null ? null : ArtCache.file(url);
+  }
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<String?>(
       valueListenable: caratulaDeFondo,
       builder: (context, url, _) {
-        if (url == null) return const SizedBox.shrink();
+        _actualizarUrl(url);
+        final futuro = _futuro;
+        if (futuro == null) return const SizedBox.shrink();
         return FutureBuilder<File?>(
-          future: ArtCache.file(url),
+          future: futuro,
           builder: (context, snap) {
             final fichero = snap.data;
             if (fichero == null) return const SizedBox.shrink();
             return AnimatedSwitcher(
               duration: const Duration(milliseconds: 600),
               child: _conDesenfoque(
-                fondo,
+                widget.fondo,
                 Opacity(
                   key: ValueKey(fichero.path),
-                  opacity: fondo.opacidad,
+                  opacity: widget.fondo.opacidad,
                   child: Image.file(
                     fichero,
+                    cacheWidth: 640,
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
@@ -135,13 +153,15 @@ class _CaratulaDeFondo extends StatelessWidget {
 
 Widget _conDesenfoque(FondoDeTema fondo, Widget hijo) {
   if (fondo.desenfoque <= 0) return hijo;
-  return ImageFiltered(
-    imageFilter: ui.ImageFilter.blur(
-      sigmaX: fondo.desenfoque,
-      sigmaY: fondo.desenfoque,
-      tileMode: TileMode.decal,
+  return RepaintBoundary(
+    child: ImageFiltered(
+      imageFilter: ui.ImageFilter.blur(
+        sigmaX: fondo.desenfoque,
+        sigmaY: fondo.desenfoque,
+        tileMode: TileMode.decal,
+      ),
+      child: hijo,
     ),
-    child: hijo,
   );
 }
 
@@ -221,9 +241,10 @@ class PanelDeCristal extends StatelessWidget {
                     ]
                   : null,
             ),
-            child: ClipRRect(
-              borderRadius: radio,
-              child: BackdropFilter(
+            child: RepaintBoundary(
+              child: ClipRRect(
+                borderRadius: radio,
+                child: BackdropFilter(
                 filter: _filtroDeCristal(cristal),
                 child: LayoutBuilder(
                   builder: (context, cons) {
@@ -291,6 +312,7 @@ class PanelDeCristal extends StatelessWidget {
                 ),
               ),
             ),
+          ),
           ),
         );
       },

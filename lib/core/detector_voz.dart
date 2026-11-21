@@ -199,7 +199,10 @@ class CapturaVozWasapi implements FuenteDeteccionVoz {
   final ValueNotifier<EstadoVoz> _estado;
   Isolate? _isolate;
   ReceivePort? _rx;
+  ReceivePort? _onExit;
+  StreamSubscription<dynamic>? _rxSub;
   SendPort? _controlPort;
+  Completer<void>? _salida;
   bool _activa = false;
   bool _disposed = false;
 
@@ -214,10 +217,18 @@ class CapturaVozWasapi implements FuenteDeteccionVoz {
     if (_disposed || _activa || !Platform.isWindows) return;
     _activa = true;
     final rx = ReceivePort();
+    final onExit = ReceivePort();
+    final salida = Completer<void>();
     _rx = rx;
-    final controlReady = Completer<SendPort>();
+    _onExit = onExit;
+    _salida = salida;
+    final controlReady = Completer<SendPort?>();
 
-    rx.listen((msg) {
+    onExit.first.whenComplete(() {
+      if (!salida.isCompleted) salida.complete();
+    });
+
+    _rxSub = rx.listen((msg) {
       if (msg is SendPort) {
         if (!controlReady.isCompleted) controlReady.complete(msg);
       } else if (msg is List && msg.length == 3) {
@@ -233,23 +244,43 @@ class CapturaVozWasapi implements FuenteDeteccionVoz {
       }
     });
 
-    _isolate = await Isolate.spawn(_isolateLoopbackWindows, rx.sendPort);
+    _isolate = await Isolate.spawn(
+      _isolateLoopbackWindows,
+      rx.sendPort,
+      onExit: onExit.sendPort,
+    );
     _controlPort = await controlReady.future.timeout(
       const Duration(seconds: 2),
-      onTimeout: () => rx.sendPort,
+      onTimeout: () => null,
     );
+    if (!_activa || _disposed) {
+      await detener();
+    }
   }
 
   @override
   Future<void> detener() async {
     _activa = false;
-    _controlPort?.send('stop');
+    final control = _controlPort;
     _controlPort = null;
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+    control?.send('stop');
+
+    final salida = _salida;
+    _salida = null;
+    if (salida != null) {
+      await salida.future.timeout(
+        const Duration(milliseconds: 250),
+        onTimeout: () {},
+      );
+    }
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
+    await _rxSub?.cancel();
+    _rxSub = null;
     _rx?.close();
     _rx = null;
+    _onExit?.close();
+    _onExit = null;
     if (!_disposed) {
       _estado.value = EstadoVoz(
         hayVoz: false,
@@ -267,11 +298,20 @@ class CapturaVozWasapi implements FuenteDeteccionVoz {
   }
 }
 
-void _isolateLoopbackWindows(SendPort mainPort) {
+Future<void> _esperarCooperativo(int ms, bool Function() debeDetener) async {
+  var restante = ms;
+  while (restante > 0 && !debeDetener()) {
+    final paso = restante > 25 ? 25 : restante;
+    await Future<void>.delayed(Duration(milliseconds: paso));
+    restante -= paso;
+  }
+}
+
+Future<void> _isolateLoopbackWindows(SendPort mainPort) async {
   final cmdPort = ReceivePort();
   mainPort.send(cmdPort.sendPort);
   var detener = false;
-  cmdPort.listen((msg) {
+  final cmdSub = cmdPort.listen((msg) {
     if (msg == 'stop') detener = true;
   });
 
@@ -320,42 +360,48 @@ void _isolateLoopbackWindows(SendPort mainPort) {
   final analizador = AnalizadorVozPcm();
   var ultimoEnvio = EstadoVoz(disponible: true);
 
-  while (!detener) {
-    final ok = _ejecutarBucleWasapi(
-      coCreate: coCreate,
-      coTaskMemFree: coTaskMemFree,
-      clsidEnum: clsidEnum,
-      iidEnum: iidEnum,
-      iidAudioClient: iidAudioClient,
-      iidCaptureClient: iidCaptureClient,
-      debeDetener: () => detener,
-      onMuestras: (muestras, sampleRate) {
-        final actual = analizador.analizarMono(muestras, sampleRate: sampleRate);
-        if (actual.hayVoz != ultimoEnvio.hayVoz ||
-            (actual.nivelVoz - ultimoEnvio.nivelVoz).abs() > 0.08) {
-          ultimoEnvio = actual;
-          mainPort.send([actual.hayVoz, actual.nivelVoz, true]);
-        }
-      },
-    );
-    if (!ok && !detener) {
-      mainPort.send([false, 0.0, false]);
-      sleep(const Duration(milliseconds: 500));
-    } else if (!detener) {
-      analizador.reiniciar();
-      sleep(const Duration(milliseconds: 250));
+  try {
+    while (!detener) {
+      final ok = await _ejecutarBucleWasapi(
+        coCreate: coCreate,
+        coTaskMemFree: coTaskMemFree,
+        clsidEnum: clsidEnum,
+        iidEnum: iidEnum,
+        iidAudioClient: iidAudioClient,
+        iidCaptureClient: iidCaptureClient,
+        debeDetener: () => detener,
+        onMuestras: (muestras, sampleRate) {
+          final actual = analizador.analizarMono(
+            muestras,
+            sampleRate: sampleRate,
+          );
+          if (actual.hayVoz != ultimoEnvio.hayVoz ||
+              (actual.nivelVoz - ultimoEnvio.nivelVoz).abs() > 0.08) {
+            ultimoEnvio = actual;
+            mainPort.send([actual.hayVoz, actual.nivelVoz, true]);
+          }
+        },
+      );
+      if (!ok && !detener) {
+        mainPort.send([false, 0.0, false]);
+        await _esperarCooperativo(500, () => detener);
+      } else if (!detener) {
+        analizador.reiniciar();
+        await _esperarCooperativo(250, () => detener);
+      }
     }
+  } finally {
+    calloc.free(clsidEnum);
+    calloc.free(iidEnum);
+    calloc.free(iidAudioClient);
+    calloc.free(iidCaptureClient);
+    if (debeDesinicializar) coUninit();
+    await cmdSub.cancel();
+    cmdPort.close();
   }
-
-  calloc.free(clsidEnum);
-  calloc.free(iidEnum);
-  calloc.free(iidAudioClient);
-  calloc.free(iidCaptureClient);
-  if (debeDesinicializar) coUninit();
-  cmdPort.close();
 }
 
-bool _ejecutarBucleWasapi({
+Future<bool> _ejecutarBucleWasapi({
   required int Function(
     Pointer<Uint8>,
     Pointer<Void>,
@@ -370,7 +416,7 @@ bool _ejecutarBucleWasapi({
   required Pointer<Uint8> iidCaptureClient,
   required bool Function() debeDetener,
   required void Function(List<double> muestras, int sampleRate) onMuestras,
-}) {
+}) async {
   final ppEnum = calloc<Pointer<Void>>();
   Pointer<Void> enumerator = nullptr;
   Pointer<Void> device = nullptr;
@@ -538,7 +584,11 @@ bool _ejecutarBucleWasapi({
     final pQpcPos = calloc<Uint64>();
 
     try {
-      final silencio = List<double>.filled((sampleRate * 0.02).round(), 0.0);
+      var silencio = Float64List((sampleRate * 0.02).round());
+      var bufferMono = Float64List((sampleRate * 0.02).round());
+      final invCanales = 1.0 / channels;
+      final invPcm16 = invCanales / 32768.0;
+
       while (!debeDetener()) {
         hr = getNextPacket(captureClient, pPacket);
         if (hr < 0) return true; // dispositivo cambiado: reintentar limpio
@@ -559,35 +609,42 @@ bool _ejecutarBucleWasapi({
           if (frames > 0) {
             leidoAlgo = true;
             if (silent || ppData.value == nullptr) {
-              onMuestras(List<double>.filled(frames, 0.0), sampleRate);
+              if (silencio.length < frames) {
+                silencio = Float64List(frames);
+              }
+              onMuestras(Float64List.sublistView(silencio, 0, frames), sampleRate);
             } else if (esFloat) {
+              if (bufferMono.length < frames) {
+                bufferMono = Float64List(frames);
+              }
               final floats = ppData.value.cast<Float>().asTypedList(
                 frames * channels,
               );
-              final mono = List<double>.filled(frames, 0.0);
               for (var i = 0; i < frames; i++) {
                 var acc = 0.0;
                 final base = i * channels;
                 for (var c = 0; c < channels; c++) {
                   acc += floats[base + c];
                 }
-                mono[i] = acc / channels;
+                bufferMono[i] = acc * invCanales;
               }
-              onMuestras(mono, sampleRate);
+              onMuestras(Float64List.sublistView(bufferMono, 0, frames), sampleRate);
             } else {
+              if (bufferMono.length < frames) {
+                bufferMono = Float64List(frames);
+              }
               final ints = ppData.value.cast<Int16>().asTypedList(
                 frames * channels,
               );
-              final mono = List<double>.filled(frames, 0.0);
               for (var i = 0; i < frames; i++) {
                 var acc = 0.0;
                 final base = i * channels;
                 for (var c = 0; c < channels; c++) {
-                  acc += ints[base + c] / 32768.0;
+                  acc += ints[base + c];
                 }
-                mono[i] = acc / channels;
+                bufferMono[i] = acc * invPcm16;
               }
-              onMuestras(mono, sampleRate);
+              onMuestras(Float64List.sublistView(bufferMono, 0, frames), sampleRate);
             }
           }
           releaseBuffer(captureClient, frames);
@@ -597,7 +654,7 @@ bool _ejecutarBucleWasapi({
         if (!leidoAlgo) {
           onMuestras(silencio, sampleRate);
         }
-        sleep(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
       }
       final stopFn = _vtablePtr<Int32 Function(Pointer<Void>)>(
         audioClient,
