@@ -36,6 +36,32 @@ if ($env:PUB_CACHE) {
 }
 New-Item -ItemType Directory -Force -Path $env:PUB_CACHE | Out-Null
 
+# Si algún paquete en PUB_CACHE quedó corrupto (bytes no UTF-8 o basura en
+# disco), bórralo para que flutter pub get vuelva a descargarlo limpio.
+$pubHosted = Join-Path $env:PUB_CACHE 'hosted'
+if (Test-Path $pubHosted) {
+  $utf8Estricto = New-Object System.Text.UTF8Encoding($false, $true)
+  $pubCorrupto = $false
+  foreach ($f in Get-ChildItem -LiteralPath $pubHosted -File -Recurse -Filter '*.dart') {
+    try {
+      $textoPub = [IO.File]::ReadAllText($f.FullName, $utf8Estricto)
+      if ($textoPub -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') {
+        Write-Host "Paquete con bytes de control en PUB_CACHE: $($f.FullName)"
+        $pubCorrupto = $true
+        break
+      }
+    } catch {
+      Write-Host "Paquete con UTF-8 inválido en PUB_CACHE: $($f.FullName)"
+      $pubCorrupto = $true
+      break
+    }
+  }
+  if ($pubCorrupto) {
+    Write-Host "Limpiando caché corrupta en $pubHosted..."
+    Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 # Si falta el snapshot compilado (primer uso o intento previo fallido), limpia
 # el estado de flutter_tools para regenerar package_config.json con rutas válidas.
 $snapshot = Join-Path $sdkRoot 'bin\cache\flutter_tools.snapshot'
