@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-foreach ($d in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE, $env:TEMP, $env:TMP)) {
+foreach ($d in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE, $env:TEMP, $env:TMP, $env:CARGO_HOME)) {
   if ($d) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 }
 
@@ -49,7 +49,7 @@ if (Test-Path $pubHosted) {
   try {
     foreach ($f in Get-ChildItem -LiteralPath $pubHosted -File -Recurse -Filter '*.dart' -ErrorAction Stop) {
       $textoPub = [IO.File]::ReadAllText($f.FullName, $utf8Estricto)
-      if ($textoPub -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') {
+      if ($textoPub.IndexOf([char]0) -ge 0) {
         Write-Host "Paquete con bytes de control en PUB_CACHE: $($f.FullName)"
         $pubCorrupto = $true
         break
@@ -91,7 +91,7 @@ $engineDir = Join-Path $sdkRoot 'bin\cache\artifacts\engine'
 $wrapperDir = Join-Path $engineDir 'windows-x64\cpp_client_wrapper'
 if (Test-Path $wrapperDir) {
   $corrupto = $false
-  foreach ($f in Get-ChildItem -LiteralPath $wrapperDir -File -Recurse -Include '*.cc','*.h') {
+  foreach ($f in (Get-ChildItem -LiteralPath $wrapperDir -File -Recurse | Where-Object { $_.Extension -in '.cc','.h' })) {
     $texto = [IO.File]::ReadAllText($f.FullName)
     if ($texto.IndexOf([char]0) -ge 0 -or -not $texto.TrimStart().StartsWith('// Copyright')) {
       Write-Host "Archivo corrupto en caché de Flutter: $($f.FullName)"

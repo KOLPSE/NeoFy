@@ -117,6 +117,7 @@ build:windows:
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
     PUB_CACHE: 'C:\ci\pub-cache-clean'
+    CARGO_HOME: 'C:\ci\cargo-clean'
     GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
     APPDATA: 'C:\ci\appdata\roaming'
     LOCALAPPDATA: 'C:\ci\appdata\local'
