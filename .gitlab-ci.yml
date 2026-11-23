@@ -66,7 +66,6 @@ check:windows:
     APPDATA: 'C:\ci\appdata\roaming'
     LOCALAPPDATA: 'C:\ci\appdata\local'
     USERPROFILE: 'C:\ci\profile'
-    HOME: 'C:\ci\profile'
     TEMP: 'C:\ci\temp'
     TMP: 'C:\ci\temp'
   before_script:
@@ -74,7 +73,7 @@ check:windows:
   script:
     - flutter pub get
     - flutter analyze
-    - flutter test
+    - flutter test -j 2
     - |
       # Que no se cuele ningun Client ID: el pipeline es publico en GitHub y
       # una clave de Spotify en el repositorio seria una fuga.
@@ -122,7 +121,6 @@ build:windows:
     APPDATA: 'C:\ci\appdata\roaming'
     LOCALAPPDATA: 'C:\ci\appdata\local'
     USERPROFILE: 'C:\ci\profile'
-    HOME: 'C:\ci\profile'
     TEMP: 'C:\ci\temp'
     TMP: 'C:\ci\temp'
   before_script:
