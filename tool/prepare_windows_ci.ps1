@@ -47,23 +47,26 @@ $pubHosted = Join-Path $env:PUB_CACHE 'hosted'
 if (Test-Path $pubHosted) {
   $utf8Estricto = New-Object System.Text.UTF8Encoding($false, $true)
   $pubCorrupto = $false
-  foreach ($f in Get-ChildItem -LiteralPath $pubHosted -File -Recurse -Filter '*.dart') {
-    try {
+  try {
+    foreach ($f in Get-ChildItem -LiteralPath $pubHosted -File -Recurse -Filter '*.dart' -ErrorAction Stop) {
       $textoPub = [IO.File]::ReadAllText($f.FullName, $utf8Estricto)
       if ($textoPub -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') {
         Write-Host "Paquete con bytes de control en PUB_CACHE: $($f.FullName)"
         $pubCorrupto = $true
         break
       }
-    } catch {
-      Write-Host "Paquete con UTF-8 inválido en PUB_CACHE: $($f.FullName)"
-      $pubCorrupto = $true
-      break
     }
+  } catch {
+    Write-Host "Error leyendo PUB_CACHE (posible directorio o archivo corrupto): $($_.Exception.Message)"
+    $pubCorrupto = $true
   }
   if ($pubCorrupto) {
     Write-Host "Limpiando caché corrupta en $pubHosted..."
     Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $pubHosted) {
+      cmd /c "rmdir /s /q `"$pubHosted`" 2>nul"
+      $global:LASTEXITCODE = 0
+    }
   }
 }
 
