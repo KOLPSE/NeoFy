@@ -124,7 +124,12 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.graphic_eq, size: 56, color: theme.colorScheme.primary),
+                Image.asset(
+                  'assets/neofy.png',
+                  width: 56,
+                  height: 56,
+                  excludeFromSemantics: true,
+                ),
                 const SizedBox(height: 20),
                 Text('NeoFy', style: theme.textTheme.headlineSmall),
                 const SizedBox(height: 8),

@@ -18,17 +18,28 @@ enum EstadoActualizacion {
 }
 
 class Updater extends ChangeNotifier {
-  Updater({http.Client? cliente})
+  Updater({http.Client? cliente, bool? instalaSolo})
       : _http = cliente ?? http.Client(),
-        _httpPropio = cliente == null;
+        _httpPropio = cliente == null,
+        _instalaSolo = instalaSolo ?? seInstalaSolo;
 
   final http.Client _http;
   final bool _httpPropio;
+  final bool _instalaSolo;
   bool _disposed = false;
 
-  static const _hostFiable = 'github.com';
+  static const _hostFiable = kHostActualizaciones;
   static final _rePrefijoV = RegExp('^v');
   static final _reSeparadorVersion = RegExp(r'[.+-]');
+
+  /// URI de consulta de la última release en GitLab. Se construye con
+  /// `Uri.parse` porque `Uri.https` vuelve a escapar `%2F` como `%252F` y
+  /// GitLab responde 404.
+  static Uri get uriUltimaRelease => Uri.parse(
+        'https://$kHostActualizaciones/api/v4/projects/'
+        '${Uri.encodeComponent(kProyectoActualizaciones)}'
+        '/releases/permalink/latest',
+      );
 
   EstadoActualizacion estado = EstadoActualizacion.reposo;
   String? versionDisponible;
@@ -51,8 +62,8 @@ class Updater extends ChangeNotifier {
     _cambiar(EstadoActualizacion.buscando);
     try {
       final res = await _http.get(
-        Uri.https('api.github.com', '/repos/$kRepoGitHub/releases/latest'),
-        headers: {'Accept': 'application/vnd.github+json'},
+        uriUltimaRelease,
+        headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 404) {
@@ -60,7 +71,7 @@ class Updater extends ChangeNotifier {
         return;
       }
       if (res.statusCode != 200) {
-        throw 'GitHub respondió ${res.statusCode}';
+        throw 'El servidor de actualizaciones respondió ${res.statusCode}';
       }
 
       final j = jsonDecode(res.body) as Map<String, dynamic>;
@@ -74,20 +85,26 @@ class Updater extends ChangeNotifier {
       }
 
       versionDisponible = version;
-      notas = j['body'] as String?;
+      notas = j['description'] as String?;
 
-      if (!seInstalaSolo) {
+      if (!_instalaSolo) {
         _cambiar(EstadoActualizacion.disponible);
         return;
       }
 
-      final assets = (j['assets'] as List<dynamic>? ?? const [])
+      final assets = j['assets'] as Map<String, dynamic>?;
+      final enlaces = (assets?['links'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>();
-      final exe = assets.where((a) => (a['name'] as String? ?? '').endsWith('.exe'));
+      final exe = enlaces.where((enlace) {
+        final url = enlace['url'] as String?;
+        final uri = url == null ? null : Uri.tryParse(url);
+        return uri != null && uri.path.toLowerCase().endsWith('.exe');
+      });
       if (exe.isEmpty) throw 'La release no trae instalador';
 
-      final url = exe.first['browser_download_url'] as String;
-      if (Uri.parse(url).host != _hostFiable) {
+      final url = exe.first['url'] as String;
+      final uri = Uri.tryParse(url);
+      if (uri == null || uri.scheme != 'https' || uri.host != _hostFiable) {
         throw 'La descarga no viene de $_hostFiable';
       }
 
@@ -108,6 +125,10 @@ class Updater extends ChangeNotifier {
       final req = http.Request('GET', Uri.parse(url));
       final res = await _http.send(req).timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) throw 'La descarga falló (${res.statusCode})';
+      final tipo = (res.headers['content-type'] ?? '').toLowerCase();
+      if (tipo.startsWith('text/html')) {
+        throw 'La descarga devolvió una página HTML en lugar del instalador';
+      }
 
       final total = res.contentLength ?? 0;
       final destino = File(p.join(

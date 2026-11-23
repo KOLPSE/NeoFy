@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/app_config.dart';
 import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/temas.dart';
@@ -547,7 +548,7 @@ class _Actualizaciones extends StatelessWidget {
                           Updater.seInstalaSolo
                               ? 'Hay una versión nueva: ${updater.versionDisponible}'
                               : 'Hay una versión nueva (${updater.versionDisponible}). '
-                                    'Descárgala desde GitHub o actualiza tu paquete de Linux.',
+                                    'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.',
                         EstadoActualizacion.descargando =>
                           'Descargando… ${(updater.progreso * 100).round()} %',
                         EstadoActualizacion.listaParaInstalar =>

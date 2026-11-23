@@ -243,7 +243,7 @@ String _leeme(String id) =>
 # Mi tema
 
 Plantilla de tema para NeoFy. La guía completa está en `TEMAS.md`, dentro del
-repositorio: https://github.com/KOLPSE/NeoFy/blob/main/TEMAS.md
+repositorio: $kUrlRepositorio/-/blob/main/TEMAS.md
 
 ## Cómo trabajar
 

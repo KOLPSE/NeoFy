@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/idiomas_spotify.dart';
 import 'package:neofy/core/librespot.dart';
@@ -7,6 +12,7 @@ import 'package:neofy/core/models.dart';
 import 'package:neofy/core/updater.dart';
 import 'package:neofy/core/volumen_local.dart';
 import 'package:neofy/ui/artist_screen.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('volumen local (PulseAudio / PipeWire)', () {
@@ -120,6 +126,200 @@ Sink Input #21
         isTrue,
         reason: 'kVersion debe ser x.y.z: el instalador la usa tal cual',
       );
+    });
+
+    test('la URI de última release apunta a apps/neofy sin doble codificación', () {
+      expect(
+        Updater.uriUltimaRelease.toString(),
+        'https://git.neogex.xyz/api/v4/projects/apps%2Fneofy/releases/permalink/latest',
+      );
+    });
+
+    test('buscar() detecta release en GitLab y descarga desde el paquete genérico', () async {
+      final peticiones = <Uri>[];
+      const pkgUrl =
+          'https://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/9.9.9/NeoFy-9.9.9-windows-x64.exe';
+      const directUrl =
+          'https://git.neogex.xyz/apps/neofy/-/releases/v9.9.9/downloads/NeoFy-9.9.9-windows-x64.exe';
+      final destinoEsperado =
+          File(p.join(Directory.systemTemp.path, 'NeoFy-9.9.9-setup.exe'));
+      addTearDown(() async {
+        if (await destinoEsperado.exists()) {
+          await destinoEsperado.delete().catchError((_) => destinoEsperado);
+        }
+      });
+
+      final cliente = MockClient.streaming((request, _) async {
+        peticiones.add(request.url);
+        if (request.url == Updater.uriUltimaRelease) {
+          final cuerpo = jsonEncode({
+            'tag_name': 'v9.9.9',
+            'description': 'Notas de prueba',
+            'assets': {
+              'links': [
+                {
+                  'name': 'Linux portable x86_64 (.tar.gz)',
+                  'url':
+                      'https://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/9.9.9/NeoFy-9.9.9-linux-x86_64.tar.gz',
+                  'direct_asset_url':
+                      'https://git.neogex.xyz/apps/neofy/-/releases/v9.9.9/downloads/NeoFy-9.9.9-linux-x86_64.tar.gz',
+                  'link_type': 'package',
+                },
+                {
+                  'name': 'Instalador Windows x64 (.exe)',
+                  'url': pkgUrl,
+                  'direct_asset_url': directUrl,
+                  'link_type': 'package',
+                },
+              ],
+            },
+          });
+          return http.StreamedResponse(
+            Stream.value(utf8.encode(cuerpo)),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.toString() == pkgUrl) {
+          final bytes = utf8.encode('MZ-instalador-prueba');
+          return http.StreamedResponse(
+            Stream.value(bytes),
+            200,
+            contentLength: bytes.length,
+            headers: {'content-type': 'application/octet-stream'},
+          );
+        }
+        return http.StreamedResponse(const Stream.empty(), 404);
+      });
+
+      final updater = Updater(cliente: cliente, instalaSolo: true);
+      addTearDown(updater.dispose);
+
+      await updater.buscar();
+      expect(updater.estado, EstadoActualizacion.disponible);
+      expect(updater.versionDisponible, '9.9.9');
+      expect(updater.notas, 'Notas de prueba');
+
+      await updater.descargar();
+      expect(updater.estado, EstadoActualizacion.listaParaInstalar);
+      expect(peticiones.map((u) => u.toString()), [
+        Updater.uriUltimaRelease.toString(),
+        pkgUrl,
+      ]);
+      expect(await destinoEsperado.exists(), isTrue);
+    });
+
+    test('buscar() rechaza instaladores de hosts no fiables o sin HTTPS', () async {
+      for (final urlMala in [
+        'https://github.com/KOLPSE/NeoFy/releases/download/v9.9.9/NeoFy-9.9.9-windows-x64.exe',
+        'http://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/9.9.9/NeoFy-9.9.9-windows-x64.exe',
+      ]) {
+        final cliente = MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'tag_name': 'v9.9.9',
+              'description': 'Notas',
+              'assets': {
+                'links': [
+                  {
+                    'name': 'Instalador Windows x64 (.exe)',
+                    'url': urlMala,
+                  },
+                ],
+              },
+            }),
+            200,
+          ),
+        );
+        final updater = Updater(cliente: cliente, instalaSolo: true);
+        addTearDown(updater.dispose);
+
+        await updater.buscar();
+        expect(updater.estado, EstadoActualizacion.fallo, reason: urlMala);
+        expect(updater.error, contains('git.neogex.xyz'));
+      }
+    });
+
+    test('buscar() marca al día ante 404 o versión igual o inferior', () async {
+      final cliente404 = MockClient((_) async => http.Response('', 404));
+      final updater404 = Updater(cliente: cliente404, instalaSolo: true);
+      addTearDown(updater404.dispose);
+      await updater404.buscar();
+      expect(updater404.estado, EstadoActualizacion.alDia);
+
+      final clienteIgual = MockClient(
+        (_) async => http.Response(jsonEncode({'tag_name': 'v$kVersion'}), 200),
+      );
+      final updaterIgual = Updater(cliente: clienteIgual, instalaSolo: true);
+      addTearDown(updaterIgual.dispose);
+      await updaterIgual.buscar();
+      expect(updaterIgual.estado, EstadoActualizacion.alDia);
+    });
+
+    test('buscar() falla si la release no incluye enlace .exe', () async {
+      final cliente = MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tag_name': 'v9.9.9',
+            'description': 'Solo Linux',
+            'assets': {
+              'links': [
+                {
+                  'name': 'Linux portable',
+                  'url':
+                      'https://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/9.9.9/NeoFy-9.9.9-linux-x86_64.tar.gz',
+                },
+              ],
+            },
+          }),
+          200,
+        ),
+      );
+      final updater = Updater(cliente: cliente, instalaSolo: true);
+      addTearDown(updater.dispose);
+
+      await updater.buscar();
+      expect(updater.estado, EstadoActualizacion.fallo);
+      expect(updater.error, contains('instalador'));
+    });
+
+    test('descargar() rechaza respuestas text/html para no guardar páginas web', () async {
+      const pkgUrl =
+          'https://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/9.9.9/NeoFy-9.9.9-windows-x64.exe';
+      final cliente = MockClient.streaming((request, _) async {
+        if (request.url == Updater.uriUltimaRelease) {
+          return http.StreamedResponse(
+            Stream.value(
+              utf8.encode(
+                jsonEncode({
+                  'tag_name': 'v9.9.9',
+                  'description': 'Notas',
+                  'assets': {
+                    'links': [
+                      {'name': 'Instalador Windows x64 (.exe)', 'url': pkgUrl},
+                    ],
+                  },
+                }),
+              ),
+            ),
+            200,
+          );
+        }
+        return http.StreamedResponse(
+          Stream.value(utf8.encode('<html><body>No binario</body></html>')),
+          200,
+          headers: {'content-type': 'text/html; charset=utf-8'},
+        );
+      });
+      final updater = Updater(cliente: cliente, instalaSolo: true);
+      addTearDown(updater.dispose);
+
+      await updater.buscar();
+      expect(updater.estado, EstadoActualizacion.disponible);
+
+      await updater.descargar();
+      expect(updater.estado, EstadoActualizacion.fallo);
+      expect(updater.error, contains('HTML'));
     });
   });
 

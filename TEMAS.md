@@ -452,6 +452,6 @@ Para que no pierdas el rato buscándolo:
 - Poner fondos animados o vídeo.
 - Tocar colores de una pantalla concreta: la paleta es global.
 
-Si alguna te hace falta de verdad, ábre un issue en
-[el repositorio](https://github.com/KOLPSE/NeoFy/issues) contando **para qué**, que es lo que
+Si alguna te hace falta de verdad, abre un issue en
+[el repositorio](https://git.neogex.xyz/apps/neofy/-/issues) contando **para qué**, que es lo que
 decide si merece la pena abrir esa puerta.

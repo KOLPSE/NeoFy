@@ -4,7 +4,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-const _repo = 'KOLPSE/NeoFy';
+const _host = 'git.neogex.xyz';
+const _proyecto = 'apps/neofy';
 
 bool esMasNueva(String candidata, String actual) {
   List<int> tramos(String v) =>
@@ -23,11 +24,14 @@ Future<void> main(List<String> args) async {
   final instalada = args.isEmpty ? '0.1.0' : args.first;
   print('Simulando una instalación en la versión $instalada\n');
 
-  final res = await http.get(
-    Uri.https('api.github.com', '/repos/$_repo/releases/latest'),
-    headers: {'Accept': 'application/vnd.github+json'},
+  final endpoint = Uri.parse(
+    'https://$_host/api/v4/projects/${Uri.encodeComponent(_proyecto)}/releases/permalink/latest',
   );
-  print('GET /releases/latest → HTTP ${res.statusCode}');
+  final res = await http.get(
+    endpoint,
+    headers: {'Accept': 'application/json'},
+  );
+  print('GET $endpoint → HTTP ${res.statusCode}');
   if (res.statusCode != 200) {
     print(res.body);
     exit(1);
@@ -38,27 +42,35 @@ Future<void> main(List<String> args) async {
   final version = etiqueta.replaceFirst(RegExp('^v'), '');
   print('  última release: $etiqueta  →  versión $version');
 
-  final assets = (j['assets'] as List<dynamic>).whereType<Map<String, dynamic>>();
-  print('  assets: ${assets.length}');
-  for (final a in assets) {
-    print('    ${a['name']}  ${((a['size'] as num) / 1048576).toStringAsFixed(1)} MB'
-        '  descargas: ${a['download_count']}');
+  final assets = j['assets'] as Map<String, dynamic>?;
+  final enlaces = (assets?['links'] as List<dynamic>? ?? const [])
+      .whereType<Map<String, dynamic>>()
+      .toList();
+  print('  enlaces de descarga: ${enlaces.length}');
+  for (final e in enlaces) {
+    print('    ${e['name']}  [${e['link_type']}]  ${e['url']}');
   }
 
-  final exe = assets.where((a) => (a['name'] as String).endsWith('.exe'));
+  final exe = enlaces.where((e) {
+    final url = e['url'] as String?;
+    final uri = url == null ? null : Uri.tryParse(url);
+    return uri != null && uri.path.toLowerCase().endsWith('.exe');
+  });
   if (exe.isEmpty) {
     print('\n  ✗ La release NO trae instalador: el actualizador lo rechazaría.');
     exit(1);
   }
-  final url = exe.first['browser_download_url'] as String;
-  final host = Uri.parse(url).host;
-  print('  host de la descarga: $host  ${host == 'github.com' ? '(fiable)' : '(RECHAZADO)'}');
+  final url = exe.first['url'] as String;
+  final uri = Uri.parse(url);
+  final fiable = uri.scheme == 'https' && uri.host == _host;
+  print('  host de la descarga: ${uri.host}  ${fiable ? '(fiable)' : '(RECHAZADO)'}');
 
   print('\nVeredicto para $instalada: '
       '${esMasNueva(version, instalada) ? "SE OFRECE actualizar a $version" : "al día"}');
 
-  final cabeza = await http.head(Uri.parse(url));
+  final cabeza = await http.head(uri);
   print('HEAD del instalador → HTTP ${cabeza.statusCode}'
+      '  ${cabeza.headers['content-type'] ?? ''}'
       '  ${cabeza.headers['content-length'] ?? ''} bytes');
   exit(0);
 }

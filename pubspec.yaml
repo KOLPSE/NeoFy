@@ -47,3 +47,4 @@ flutter:
     # el indicador de la bandeja. Los dos salen del mismo dibujo.
     - assets/tray.ico
     - assets/tray.png
+    - assets/neofy.png

@@ -5,232 +5,166 @@
 <h1 align="center">NeoFy</h1>
 
 <p align="center">
-  Un cliente de Spotify ligero y nativo para Windows y Linux.<br>
-  <b>~150 MB</b> de memoria — o <b>menos de 100</b> en modo rendimiento — frente a los
-  400-700 MB del cliente oficial.
+  Cliente de Spotify nativo para Windows y Linux hecho con Flutter y <code>librespot</code>.<br>
+  En torno a <b>150 MB</b> de RAM en uso normal, o por debajo de <b>100 MB</b> en modo rendimiento.
 </p>
 
 ---
 
-> **Aviso.** NeoFy no está afiliado ni patrocinado por Spotify AB. Es un proyecto
-> independiente que usa la Web API pública de Spotify.
+> Proyecto independiente sin afiliación con Spotify AB. Usa la Web API pública de Spotify.
 >
-> **Con Spotify Premium** reproduce por el protocolo de Spotify Connect, que es como está
-> pensado. **Sin Premium** también suena: la Web API exige Premium para controlar la
-> reproducción, así que el audio lo pone YouTube Music y todo lo demás —tu biblioteca, tus
-> listas, tus carátulas— sigue siendo el de tu cuenta de Spotify. Se conecta desde la propia
-> pantalla de inicio.
+> Con **Spotify Premium** reproduce mediante Spotify Connect. **Sin Premium** también funciona:
+> como la Web API exige Premium para controlar la reproducción, el audio se obtiene desde
+> YouTube Music mientras la biblioteca, listas, búsquedas y carátulas siguen viniendo de tu
+> cuenta de Spotify.
 
-## Qué es
+## Cómo funciona
 
-Spotify no permite que una app de terceros reproduzca audio por su API oficial: solo lo
-permite con un SDK que exige un navegador embebido, que es justo el peso que NeoFy existe
-para evitar. De ahí que se parta en dos mitades:
+Spotify solo permite reproducir audio en aplicaciones de terceros mediante un SDK basado en
+navegador embebido. Para evitar ese consumo de memoria, NeoFy separa el audio del control:
 
-- **El audio** lo lleva [`librespot`](https://github.com/librespot-org/librespot), que
-  implementa el protocolo abierto de Spotify Connect y convierte el equipo en un dispositivo
-  llamado `NeoFy`.
-- **Todo lo demás** —biblioteca, búsqueda, playlists y el control de la reproducción— va por
-  la Web API oficial con OAuth PKCE, apuntando a ese dispositivo.
-
-Y una tercera pieza para las cuentas **sin Premium**, donde la Web API se niega a controlar
-la reproducción: la mitad del audio la cubre YouTube Music, resolviendo cada canción de
-Spotify a su equivalente. La otra mitad no cambia.
-
-Un efecto secundario aprovechado: como el control va por la Web API, **un Stream Deck que
-use la API de Spotify controla NeoFy sin plugin ninguno**.
+- **Audio (Premium)**: [`librespot`](https://github.com/librespot-org/librespot) implementa
+  el protocolo abierto de Spotify Connect y registra el equipo como un dispositivo llamado
+  `NeoFy`.
+- **Interfaz y control**: la Web API oficial con OAuth PKCE gestiona biblioteca, búsqueda,
+  playlists y reproducción sobre ese dispositivo (compatible también con Stream Deck o
+  cualquier cliente que use la API de Spotify).
+- **Audio alternativo (sin Premium)**: `yt-dlp` y `libmpv` (`media_kit`) reproducen el audio
+  equivalente desde YouTube Music manteniendo tu catálogo de Spotify.
 
 ## Funciones
 
-- Biblioteca, playlists, búsqueda y cola, con scroll infinito.
-- Portada con tu historial reciente, lo que más escuchas y tus artistas.
-- Botón de "me gusta" en cada canción.
-- Crear y quitar playlists.
-- **Teclas multimedia globales**: el botón de play/pausa de unos cascos funciona aunque
-  NeoFy esté en la bandeja. Barra espaciadora dentro de la app.
-- **En Linux, integración con el escritorio por MPRIS**: NeoFy sale en el widget de
-  reproducción de KDE y GNOME con carátula, y `playerctl` lo controla sin plugin.
-- **Modo rendimiento**: sustituye las carátulas por mosaicos de color generados y baja el
-  consumo por debajo de 100 MB, sin tocar el audio.
-- **Temas de la comunidad**: once incluidos (claro, oscuro, verde, azul y rojo en sus dos
-  versiones, un par *Material* que sigue la paleta y las formas de Material 3 Expressive, y
-  un *Liquid Glass* translúcido que refracta la portada de lo que suene), y
-  cualquiera puede hacer el suyo con un fichero de texto. Se recargan al guardar, sin cerrar
-  la app. Cómo se hacen: [`TEMAS.md`](TEMAS.md).
-- Bandeja del sistema: cerrar la ventana no corta la música.
-- **Se actualiza sola** (Windows): comprueba las releases de GitHub y se actualiza en un clic
-  desde Ajustes, sin perder la sesión ni la configuración. En Linux avisa y lo actualiza
-  pacman, que es a quien le corresponde.
+- **Portada y catálogo**: inicio con historial reciente, temas más escuchados y artistas,
+  biblioteca, «Canciones que te gustan», búsqueda paginada, álbumes, pódcasts y cola de
+  reproducción.
+- **Playlists y carpetas**: creación, edición, seguimiento y organización en carpetas.
+- **Reproducción**: aleatorio inteligente y reanudación de la última pista al abrir la app.
+- **Letras sincronizadas**: resaltado por líneas o por palabras, ajuste manual de desfase por
+  canción y sincronización adaptativa mediante detección de voz.
+- **Temas**: cinco temas integrados (`NeoFy Nocturno`, `NeoFy Claro`, `Liquid Glass`,
+  `Material claro` y `Material oscuro`), modo **Automático** según el tema del sistema,
+  personalización de paleta en los temas Material y soporte para temas de usuario en texto
+  que se recargan al guardar ([`TEMAS.md`](TEMAS.md)).
+- **Modo rendimiento**: sustituye las carátulas por mosaicos de color generados y reduce el
+  uso de RAM por debajo de 100 MB sin afectar al audio.
+- **Integración con el escritorio**: teclas multimedia globales, bandeja del sistema, SMTC en
+  Windows, MPRIS en Linux y Discord Rich Presence opcional.
+- **Idioma y reportes**: traducción de la interfaz al idioma configurado y envío opcional de
+  incidencias desde Ajustes con [NeoReport](https://report.neogex.xyz).
+- **Actualizaciones**: en Windows comprueba y descarga las nuevas versiones desde
+  [`git.neogex.xyz/apps/neofy`](https://git.neogex.xyz/apps/neofy/-/releases) en un clic
+  desde Ajustes, conservando sesión y ajustes. En Linux avisa de la nueva versión para
+  actualizar el paquete.
 
 ## Instalación
 
 ### Windows
 
-Descarga el instalador de la sección [Releases](../../releases). Trae los tres binarios
-dentro (interfaz, audio y metadatos), no pide permisos de administrador y ocupa 14 MB.
+Descarga el instalador (`NeoFy-x.y.z-windows-x64.exe`) desde la sección
+[Releases](https://git.neogex.xyz/apps/neofy/-/releases). Incluye la aplicación,
+`librespot`, `metadata-sidecar` y `yt-dlp`, y se instala por usuario sin permisos de
+administrador.
 
 ### Linux
 
-La distribución con soporte en Linux es **Arch** (y derivadas como Manjaro o EndeavourOS).
-Instala el programa en `/opt/neofy`, el lanzador en el menú de aplicaciones y el comando
+La distribución soportada oficialmente en Linux es **Arch** (y derivadas como Manjaro o
+EndeavourOS). Para otras distribuciones se puede [compilar desde el código](#compilar-desde-el-código).
+
+El paquete instala NeoFy en `/opt/neofy`, la entrada del menú de aplicaciones y el comando
 `neofy` en el `PATH`.
 
-> **Desde la 0.2.6 ya no se publican `.deb` ni `.rpm`.** Se mantenían cinco artefactos por
-> versión que nadie podía probar de verdad, y eso acabó costando más que el alcance que
-> daban: la serie 0.2 llegó a publicarse entera con la app cayéndose al arrancar en Arch sin
-> que ninguna comprobación lo detectara. Se prefiere una plataforma sostenida a cuatro a
-> medias. Las releases anteriores conservan sus paquetes, y quien los tenga instalados los
-> seguirá teniendo — simplemente no habrá versiones nuevas por esa vía.
->
-> En Debian, Ubuntu, Fedora u openSUSE queda [compilar desde fuentes](#compilar-en-linux),
-> que está documentado y funciona.
+- **Paquete Arch (`.pkg.tar.zst`)**: descarga la última versión en
+  [Releases](https://git.neogex.xyz/apps/neofy/-/releases) e instálala con:
+  ```bash
+  sudo pacman -U NeoFy-*.pkg.tar.zst   # sustituye por neofy-bin-x.y.z-1-x86_64.pkg.tar.zst
+  ```
+- **AppImage y binario portable (`.AppImage` / `.tar.gz`)**: disponibles en cada release para
+  ejecutar sin instalar paquete.
+- **Compilando el paquete con `PKGBUILD`**:
+  ```bash
+  git clone https://git.neogex.xyz/apps/neofy && cd neofy/linux/packaging
+  makepkg -si
+  ```
 
-#### Arch: repositorio propio (recomendado)
-
-NeoFy publica su propio repositorio pacman en GitHub, así que **se actualiza con el resto
-del sistema** y no hace falta el AUR ni compilar nada. Al final de `/etc/pacman.conf`:
-
-```ini
-[neofy]
-SigLevel = Optional TrustAll
-Server = https://github.com/KOLPSE/NeoFy/releases/download/repo
-```
-
-Y después:
-
-```bash
-sudo pacman -Sy neofy-bin
-```
-
-A partir de ahí, cada `sudo pacman -Syu` lo mantiene al día.
-
-> `SigLevel = Optional TrustAll` significa que **los paquetes no van firmados con GPG**:
-> pacman se fía de lo que descargue de esa URL. La descarga va por HTTPS desde GitHub, que
-> es lo mismo en lo que confías al bajar el instalador de Windows, pero conviene saberlo.
-
-#### Arch: sin tocar pacman.conf
-
-Si prefieres no añadir un repositorio, cada release trae el paquete suelto:
-
-```bash
-sudo pacman -U https://github.com/KOLPSE/NeoFy/releases/download/v0.1.3/neofy-bin-0.1.3-1-x86_64.pkg.tar.zst
-```
-
-Se instala igual, pero las actualizaciones hay que repetirlas a mano.
-
-#### Arch: compilando el paquete
-
-También está el `PKGBUILD` en `linux/packaging/`, para quien prefiera montarlo él:
-
-```bash
-git clone https://github.com/KOLPSE/NeoFy && cd NeoFy/linux/packaging
-makepkg -si
-```
-
-> **En GNOME** hace falta además la extensión de AppIndicator para que aparezca el icono de
-> la bandeja. Sin ella NeoFy funciona igual, pero el botón de cerrar cierra del todo en vez
-> de esconderse — que es justo lo que debe hacer si no hay bandeja a la que volver.
+> En **GNOME** hace falta la extensión de AppIndicator para ver el icono en la bandeja. Sin
+> bandeja disponible, cerrar la ventana cierra la aplicación.
 
 ### Configuración inicial (una sola vez)
 
-Spotify solo deja que una app de terceros funcione para los usuarios que su creador da de
-alta a mano — **25 como máximo** —, así que NeoFy no puede traer una configurada: necesitas
-crear la tuya. Es gratis: **en Windows el instalador te lo pide en una casilla y en Linux te
-lo pide la propia app al abrirla**, así que no hay que editar ningún fichero a mano.
+El Modo Desarrollo de Spotify limita cada aplicación a 25 usuarios autorizados por su creador,
+por lo que cada usuario crea su propio Client ID gratuito (en Windows se pide en el instalador
+y en Linux al iniciar la aplicación por primera vez):
 
-1. Entra en [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) y
-   crea una app. Marca **Web API**.
-2. En **Redirect URI** pon exactamente esto:
+1. Entra en [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), crea
+   una aplicación y marca **Web API**.
+2. Añade exactamente este **Redirect URI** (Spotify exige `127.0.0.1` literal, sin `localhost`
+   ni barra final):
    ```
    http://127.0.0.1:8898/callback
    ```
-   Ojo: Spotify ya no acepta `localhost`, solo el `127.0.0.1` literal, y sin barra final.
-3. Copia el **Client ID** y pégalo donde te lo pida: la casilla del instalador en Windows, o
-   la pantalla de primeros pasos de la app en Linux (y también en Windows si lo dejaste en
-   blanco o compilaste desde el código).
+3. Copia el **Client ID** en el instalador o en la pantalla inicial de NeoFy.
 
 Para instalaciones desatendidas en Windows:
 `NeoFy-x.y.z-windows-x64.exe /SILENT /CLIENTID=tu-id`.
 
-> **La primera vez se abrirá el navegador dos veces y es correcto.** Son dos flujos OAuth
-> distintos: el de la Web API y el de librespot, que usa el client_id del cliente de
-> escritorio de Spotify y no puede compartir token. Los dos quedan cacheados.
+La primera conexión abre el navegador dos veces (una para OAuth de la Web API y otra para el
+inicio de sesión de `librespot`) y ambos tokens quedan guardados localmente.
 
-## Limitaciones conocidas
-
-Vienen del Modo Desarrollo de la API de Spotify, no del código:
+## Limitaciones de la API de Spotify
 
 | Limitación | Detalle |
 |---|---|
-| Cuenta **Premium** para el audio nativo | La API la exige para controlar la reproducción. Sin ella NeoFy suena igual, pero el audio lo pone YouTube Music y hace falta iniciar sesión con Google. |
-| Playlists ajenas | La Web API devuelve 403 al leer sus canciones. NeoFy las lee por librespot con un sidecar; se pueden reproducir enteras igualmente. |
-| Búsqueda capada a 10 resultados | Se pagina con "ver más". |
-| Sin Daily Mix ni Radar de novedades | Spotify no expone por API las listas que genera para cada usuario. |
-| Cuota diaria | Si se agota, la API responde 429 durante unas horas. NeoFy lo detecta, deja de insistir y te dice a qué hora vuelve. |
+| Cuenta **Premium** para Spotify Connect | La API exige Premium para el control nativo. Sin Premium se reproduce el audio mediante YouTube Music iniciando sesión con Google. |
+| Playlists ajenas | La Web API devuelve 403 al leer sus pistas; NeoFy las resuelve mediante `metadata-sidecar` sobre `librespot`. |
+| Búsqueda paginada de 10 en 10 | Se amplía con «Ver más». |
+| Sin Daily Mix ni Radar de novedades | Spotify no expone las listas personalizadas por usuario en la Web API. |
+| Cuota diaria | Si se alcanza el límite de peticiones (`429`), NeoFy detiene los reintentos y muestra la hora de recuperación. |
 
 ## Compilar desde el código
 
+### Windows
+
+Requiere Flutter, Rust/Cargo, Inno Setup 6 y Visual Studio con el componente ATL de C++ (para
+`flutter_secure_storage_windows`):
+
 ```powershell
-# Windows
-powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1   # sidecars, 1ª vez
+powershell -ExecutionPolicy Bypass -File tool\build_librespot.ps1   # sidecars, primera vez
 flutter build windows --release
-powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1   # + Inno Setup 6
+powershell -ExecutionPolicy Bypass -File tool\build_installer.ps1
 ```
+
+### Linux
+
+Dependencias en Arch:
 
 ```bash
-# Linux — dependencias de compilación (Arch)
 sudo pacman -S --needed base-devel clang cmake ninja pkgconf \
                         gtk3 libayatana-appindicator libpulse openssl rust \
-                        webkit2gtk-4.1 mpv
-# En Debian/Ubuntu son los mismos con sufijo -dev:
-#   clang cmake ninja-build pkg-config libgtk-3-dev
-#   libayatana-appindicator3-dev libpulse-dev libssl-dev
-#   libwebkit2gtk-4.1-dev libmpv-dev
-
-./tool/build_sidecars.sh        # sidecars, 1ª vez (tarda un rato)
-flutter build linux --release
-./tool/build_linux_bundle.sh    # deja dist/NeoFy-x.y.z-linux-x86_64.tar.gz
+                        webkit2gtk-4.1 mpv libsecret
 ```
 
-El tarball trae el árbol completo (`neofy`, los dos sidecars, `yt-dlp`, `data/` y `lib/`) y
-se puede ejecutar tal cual desde donde se descomprima.
+En Debian/Ubuntu usa los equivalentes `-dev` (`clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev libpulse-dev libssl-dev libwebkit2gtk-4.1-dev libsecret-1-dev libmpv-dev`).
 
-> `libayatana-appindicator` y `webkit2gtk-4.1` hacen falta **al compilar**, no solo al
-> ejecutar: los plugins de la bandeja y de la WebView los buscan con `pkg-config` y sin ellos
-> `flutter build linux` no llega ni a generar los ficheros de build.
->
-> `mpv` (libmpv) es distinto: se abre **en caliente al arrancar**, así que compila igual sin
-> ella y lo que falla es la app ya instalada. Ver ARQUITECTURA.md, "libmpv se abre con
-> `dlopen`".
+```bash
+./tool/build_sidecars.sh        # sidecars, primera vez
+flutter build linux --release
+./tool/build_linux_bundle.sh    # genera dist/NeoFy-x.y.z-linux-x86_64.tar.gz
+```
+
+`libayatana-appindicator` y `webkit2gtk-4.1` son necesarios al compilar. `libmpv` se carga en
+tiempo de ejecución con `dlopen` y es imprescindible para la reproducción vía YouTube Music.
+
+Si compilas un instalador con soporte de NeoReport, define `NEOREPORT_APP_KEY` mediante
+`--dart-define` o `.neoreport-key.json` (archivo local ignorado en Git).
 
 ```bash
 flutter analyze
 flutter test
 ```
 
-La arquitectura y las trampas de la API están documentadas en
-[`ARQUITECTURA.md`](ARQUITECTURA.md) — incluidos varios endpoints que cambiaron de nombre y cuyo
-comportamiento real está verificado con las sondas de `tool/`.
+Los detalles técnicos y trampas verificadas de la API están documentados en
+[`ARQUITECTURA.md`](ARQUITECTURA.md).
 
 ## Licencia
 
-MIT. Ver [LICENSE](LICENSE), que incluye además los avisos de terceros.
-
-### Reportes con NeoReport
-
-En Ajustes se puede enviar un reporte y abrir NeoReport para asociarlo a la
-cuenta de Discord. La identidad se confirma en el portal; Rich Presence no
-inicia sesión en Discord. La credencial de instalación se guarda en el
-almacén seguro del sistema (en Linux se necesita libsecret y un servicio de
-llavero activo). Si se pierde, los reportes anteriores no se vinculan
-automáticamente a la nueva instalación.
-
-Para generar instaladores, configura `NEOREPORT_APP_KEY` en el entorno de
-compilación o crea el archivo local ignorado `.neoreport-key.json` con la
-propiedad `NEOREPORT_APP_KEY`. En GitLab configura esa misma variable protegida
-para los jobs de release. La clave se incorpora al ejecutable y puede
-extraerse: NeoReport la trata como identificador revocable de la aplicación,
-no como identidad del usuario. No incluyas la clave en el repositorio.
-La compilación de Windows también requiere el componente ATL de C++ de Visual
-Studio para `flutter_secure_storage_windows`; en los runners debe estar
-instalado para el mismo conjunto de herramientas de MSVC que use CMake.
+MIT. Ver [LICENSE](LICENSE).

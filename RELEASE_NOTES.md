@@ -1,15 +1,10 @@
 ## Features
 
-- Nueva interfaz **NeoFy Nocturno** con barra superior de búsqueda, cabecera de colecciones, panel de cola y vista de podcasts.
-- Nuevo tema **NeoFy Claro**, con la misma arquitectura visual que NeoFy Nocturno (paneles flotantes blancos sobre fondo piedra suave y acentos verdes de alto contraste).
-- El modo **Automático** del sistema alterna entre **NeoFy Claro** y **NeoFy Nocturno** manteniendo la misma interfaz al cambiar el tema del escritorio.
-- Letras sincronizadas en directo con resaltado por líneas o por palabras, ajuste manual de desfase por canción y sincronización adaptativa mediante detección de voz.
-- Mejoras en la reproducción por contexto desde biblioteca, listas y perfiles.
+- Migrado el sistema de actualizaciones y descargas a [git.neogex.xyz/apps/neofy](https://git.neogex.xyz/apps/neofy). Esta versión **1.5.9 es la última publicada en GitHub**: al actualizar a `v1.5.9`, NeoFy comprobará y descargará las próximas versiones directamente desde GitLab.
+- Nuevo logotipo e icono oficial aplicado en el icono de aplicación y ventana de Windows (`app_icon.ico`), bandeja del sistema (`tray.ico` y `tray.png`), iconos y ventana GTK en Linux (`neofy.png` y `AppImage`), pantalla de inicio, cabecera y barra lateral expandida o contraída.
 
 ## Fixes
 
-- Corregido el orden de reproducción en «Canciones que te gustan» y listas: se usa el contexto nativo con `offsetUri` y, cuando Spotify rechaza una lista de URIs y cae al álbum de respaldo, los controles Siguiente/Anterior y el avance automático siguen recorriendo la lista original en orden.
-- Mejorada la detección de voz en la sincronización adaptativa de letras mediante análisis estéreo Mid/Side (foco central), filtrado de banda vocal (280–2800 Hz frente a graves y agudos), periodicidad armónica por autocorrelación y piso adaptativo instrumental para evitar falsos positivos con instrumentos y percusión.
-- Eliminadas fugas de memoria nativa, clientes HTTP sin cerrar, animaciones recreadas en `build()` y crecimiento sin límite en cachés de traducciones.
-- Reducido el consumo de RAM y CPU pausando el monitor de recursos al ocultar la ventana, descargando el actualizador en streaming a disco, cacheando temas y evitando reconstrucciones innecesarias en la interfaz.
-- Corregida la estabilidad de la caché de biografías entre sesiones y el pipeline de compilación y publicación automática.
+- Actualizador adaptado a la API de Releases y paquetes genéricos de GitLab (`apps%2Fneofy/releases/permalink/latest`), con validación estricta de host HTTPS (`git.neogex.xyz`) y rechazo de respuestas `text/html`.
+- Actualizados `PKGBUILD`, `tool/probe_update.dart`, el texto de actualización de Linux y la documentación del proyecto para apuntar a `git.neogex.xyz/apps/neofy`.
+- Añadidos tests unitarios para la consulta de última versión, validación de descargas y rechazo de respuestas HTML.

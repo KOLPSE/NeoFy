@@ -9,9 +9,14 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.5.8';
+const String kVersion = '1.5.9';
 
-const String kRepoGitHub = 'KOLPSE/NeoFy';
+const String kHostActualizaciones = 'git.neogex.xyz';
+
+const String kProyectoActualizaciones = 'apps/neofy';
+
+const String kUrlRepositorio =
+    'https://$kHostActualizaciones/$kProyectoActualizaciones';
 
 const int kRedirectPort = 8898;
 

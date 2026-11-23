@@ -678,7 +678,12 @@ class _AppShellState extends State<AppShell> {
         padding: const EdgeInsets.fromLTRB(18, 6, 12, 6),
         child: Row(
           children: [
-            Icon(Icons.graphic_eq, color: colores.primary),
+            Image.asset(
+              'assets/neofy.png',
+              width: 24,
+              height: 24,
+              excludeFromSemantics: true,
+            ),
             const SizedBox(width: 8),
             Text('NeoFy', style: tema.textTheme.titleLarge),
             const SizedBox(width: 20),
@@ -1772,9 +1777,11 @@ class _Sidebar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.graphic_eq,
-                          color: theme.colorScheme.primary,
+                        Image.asset(
+                          'assets/neofy.png',
+                          width: 24,
+                          height: 24,
+                          excludeFromSemantics: true,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1939,7 +1946,6 @@ class _Sidebar extends StatelessWidget {
   }
 
   Widget _contenidoRail(BuildContext context) {
-    final theme = Theme.of(context);
     final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
     final artistas = artistasFavoritos;
     final listas = _playlistsPlanas();
@@ -1966,9 +1972,11 @@ class _Sidebar extends StatelessWidget {
                     width: anchoRail,
                     height: 44,
                     child: Center(
-                      child: Icon(
-                        Icons.graphic_eq,
-                        color: theme.colorScheme.primary,
+                      child: Image.asset(
+                        'assets/neofy.png',
+                        width: 24,
+                        height: 24,
+                        excludeFromSemantics: true,
                       ),
                     ),
                   ),
