@@ -9,7 +9,7 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.5.10';
+const String kVersion = '1.5.9';
 
 const String kHostActualizaciones = 'git.neogex.xyz';
 
