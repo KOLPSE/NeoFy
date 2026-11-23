@@ -1,9 +1,8 @@
 ﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$sysGitCfg = 'C:\Windows\system32\config\systemprofile\.config\git\config'
-if (Test-Path -LiteralPath $sysGitCfg) {
-  Remove-Item -LiteralPath $sysGitCfg -Force -ErrorAction SilentlyContinue
+foreach ($d in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE, $env:TEMP, $env:TMP)) {
+  if ($d) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 }
 
 # El SDK vive fuera del directorio del repo en una ruta corta para evitar

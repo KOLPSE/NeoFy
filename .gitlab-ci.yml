@@ -61,8 +61,14 @@ check:windows:
     - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
-    PUB_CACHE: 'C:\ci\pub-cache'
+    PUB_CACHE: 'C:\ci\pub-cache-clean'
     GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
+    APPDATA: 'C:\ci\appdata\roaming'
+    LOCALAPPDATA: 'C:\ci\appdata\local'
+    USERPROFILE: 'C:\ci\profile'
+    HOME: 'C:\ci\profile'
+    TEMP: 'C:\ci\temp'
+    TMP: 'C:\ci\temp'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
   script:
@@ -111,8 +117,14 @@ build:windows:
     - when: on_success
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
-    PUB_CACHE: 'C:\ci\pub-cache'
+    PUB_CACHE: 'C:\ci\pub-cache-clean'
     GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
+    APPDATA: 'C:\ci\appdata\roaming'
+    LOCALAPPDATA: 'C:\ci\appdata\local'
+    USERPROFILE: 'C:\ci\profile'
+    HOME: 'C:\ci\profile'
+    TEMP: 'C:\ci\temp'
+    TMP: 'C:\ci\temp'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
     - '. .\tool\prepare_windows_atl_ci.ps1'
