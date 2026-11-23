@@ -1,6 +1,11 @@
 ﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+$sysGitCfg = 'C:\Windows\system32\config\systemprofile\.config\git\config'
+if (Test-Path -LiteralPath $sysGitCfg) {
+  Remove-Item -LiteralPath $sysGitCfg -Force -ErrorAction SilentlyContinue
+}
+
 # El SDK vive fuera del directorio del repo en una ruta corta para evitar
 # errores de MAX_PATH (>260 caracteres) al limpiar el workspace del runner.
 $toolsDir = if ($env:NEOFY_CI_TOOLS_DIR) { $env:NEOFY_CI_TOOLS_DIR } else { 'C:\ci\flutter-3.44.6' }

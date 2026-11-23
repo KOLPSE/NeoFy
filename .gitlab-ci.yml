@@ -62,6 +62,7 @@ check:windows:
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
     PUB_CACHE: 'C:\ci\pub-cache'
+    GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
   script:
@@ -111,6 +112,7 @@ build:windows:
   variables:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
     PUB_CACHE: 'C:\ci\pub-cache'
+    GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
   before_script:
     - '. .\tool\prepare_windows_ci.ps1'
     - '. .\tool\prepare_windows_atl_ci.ps1'
