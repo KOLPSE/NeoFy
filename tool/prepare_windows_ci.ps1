@@ -50,3 +50,32 @@ $env:GIT_CONFIG_KEY_0 = 'safe.directory'
 $env:GIT_CONFIG_VALUE_0 = $sdkRoot.Replace('\', '/')
 & (Join-Path $sdkRoot 'bin\flutter.bat') --version
 if ($LASTEXITCODE -ne 0) { throw 'Flutter no está disponible.' }
+
+# Verifica que los archivos del wrapper C++ del engine Windows en caché no estén
+# corruptos (por ejemplo tras un fallo de disco en vm-windows que deje
+# standard_codec.cc ilegible para MSVC).
+$engineDir = Join-Path $sdkRoot 'bin\cache\artifacts\engine'
+$wrapperDir = Join-Path $engineDir 'windows-x64\cpp_client_wrapper'
+if (Test-Path $wrapperDir) {
+  $corrupto = $false
+  foreach ($f in Get-ChildItem -LiteralPath $wrapperDir -File -Recurse -Include '*.cc','*.h') {
+    $texto = [IO.File]::ReadAllText($f.FullName)
+    if ($texto.IndexOf([char]0) -ge 0 -or -not $texto.TrimStart().StartsWith('// Copyright')) {
+      Write-Host "Archivo corrupto en caché de Flutter: $($f.FullName)"
+      $corrupto = $true
+      break
+    }
+  }
+  if ($corrupto) {
+    Write-Host 'Limpiando caché corrupta del engine Windows de Flutter y ejecutando precache...'
+    foreach ($sub in @('windows-x64', 'windows-x64-profile', 'windows-x64-release')) {
+      $d = Join-Path $engineDir $sub
+      if (Test-Path $d) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    if (Test-Path 'windows\flutter\ephemeral') {
+      Remove-Item -LiteralPath 'windows\flutter\ephemeral' -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    & (Join-Path $sdkRoot 'bin\flutter.bat') precache --windows --force
+    if ($LASTEXITCODE -ne 0) { throw 'Falló flutter precache --windows --force.' }
+  }
+}

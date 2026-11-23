@@ -92,7 +92,7 @@ check:ubuntu:
   script:
     - flutter pub get
     - flutter analyze
-    - flutter test
+    - flutter test -j 2
   cache:
     key: "neofy-flutter-ubuntu"
     paths:
