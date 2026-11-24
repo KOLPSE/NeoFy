@@ -353,6 +353,7 @@ void main() {
       double maximo = 1000,
     }) {
       return MaterialApp(
+        key: ValueKey(tema.id),
         theme: construirThemeData(tema),
         themeAnimationDuration: Duration.zero,
         home: Scaffold(
