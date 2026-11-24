@@ -354,6 +354,7 @@ void main() {
     }) {
       return MaterialApp(
         theme: construirThemeData(tema),
+        themeAnimationDuration: Duration.zero,
         home: Scaffold(
           body: TickerMode(
             enabled: tickersActivos,

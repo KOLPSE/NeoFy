@@ -107,6 +107,8 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
       _rebobinando = false;
       if (_pintada.isAnimating) _pintada.stop();
       _pintada.value = _fraccionDelWidget;
+      if (_sobre.isAnimating) _sobre.stop();
+      _sobre.value = 0;
       _revisarLaOnda();
     } else {
       _revisarLaOnda();
@@ -299,7 +301,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
       if (_amplitud.value != 1) _amplitud.forward();
     } else {
       if (_fase.isAnimating) _fase.stop();
-      if (!_tickersActivos) {
+      if (!_tickersActivos || modoRendimiento.value) {
         if (_amplitud.isAnimating) _amplitud.stop();
         _amplitud.value = 0;
       } else if (_amplitud.value != 0) {
