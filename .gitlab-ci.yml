@@ -45,17 +45,30 @@ cleanup:windows:
       Set-Location 'C:\'
       Get-Process robocopy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
       $target = "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex\neofy"
-      $borrar = $target
-      if (Test-Path -LiteralPath "\\?\$target") {
-        $apartado = "$target.old-$env:CI_JOB_ID"
-        cmd /c "move `"$target`" `"$apartado`""
-        $global:LASTEXITCODE = 0
-        if (Test-Path -LiteralPath "\\?\$apartado") {
-          Write-Host "Apartado en $apartado"
-          $borrar = $apartado
+      $borrar = $null
+      foreach ($cand in @(
+        "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex\neofy",
+        "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex",
+        "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0",
+        "C:\Users\Administrator\Documents\builds\zHgUHwNWA",
+        "C:\Users\Administrator\Documents\builds"
+      )) {
+        if (-not (Test-Path -LiteralPath "\\?\$target")) { break }
+        if (Test-Path -LiteralPath "\\?\$cand") {
+          $apartado = "$cand.old-$env:CI_JOB_ID"
+          cmd /c "move `"$cand`" `"$apartado`""
+          $global:LASTEXITCODE = 0
+          if (-not (Test-Path -LiteralPath "\\?\$target")) {
+            Write-Host "Apartado $cand -> $apartado"
+            $borrar = $apartado
+            break
+          }
         }
       }
-      if (Test-Path -LiteralPath "\\?\$borrar") {
+      if (-not $borrar -and (Test-Path -LiteralPath "\\?\$target")) {
+        $borrar = $target
+      }
+      if ($borrar -and (Test-Path -LiteralPath "\\?\$borrar")) {
         New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
         $empty = Join-Path $env:TEMP "empty-ci-$PID"
         New-Item -ItemType Directory -Force -Path $empty | Out-Null
