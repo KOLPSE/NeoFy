@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -45,7 +46,30 @@ class LikedStore extends ChangeNotifier {
   File get _fichero => File(p.join(_directorio.path, 'biblioteca.json'));
 
   Future<void>? _cargaDisco;
+  Future<void>? _cargaUris;
+  bool _urisCargadas = false;
   Timer? _guardarAplazado;
+
+  bool get tieneUrisDeBiblioteca => _urisCargadas && _guardadas.isNotEmpty;
+  Iterable<String> get urisGuardadas => _guardadas;
+
+  Future<void> cargarUrisDesdeDisco() => _cargaUris ??= _leerUrisDisco();
+
+  Future<void> _leerUrisDisco() async {
+    try {
+      final f = _fichero;
+      if (!await f.exists()) return;
+      final contenido = await f.readAsString();
+      final parsed = contenido.length > 64 * 1024
+          ? await Isolate.run(() => _extraerUrisBiblioteca(contenido))
+          : _extraerUrisBiblioteca(contenido);
+      if (parsed == null || parsed.uris.isEmpty || _disposed) return;
+      _urisCargadas = true;
+      totalBiblioteca ??= parsed.total ?? parsed.uris.length;
+      seedSaved(parsed.uris);
+    } catch (_) {
+    }
+  }
 
   Future<void> cargarDesdeDisco() => _cargaDisco ??= _leerDisco();
 
@@ -53,29 +77,45 @@ class LikedStore extends ChangeNotifier {
     try {
       final f = _fichero;
       if (!await f.exists()) return;
-      final map = jsonDecode(await f.readAsString());
-      if (map is! Map<String, dynamic>) return;
-      final crudas = map['pistas'];
-      if (crudas is! List) return;
-      final pistas = <Track>[
-        for (final raw in crudas)
-          if (raw is Map<String, dynamic>) ?Track.desdeLocal(raw),
-      ];
-      if (pistas.isEmpty) return;
+      final contenido = await f.readAsString();
+      final parsed = contenido.length > 64 * 1024
+          ? await Isolate.run(() => _decodificarBiblioteca(contenido))
+          : _decodificarBiblioteca(contenido);
+      if (parsed == null || parsed.pistas.isEmpty || _disposed) return;
       biblioteca
         ..clear()
-        ..addAll(pistas);
-      seedSaved(pistas.map((t) => t.uri));
-      totalBiblioteca = (map['total'] as num?)?.toInt() ?? pistas.length;
+        ..addAll(parsed.pistas);
+      seedSaved(parsed.pistas.map((t) => t.uri));
+      totalBiblioteca = parsed.total ?? parsed.pistas.length;
       _bibliotecaCompleta = true;
+      _urisCargadas = _guardadas.isNotEmpty;
       if (!_disposed) notifyListeners();
     } catch (_) {
     }
   }
 
+  void liberarMemoriaDeBiblioteca() {
+    if (!_bibliotecaCompleta ||
+        _cargandoBiblioteca ||
+        _guardarAplazado != null) {
+      return;
+    }
+    try {
+      if (!_fichero.existsSync()) return;
+    } catch (_) {
+      return;
+    }
+    biblioteca.clear();
+    _bibliotecaCompleta = false;
+    _offsetBiblioteca = 0;
+    _cargaDisco = null;
+    _urisCargadas = _guardadas.isNotEmpty;
+  }
+
   void _programarGuardado() {
     _guardarAplazado?.cancel();
     _guardarAplazado = Timer(const Duration(milliseconds: 400), () {
+      _guardarAplazado = null;
       unawaited(_guardarEnDisco());
     });
   }
@@ -240,4 +280,29 @@ class LikedStore extends ChangeNotifier {
     _guardarAplazado?.cancel();
     super.dispose();
   }
+}
+
+({int? total, List<String> uris})? _extraerUrisBiblioteca(String contenido) {
+  final map = jsonDecode(contenido);
+  if (map is! Map<String, dynamic>) return null;
+  final crudas = map['pistas'];
+  if (crudas is! List) return null;
+  final uris = <String>[
+    for (final raw in crudas)
+      if (raw is Map<String, dynamic> && raw['uri'] is String && (raw['uri'] as String).isNotEmpty)
+        raw['uri'] as String,
+  ];
+  return (total: (map['total'] as num?)?.toInt(), uris: uris);
+}
+
+({int? total, List<Track> pistas})? _decodificarBiblioteca(String contenido) {
+  final map = jsonDecode(contenido);
+  if (map is! Map<String, dynamic>) return null;
+  final crudas = map['pistas'];
+  if (crudas is! List) return null;
+  final pistas = <Track>[
+    for (final raw in crudas)
+      if (raw is Map<String, dynamic>) ?Track.desdeLocal(raw),
+  ];
+  return (total: (map['total'] as num?)?.toInt(), pistas: pistas);
 }

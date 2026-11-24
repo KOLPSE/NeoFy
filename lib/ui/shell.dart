@@ -231,6 +231,9 @@ class _AppShellState extends State<AppShell> {
     setState(() {
       if (_ruta != ruta) {
         _historial.add(_ruta);
+        if (_historial.length > 30) {
+          _historial.removeRange(0, _historial.length - 30);
+        }
         _adelante.clear();
       }
       _mostrar(ruta);
@@ -682,6 +685,8 @@ class _AppShellState extends State<AppShell> {
               'assets/neofy.png',
               width: 24,
               height: 24,
+              cacheWidth: (24 * MediaQuery.devicePixelRatioOf(context)).round(),
+              cacheHeight: (24 * MediaQuery.devicePixelRatioOf(context)).round(),
               excludeFromSemantics: true,
             ),
             const SizedBox(width: 8),
@@ -1781,6 +1786,12 @@ class _Sidebar extends StatelessWidget {
                           'assets/neofy.png',
                           width: 24,
                           height: 24,
+                          cacheWidth:
+                              (24 * MediaQuery.devicePixelRatioOf(context))
+                                  .round(),
+                          cacheHeight:
+                              (24 * MediaQuery.devicePixelRatioOf(context))
+                                  .round(),
                           excludeFromSemantics: true,
                         ),
                         const SizedBox(width: 8),
@@ -1976,6 +1987,12 @@ class _Sidebar extends StatelessWidget {
                         'assets/neofy.png',
                         width: 24,
                         height: 24,
+                        cacheWidth:
+                            (24 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                        cacheHeight:
+                            (24 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
                         excludeFromSemantics: true,
                       ),
                     ),

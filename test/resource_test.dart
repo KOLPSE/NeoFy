@@ -95,4 +95,61 @@ void main() {
     monitor.setVisible(true);
     expect(monitor.uso.total, greaterThanOrEqualTo(0));
   });
+
+  group('elegirBytesWindows', () {
+    test('prioriza privateWorkingSet sobre el Working Set compartido', () {
+      final bytes = ResourceMonitor.elegirBytesWindows(
+        workingSet: 250 << 20,
+        privateUsage: 180 << 20,
+        privateWorkingSet: 92 << 20,
+      );
+      expect(bytes, 92 << 20);
+    });
+
+    test('cuando no hay privateWorkingSet usa el menor entre workingSet y privateUsage', () {
+      expect(
+        ResourceMonitor.elegirBytesWindows(
+          workingSet: 160 << 20,
+          privateUsage: 110 << 20,
+          privateWorkingSet: 0,
+        ),
+        110 << 20,
+      );
+      expect(
+        ResourceMonitor.elegirBytesWindows(
+          workingSet: 80 << 20,
+          privateUsage: 140 << 20,
+          privateWorkingSet: 0,
+        ),
+        80 << 20,
+      );
+    });
+
+    test('cae al único contador positivo y a cero si todos faltan', () {
+      expect(
+        ResourceMonitor.elegirBytesWindows(
+          workingSet: 70 << 20,
+          privateUsage: 0,
+          privateWorkingSet: 0,
+        ),
+        70 << 20,
+      );
+      expect(
+        ResourceMonitor.elegirBytesWindows(
+          workingSet: 0,
+          privateUsage: 50 << 20,
+          privateWorkingSet: 0,
+        ),
+        50 << 20,
+      );
+      expect(
+        ResourceMonitor.elegirBytesWindows(
+          workingSet: 0,
+          privateUsage: 0,
+          privateWorkingSet: 0,
+        ),
+        0,
+      );
+    });
+  });
 }

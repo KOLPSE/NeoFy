@@ -6,17 +6,25 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'idiomas_spotify.dart';
 import 'models.dart';
 import 'procesos.dart';
-import 'idiomas_spotify.dart';
+import 'settings.dart' show modoRendimiento;
 
 class MetadataSidecar extends ChangeNotifier {
   static const int puerto = 8900;
 
-  MetadataSidecar({String Function()? localeEfectivo})
-      : _localeEfectivo = localeEfectivo ?? localeSpotifyDesdePc;
+  MetadataSidecar({
+    String Function()? localeEfectivo,
+    this.puedeArrancar,
+    this.tiempoInactividad = const Duration(seconds: 90),
+    this.tiempoInactividadRendimiento = const Duration(seconds: 25),
+  }) : _localeEfectivo = localeEfectivo ?? localeSpotifyDesdePc;
 
   final String Function() _localeEfectivo;
+  final bool Function()? puedeArrancar;
+  final Duration tiempoInactividad;
+  final Duration tiempoInactividadRendimiento;
 
   Process? _proc;
   bool _ready = false;
@@ -25,10 +33,14 @@ class MetadataSidecar extends ChangeNotifier {
   bool _disposed = false;
   StreamSubscription<String>? _subOut;
   StreamSubscription<String>? _subErr;
+  Future<bool>? _arrancando;
+  int _peticionesActivas = 0;
+  Timer? _timerInactividad;
 
   final http.Client _http = http.Client();
 
   bool get ready => _ready;
+  bool get puedeUsarse => _ready || (puedeArrancar?.call() ?? false);
   String? get error => _error;
 
   int? get pid => _proc?.pid;
@@ -94,7 +106,12 @@ class MetadataSidecar extends ChangeNotifier {
         const Duration(seconds: 30),
         onTimeout: () => false,
       );
-      if (_ready) _error = null;
+      if (_ready) {
+        _error = null;
+        if (puedeArrancar != null && _peticionesActivas == 0) {
+          _programarInactividad();
+        }
+      }
       if (!_disposed) notifyListeners();
     } catch (e) {
       _error = 'No se pudo lanzar el sidecar de metadatos: $e';
@@ -102,9 +119,59 @@ class MetadataSidecar extends ChangeNotifier {
     }
   }
 
-  Future<ApiPage<Track>> playlistItems(String id, {int offset = 0, int limit = 50}) async {
-    if (!_ready) throw StateError('El sidecar de metadatos no está listo.');
+  Future<bool> asegurarListo() async {
+    if (_disposed) return false;
+    if (_ready) {
+      _programarInactividad();
+      return true;
+    }
+    final puede = puedeArrancar;
+    if (puede == null || !puede()) return false;
+    final enCurso = _arrancando;
+    if (enCurso != null) return await enCurso;
 
+    final futuro = () async {
+      await start();
+      if (_ready) _programarInactividad();
+      return _ready;
+    }();
+    _arrancando = futuro;
+    try {
+      return await futuro;
+    } finally {
+      if (identical(_arrancando, futuro)) _arrancando = null;
+    }
+  }
+
+  void _programarInactividad() {
+    _timerInactividad?.cancel();
+    _timerInactividad = null;
+    if (_disposed || _proc == null || _peticionesActivas > 0) return;
+    final espera = modoRendimiento.value
+        ? tiempoInactividadRendimiento
+        : tiempoInactividad;
+    _timerInactividad = Timer(espera, () {
+      _timerInactividad = null;
+      unawaited(detenerSiInactivo(inmediato: true));
+    });
+  }
+
+  Future<void> detenerSiInactivo({bool inmediato = false}) async {
+    if (_proc == null) return;
+    if (_peticionesActivas > 0) {
+      if (!inmediato) _programarInactividad();
+      return;
+    }
+    if (inmediato) {
+      _timerInactividad?.cancel();
+      _timerInactividad = null;
+      await stop();
+    } else {
+      _programarInactividad();
+    }
+  }
+
+  Future<ApiPage<Track>> playlistItems(String id, {int offset = 0, int limit = 50}) async {
     final j = await _getJson('/playlist/${idDeSpotify(id)}', query: {
       'offset': '$offset',
       'limit': '$limit',
@@ -144,18 +211,30 @@ class MetadataSidecar extends ChangeNotifier {
     String path, {
     Map<String, String>? query,
   }) async {
-    if (!_ready) throw StateError('El sidecar de metadatos no está listo.');
-
-    final uri = Uri.http('127.0.0.1:$puerto', path, query);
-    final res = await _http.get(uri).timeout(const Duration(seconds: 60));
-    if (res.statusCode != 200) {
-      throw Exception('El sidecar devolvió ${res.statusCode}: ${res.body}');
+    if (!_ready && !await asegurarListo()) {
+      throw StateError('El sidecar de metadatos no está listo.');
     }
-    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+
+    _timerInactividad?.cancel();
+    _timerInactividad = null;
+    _peticionesActivas++;
+    try {
+      final uri = Uri.http('127.0.0.1:$puerto', path, query);
+      final res = await _http.get(uri).timeout(const Duration(seconds: 60));
+      if (res.statusCode != 200) {
+        throw Exception('El sidecar devolvió ${res.statusCode}: ${res.body}');
+      }
+      return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    } finally {
+      _peticionesActivas--;
+      if (_peticionesActivas == 0 && _ready) _programarInactividad();
+    }
   }
 
   Future<void> stop() async {
     _stopping = true;
+    _timerInactividad?.cancel();
+    _timerInactividad = null;
     await _subOut?.cancel();
     await _subErr?.cancel();
     _subOut = null;
@@ -173,6 +252,8 @@ class MetadataSidecar extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _timerInactividad?.cancel();
+    _timerInactividad = null;
     _http.close();
     unawaited(stop());
     super.dispose();

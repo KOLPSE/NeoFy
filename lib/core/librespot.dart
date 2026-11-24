@@ -115,7 +115,11 @@ class LibrespotManager extends ChangeNotifier {
     ];
 
     try {
-      final proc = await Process.start(bin.path, args);
+      final proc = await Process.start(
+        bin.path,
+        args,
+        environment: const {'TOKIO_WORKER_THREADS': '2'},
+      );
       _proc = proc;
       _startedAt = DateTime.now();
       anotarPid('librespot', proc.pid);

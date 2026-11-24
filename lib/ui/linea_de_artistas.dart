@@ -29,6 +29,58 @@ class _LineaDeArtistasState extends State<LineaDeArtistas>
     with SingleTickerProviderStateMixin {
   late final AnimationController _avance;
   int? _sobre;
+  String? _textoMedido;
+  TextStyle? _estiloMedido;
+  TextDirection? _dirMedida;
+  double _anchoMedido = 0;
+  double _altoMedido = 0;
+
+  (double, double) _asegurarMedida(
+    TextStyle estilo,
+    TextDirection direccion,
+  ) {
+    if (_textoMedido == widget.texto &&
+        _estiloMedido == estilo &&
+        _dirMedida == direccion) {
+      return (_anchoMedido, _altoMedido);
+    }
+    // Se mide cada tramo por separado porque así lo pinta _fila: si se midiera
+    // la línea entera como un solo texto, el ancho real de la Row (nombre +
+    // ", " + nombre…) sale unos píxeles mayor y desborda cuando hay muchos
+    // artistas.
+    (double ancho, double alto) medirTramo(String texto) {
+      final medidor = TextPainter(
+        text: TextSpan(text: texto, style: estilo),
+        textDirection: direccion,
+      )..layout();
+      final medida = (medidor.width, medidor.height);
+      medidor.dispose();
+      return medida;
+    }
+
+    // La altura también sale de los nombres reales: uno con acentos u otro
+    // alfabeto puede levantar métricas de fuente de reserva más altas que las
+    // de una muestra cualquiera, y si el hueco se queda corto el ClipRect corta
+    // el renglón.
+    var anchoDelTexto = 0.0;
+    var altoDelTexto = 0.0;
+    for (var i = 0; i < widget.artistas.length; i++) {
+      if (i > 0) {
+        final sep = medirTramo(', ');
+        anchoDelTexto += sep.$1;
+        altoDelTexto = math.max(altoDelTexto, sep.$2);
+      }
+      final nombre = medirTramo(widget.artistas[i].name);
+      anchoDelTexto += nombre.$1;
+      altoDelTexto = math.max(altoDelTexto, nombre.$2);
+    }
+    _textoMedido = widget.texto;
+    _estiloMedido = estilo;
+    _dirMedida = direccion;
+    _anchoMedido = anchoDelTexto;
+    _altoMedido = altoDelTexto;
+    return (_anchoMedido, _altoMedido);
+  }
 
   @override
   void initState() {
@@ -86,37 +138,8 @@ class _LineaDeArtistasState extends State<LineaDeArtistas>
 
     return LayoutBuilder(
       builder: (context, restricciones) {
-        final direccion = Directionality.of(context);
-
-        // Se mide cada tramo por separado porque así lo pinta _fila: si se
-        // midiera la línea entera como un solo texto, el ancho real de la Row
-        // (nombre + ", " + nombre…) sale unos píxeles mayor y desborda cuando
-        // hay muchos artistas.
-        (double ancho, double alto) medir(String texto) {
-          final medidor = TextPainter(
-            text: TextSpan(text: texto, style: estilo),
-            textDirection: direccion,
-          )..layout();
-          final medida = (medidor.width, medidor.height);
-          medidor.dispose();
-          return medida;
-        }
-        // La altura también sale de los nombres reales: uno con acentos u otro
-        // alfabeto puede levantar métricas de fuente de reserva más altas que
-        // las de una muestra cualquiera, y si el hueco se queda corto el
-        // ClipRect corta el renglón.
-        var anchoDelTexto = 0.0;
-        var altoDelTexto = 0.0;
-        for (var i = 0; i < widget.artistas.length; i++) {
-          if (i > 0) {
-            final sep = medir(', ');
-            anchoDelTexto += sep.$1;
-            altoDelTexto = math.max(altoDelTexto, sep.$2);
-          }
-          final nombre = medir(widget.artistas[i].name);
-          anchoDelTexto += nombre.$1;
-          altoDelTexto = math.max(altoDelTexto, nombre.$2);
-        }
+        final (anchoDelTexto, altoDelTexto) =
+            _asegurarMedida(estilo, Directionality.of(context));
         final hueco = restricciones.maxWidth;
         final recorrido = anchoDelTexto - hueco;
 

@@ -114,7 +114,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         offset: _offset,
       );
     } on ApiException catch (e) {
-      if (!e.isForbidden || !widget.sidecar.ready) rethrow;
+      if (!e.isForbidden || !widget.sidecar.puedeUsarse) rethrow;
+      if (!await widget.sidecar.asegurarListo()) rethrow;
       final page = await widget.sidecar.playlistItems(
         widget.playlist.id,
         offset: _offset,
@@ -241,6 +242,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               : ValueListenableBuilder<String?>(
                   valueListenable: widget.player.currentUri,
                   builder: (context, currentUri, _) => ListView.builder(
+                    addAutomaticKeepAlives: false,
                     controller: _scroll,
                     itemCount: _tracks.length + (_loading ? 1 : 0),
                     itemBuilder: (context, i) {

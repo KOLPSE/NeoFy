@@ -40,10 +40,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     value: widget.lleno ? 1 : 0,
   );
 
-  late final AnimationController _onda = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  );
+  AnimationController? _onda;
 
   late final CurvedAnimation _llenado = CurvedAnimation(
     parent: _nivel,
@@ -51,35 +48,70 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     reverseCurve: Curves.easeInCubic,
   );
 
-  late final AnimationController _resalte;
-  late final Listenable _animaciones;
+  AnimationController? _resalte;
+  bool _hover = false;
+  late Listenable _animaciones = _llenado;
 
   @override
   void initState() {
     super.initState();
-    _resalte = AnimationController(
-      vsync: this,
-      duration: kResaltadoDelCorazon,
-      reverseDuration: kResaltadoDelCorazon,
-      value: 0,
-    );
-    _animaciones = Listenable.merge([_llenado, _onda, _resalte]);
     _nivel.addStatusListener(_alTerminarElLlenado);
   }
 
+  void _actualizarAnimaciones() {
+    final fuentes = <Listenable>[
+      _llenado,
+      ?_onda,
+      ?_resalte,
+    ];
+    _animaciones = fuentes.length == 1 ? _llenado : Listenable.merge(fuentes);
+  }
+
+  AnimationController _asegurarOnda() {
+    final existente = _onda;
+    if (existente != null) return existente;
+    final c = _onda = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _actualizarAnimaciones();
+    return c;
+  }
+
+  AnimationController _asegurarResalte() {
+    final existente = _resalte;
+    if (existente != null) return existente;
+    final c = _resalte = AnimationController(
+      vsync: this,
+      duration: kResaltadoDelCorazon,
+      reverseDuration: kResaltadoDelCorazon,
+      value: _hover ? 1 : 0,
+    );
+    _actualizarAnimaciones();
+    return c;
+  }
+
   void _alEntrarElRaton() {
+    _hover = true;
     if (EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value) {
-      _resalte.forward();
+      final creada = _resalte == null;
+      _asegurarResalte().forward();
+      if (creada) setState(() {});
+    } else if (_resalte != null) {
+      _resalte!.value = 1;
     } else {
-      _resalte.value = 1;
+      setState(() {});
     }
   }
 
   void _alSalirElRaton() {
+    _hover = false;
     if (EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value) {
-      _resalte.reverse();
+      _resalte?.reverse();
+    } else if (_resalte != null) {
+      _resalte!.value = 0;
     } else {
-      _resalte.value = 0;
+      setState(() {});
     }
   }
 
@@ -88,11 +120,11 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
     super.didUpdateWidget(old);
     if (old.lleno == widget.lleno) return;
     if (!EstiloNeoFy.de(context).movimiento.seMueve || modoRendimiento.value) {
-      _onda.stop();
+      _onda?.stop();
       _nivel.value = widget.lleno ? 1 : 0;
       return;
     }
-    _onda.repeat();
+    _asegurarOnda().repeat();
     if (widget.lleno) {
       _nivel.forward();
     } else {
@@ -104,14 +136,14 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
   void dispose() {
     _llenado.dispose();
     _nivel.dispose();
-    _onda.dispose();
-    _resalte.dispose();
+    _onda?.dispose();
+    _resalte?.dispose();
     super.dispose();
   }
 
   void _alTerminarElLlenado(AnimationStatus s) {
     if (s == AnimationStatus.completed || s == AnimationStatus.dismissed) {
-      _onda.stop();
+      _onda?.stop();
     }
   }
 
@@ -136,7 +168,8 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
                   animation: _animaciones,
                   builder: (context, _) {
                     final n = _llenado.value.clamp(0.0, 1.0);
-                    final resalte = _resalte.value.clamp(0.0, 1.0);
+                    final resalte =
+                        (_resalte?.value ?? (_hover ? 1.0 : 0.0)).clamp(0.0, 1.0);
                     return Transform.scale(
                       scale:
                           (1 + 0.22 * math.sin(math.pi * n)) *
@@ -157,7 +190,7 @@ class _CorazonAnimadoState extends State<CorazonAnimado>
                             ClipPath(
                               clipper: _RecorteLiquido(
                                 nivel: n,
-                                fase: _onda.value,
+                                fase: _onda?.value ?? 0,
                               ),
                               child: Icon(
                                 Icons.favorite,

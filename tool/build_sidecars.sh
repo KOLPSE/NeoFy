@@ -7,6 +7,9 @@ destino="$raiz/tool/librespot-build"
 version='0.8.0'
 
 echo "Compilando librespot $version..."
+CARGO_PROFILE_RELEASE_OPT_LEVEL=z \
+CARGO_PROFILE_RELEASE_LTO=thin \
+CARGO_PROFILE_RELEASE_STRIP=symbols \
 cargo install librespot \
     --version "$version" \
     --locked \

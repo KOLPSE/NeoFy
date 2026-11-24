@@ -64,10 +64,12 @@ class DesplegableEnSitio extends StatefulWidget {
 
 class _DesplegableEnSitioState extends State<DesplegableEnSitio> {
   var _abierto = false;
+  var _usado = false;
   OpcionEnSitio? _pendiente;
 
   void _alternar() {
     setState(() {
+      _usado = true;
       _abierto = !_abierto;
       if (!_abierto) _pendiente = null;
     });
@@ -126,6 +128,9 @@ class _DesplegableEnSitioState extends State<DesplegableEnSitio> {
       builder: (context, enSitio, _) {
         if (!enSitio) {
           return widget.constructor(context, _disparadorFlotante());
+        }
+        if (!_usado && !_abierto) {
+          return widget.constructor(context, _disparadorEnSitio());
         }
         final mueve =
             EstiloNeoFy.de(context).movimiento.seMueve && !modoRendimiento.value;

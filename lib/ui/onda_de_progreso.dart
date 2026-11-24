@@ -77,6 +77,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   bool _arrastrando = false;
   bool _rebobinando = false;
   bool _encima = false;
+  bool _tickersActivos = true;
   late double _objetivo = _fraccionDelWidget;
 
   @override
@@ -101,7 +102,16 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   }
 
   void _alCambiarRendimiento() {
-    if (mounted) _revisarLaOnda();
+    if (!mounted) return;
+    if (modoRendimiento.value) {
+      _rebobinando = false;
+      if (_pintada.isAnimating) _pintada.stop();
+      _pintada.value = _fraccionDelWidget;
+      _revisarLaOnda();
+    } else {
+      _revisarLaOnda();
+      _lanzarAvance();
+    }
   }
 
   double get _fraccionDelWidget => widget.maximo <= 0
@@ -111,6 +121,19 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final activos = TickerMode.valuesOf(context).enabled;
+    _tickersActivos = activos;
+    if (!activos) {
+      _rebobinando = false;
+      if (_fase.isAnimating) _fase.stop();
+      if (_amplitud.isAnimating) _amplitud.stop();
+      if (_pintada.isAnimating) _pintada.stop();
+      if (_sobre.isAnimating) _sobre.stop();
+      return;
+    }
+    if (!_arrastrando && !_rebobinando && !_pintada.isAnimating) {
+      _pintada.value = _fraccionDelWidget;
+    }
     _revisarLaOnda();
     _lanzarAvance();
   }
@@ -143,10 +166,10 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
 
   void _asentarSobre() {
     final movimiento = EstiloNeoFy.de(context).movimiento;
-    final destino = movimiento.seMueve && !modoRendimiento.value
+    final destino = movimiento.seMueve && !modoRendimiento.value && _tickersActivos
         ? (_arrastrando ? 1.15 : (_encima ? 1.0 : 0.0))
         : 0.0;
-    if (!movimiento.seMueve || modoRendimiento.value) {
+    if (!movimiento.seMueve || modoRendimiento.value || !_tickersActivos) {
       _sobre.value = 0;
       return;
     }
@@ -164,6 +187,13 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
     final nueva = _fraccionDelWidget;
     final anterior = _objetivo;
     _objetivo = nueva;
+
+    if (!_hayOnda || modoRendimiento.value || !_tickersActivos) {
+      _rebobinando = false;
+      if (_pintada.isAnimating) _pintada.stop();
+      _pintada.value = nueva;
+      return;
+    }
 
     final acabaDeTerminar = !_arrastrando &&
         anterior >= kSeAcabaLaCancion &&
@@ -206,7 +236,15 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
   }
 
   void _lanzarAvance() {
-    if (_arrastrando || _rebobinando || !widget.enMarcha) return;
+    if (_arrastrando ||
+        _rebobinando ||
+        !widget.enMarcha ||
+        !_hayOnda ||
+        modoRendimiento.value ||
+        !_tickersActivos) {
+      if (_pintada.isAnimating) _pintada.stop();
+      return;
+    }
     if (widget.maximo <= 0) {
       _pintada.value = 0;
       return;
@@ -227,7 +265,7 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
 
   void _rebobinar() {
     final movimiento = EstiloNeoFy.de(context).movimiento;
-    if (!movimiento.seMueve || modoRendimiento.value) {
+    if (!movimiento.seMueve || modoRendimiento.value || !_tickersActivos) {
       _pintada.value = _objetivo;
       _lanzarAvance();
       return;
@@ -253,14 +291,20 @@ class _BarraDeProgresoState extends State<BarraDeProgreso>
         !_arrastrando &&
         !_rebobinando &&
         _objetivo < kSeAcabaLaCancion &&
-        !modoRendimiento.value;
+        !modoRendimiento.value &&
+        _tickersActivos;
 
     if (debeOndular) {
       if (!_fase.isAnimating) _fase.repeat(min: 0, max: 1, period: _periodo);
       if (_amplitud.value != 1) _amplitud.forward();
     } else {
       if (_fase.isAnimating) _fase.stop();
-      if (_amplitud.value != 0) _amplitud.reverse();
+      if (!_tickersActivos) {
+        if (_amplitud.isAnimating) _amplitud.stop();
+        _amplitud.value = 0;
+      } else if (_amplitud.value != 0) {
+        _amplitud.reverse();
+      }
     }
   }
 

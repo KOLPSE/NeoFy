@@ -128,6 +128,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   'assets/neofy.png',
                   width: 56,
                   height: 56,
+                  cacheWidth:
+                      (56 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  cacheHeight:
+                      (56 * MediaQuery.devicePixelRatioOf(context)).round(),
                   excludeFromSemantics: true,
                 ),
                 const SizedBox(height: 20),

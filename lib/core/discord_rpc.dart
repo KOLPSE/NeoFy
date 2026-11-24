@@ -21,9 +21,13 @@ class DiscordRpc {
   String _clientId = '';
   bool _activo = false;
   Timer? _reintentoTimer;
+  int _esperaReintentoSeg = _esperaInicialSeg;
   Timer? _timeoutPausa;
   bool _pausaExpirada = false;
   int _nonce = 0;
+
+  static const int _esperaInicialSeg = 15;
+  static const int _esperaMaximaSeg = 120;
 
   String? _ultimoTrackUri;
   Track? _siguienteTrack;
@@ -49,10 +53,22 @@ class DiscordRpc {
     }
     _clientId = nuevoId;
     _activo = true;
-    _iniciarConexion();
-
+    _esperaReintentoSeg = _esperaInicialSeg;
     _reintentoTimer?.cancel();
-    _reintentoTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _reintentoTimer = null;
+    _iniciarConexion();
+  }
+
+  void _programarReintento() {
+    if (!_activo || _transporte.conectado) return;
+    _reintentoTimer?.cancel();
+    final espera = Duration(seconds: _esperaReintentoSeg);
+    _esperaReintentoSeg = (_esperaReintentoSeg * 2).clamp(
+      _esperaInicialSeg,
+      _esperaMaximaSeg,
+    );
+    _reintentoTimer = Timer(espera, () {
+      _reintentoTimer = null;
       if (_activo && !_transporte.conectado) {
         _iniciarConexion();
       }
@@ -68,6 +84,7 @@ class DiscordRpc {
     try {
       final ok = await _transporte.conectar(_clientId);
       if (ok && _activo) {
+        _esperaReintentoSeg = _esperaInicialSeg;
         if (_ultimoTrack != null && !_pausaExpirada) {
           await _enviarActividad(
             track: _ultimoTrack,
@@ -77,15 +94,18 @@ class DiscordRpc {
             forzar: true,
           );
         }
+        return;
       }
     } catch (_) {
     }
+    _programarReintento();
   }
 
   Future<void> stop() async {
     _activo = false;
     _reintentoTimer?.cancel();
     _reintentoTimer = null;
+    _esperaReintentoSeg = _esperaInicialSeg;
     _timeoutPausa?.cancel();
     _timeoutPausa = null;
     _pausaExpirada = false;
