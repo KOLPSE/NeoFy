@@ -212,6 +212,7 @@ class PanelAjustes extends StatelessWidget {
     _EnviarReporte(trackUri: trackUri),
     _Actualizaciones(
       updater: updater,
+      settings: settings,
       onSalirParaActualizar: onSalirParaActualizar,
     ),
   ];
@@ -498,10 +499,12 @@ class _ReiniciarAudioState extends State<ReiniciarAudioDeNeoFy> {
 class _Actualizaciones extends StatelessWidget {
   const _Actualizaciones({
     required this.updater,
+    required this.settings,
     required this.onSalirParaActualizar,
   });
 
   final Updater updater;
+  final Settings settings;
   final Future<void> Function() onSalirParaActualizar;
 
   Future<void> _actualizar() async {
@@ -516,78 +519,137 @@ class _Actualizaciones extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AnimatedBuilder(
-      animation: updater,
+      animation: Listenable.merge([updater, settings]),
       builder: (context, _) {
         final estado = updater.estado;
-        return Row(
+        final canal = settings.canalActualizacion;
+        final enPreview = settings.enModoPreview;
+        final esPreview = updater.canal == CanalActualizacion.preview;
+        final cambioAEstable = updater.esCambioAEstable;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'NeoFy ${updater.versionActual}',
-                    style: theme.textTheme.bodyMedium,
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${nombreVentanaNeoFy(preview: enPreview)} ${updater.versionActual}',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      if (estado == EstadoActualizacion.fallo &&
+                          updater.error != null)
+                        Text(
+                          updater.error!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      else
+                        T(
+                          switch (estado) {
+                            EstadoActualizacion.buscando => 'Buscando…',
+                            EstadoActualizacion.alDia =>
+                              esPreview && !kEsCompilacionPreview
+                                  ? 'Sin versiones preview más recientes'
+                                  : 'Estás al día',
+                            EstadoActualizacion.disponible =>
+                              cambioAEstable
+                                  ? (Updater.seInstalaSolo
+                                        ? 'Versión estable disponible: ${updater.versionDisponible}'
+                                        : 'Versión estable disponible (${updater.versionDisponible}). '
+                                              'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.')
+                                  : esPreview
+                                  ? (Updater.seInstalaSolo
+                                        ? 'Hay una versión preview nueva: ${updater.versionDisponible}'
+                                        : 'Hay una versión preview nueva (${updater.versionDisponible}). '
+                                              'Descárgala desde $kHostActualizaciones/$kProyectoActualizacionesPreview.')
+                                  : (Updater.seInstalaSolo
+                                        ? 'Hay una versión nueva: ${updater.versionDisponible}'
+                                        : 'Hay una versión nueva (${updater.versionDisponible}). '
+                                              'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.'),
+                            EstadoActualizacion.descargando =>
+                              'Descargando… ${(updater.progreso * 100).round()} %',
+                            EstadoActualizacion.listaParaInstalar =>
+                              'Instalando; NeoFy se reiniciará',
+                            EstadoActualizacion.fallo => 'No se pudo comprobar',
+                            EstadoActualizacion.reposo =>
+                              'Comprobar si hay novedades',
+                          },
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: estado == EstadoActualizacion.disponible
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (estado == EstadoActualizacion.descargando) ...[
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(
+                          minHeight: 3,
+                          value: updater.progreso > 0 ? updater.progreso : null,
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  if (estado == EstadoActualizacion.fallo &&
-                      updater.error != null)
-                    Text(
-                      updater.error!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
-                  else
-                    T(
-                      switch (estado) {
-                        EstadoActualizacion.buscando => 'Buscando…',
-                        EstadoActualizacion.alDia => 'Estás al día',
-                        EstadoActualizacion.disponible =>
-                          Updater.seInstalaSolo
-                              ? 'Hay una versión nueva: ${updater.versionDisponible}'
-                              : 'Hay una versión nueva (${updater.versionDisponible}). '
-                                    'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.',
-                        EstadoActualizacion.descargando =>
-                          'Descargando… ${(updater.progreso * 100).round()} %',
-                        EstadoActualizacion.listaParaInstalar =>
-                          'Instalando; NeoFy se reiniciará',
-                        EstadoActualizacion.fallo => 'No se pudo comprobar',
-                        EstadoActualizacion.reposo =>
-                          'Comprobar si hay novedades',
-                      },
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: estado == EstadoActualizacion.disponible
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+                ),
+                const SizedBox(width: 12),
+                if (estado == EstadoActualizacion.disponible &&
+                    Updater.seInstalaSolo)
+                  FilledButton(
+                    onPressed: _actualizar,
+                    child: T(cambioAEstable ? 'Instalar' : 'Actualizar'),
+                  )
+                else if (estado != EstadoActualizacion.descargando &&
+                    estado != EstadoActualizacion.listaParaInstalar)
+                  OutlinedButton(
+                    onPressed: estado == EstadoActualizacion.buscando
+                        ? null
+                        : () => unawaited(updater.buscar()),
+                    child: T('Buscar'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                T('Rama de actualizaciones', style: theme.textTheme.bodyMedium),
+                const SizedBox(height: 2),
+                T(
+                  'Las novedades llegan primero a Preview y después a Estable. '
+                  'Puedes cambiar en cualquier momento.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<CanalActualizacion>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment<CanalActualizacion>(
+                      value: CanalActualizacion.estable,
+                      label: T('Estable'),
                     ),
-                  if (estado == EstadoActualizacion.descargando) ...[
-                    const SizedBox(height: 6),
-                    LinearProgressIndicator(
-                      minHeight: 3,
-                      value: updater.progreso > 0 ? updater.progreso : null,
+                    ButtonSegment<CanalActualizacion>(
+                      value: CanalActualizacion.preview,
+                      label: Text('Preview'),
                     ),
                   ],
-                ],
-              ),
+                  selected: {canal},
+                  onSelectionChanged: updater.ocupado
+                      ? null
+                      : (seleccion) => unawaited(
+                          settings.setCanalActualizacion(seleccion.first),
+                        ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            if (estado == EstadoActualizacion.disponible &&
-                Updater.seInstalaSolo)
-              FilledButton(
-                onPressed: _actualizar,
-                child: T('Actualizar'),
-              )
-            else if (estado != EstadoActualizacion.descargando &&
-                estado != EstadoActualizacion.listaParaInstalar)
-              OutlinedButton(
-                onPressed: estado == EstadoActualizacion.buscando
-                    ? null
-                    : () => unawaited(updater.buscar()),
-                child: T('Buscar'),
-              ),
           ],
         );
       },

@@ -53,8 +53,9 @@ navegador embebido. Para evitar ese consumo de memoria, NeoFy separa el audio de
   incidencias desde Ajustes con [NeoReport](https://report.neogex.xyz).
 - **Actualizaciones**: en Windows comprueba y descarga las nuevas versiones desde
   [`git.neogex.xyz/apps/neofy`](https://git.neogex.xyz/apps/neofy/-/releases) en un clic
-  desde Ajustes, conservando sesión y ajustes. En Linux avisa de la nueva versión para
-  actualizar el paquete.
+  desde Ajustes, conservando sesión y ajustes, y permite cambiar en cualquier momento al
+  canal **Preview** ([`git.neogex.xyz/apps/neofy-preview`](https://git.neogex.xyz/apps/neofy-preview/-/releases)).
+  En Linux avisa de la nueva versión para actualizar el paquete.
 
 ## Instalación
 

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/auth.dart';
+import '../core/settings.dart';
 import '../core/yt_auth.dart';
 import 'conectar_youtube.dart';
 import 'texto_traducido.dart';
@@ -131,7 +132,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   excludeFromSemantics: true,
                 ),
                 const SizedBox(height: 20),
-                Text('NeoFy', style: theme.textTheme.headlineSmall),
+                ValueListenableBuilder<bool>(
+                  valueListenable: modoPreview,
+                  builder: (context, enPreview, _) => Text(
+                    nombreVentanaNeoFy(preview: enPreview),
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 T(
                   'Toda tu música de Spotify en un cliente nativo y optimizado para el día a día sin perder funciones por el camino',

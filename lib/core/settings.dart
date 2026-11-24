@@ -10,10 +10,14 @@ final ValueNotifier<bool> modoRendimiento = ValueNotifier(false);
 /// la escuchan directamente, sin necesidad de un [Settings] a mano.
 final ValueNotifier<bool> menusEnElemento = ValueNotifier(true);
 
+/// Indica en caliente si la ventana debe identificarse como Preview.
+final ValueNotifier<bool> modoPreview = ValueNotifier(kEsCompilacionPreview);
+
 class Settings extends ChangeNotifier {
   Settings(this.config) {
     modoRendimiento.value = config.performanceMode;
     menusEnElemento.value = config.menusEnElemento;
+    modoPreview.value = enModoPreview;
     _aplicar();
   }
 
@@ -25,6 +29,8 @@ class Settings extends ChangeNotifier {
 
   void Function()? onCambioIdioma;
 
+  void Function(CanalActualizacion canal)? onCambioCanalActualizacion;
+
   bool get performanceMode => modoRendimiento.value;
   bool get discordRpcEnabled => config.discordRpcEnabled;
   String get discordClientId => config.discordClientId;
@@ -32,6 +38,19 @@ class Settings extends ChangeNotifier {
   String get localeEfectivo => localeSpotifyEfectivo(config.idiomaPreferido);
   bool get sidebarPlegado => config.sidebarPlegado;
   int get bitrate => config.bitrate;
+  CanalActualizacion get canalActualizacion => config.canalActualizacion;
+  bool get esCanalPreview =>
+      config.canalActualizacion == CanalActualizacion.preview;
+  bool get enModoPreview => esCanalPreview || kEsCompilacionPreview;
+
+  Future<void> setCanalActualizacion(CanalActualizacion canal) async {
+    if (config.canalActualizacion == canal) return;
+    config.canalActualizacion = canal;
+    modoPreview.value = enModoPreview;
+    onCambioCanalActualizacion?.call(canal);
+    notifyListeners();
+    await config.save();
+  }
 
   Future<void> setBitrate(int valor) async {
     if (config.bitrate == valor) return;

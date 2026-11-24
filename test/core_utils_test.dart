@@ -113,8 +113,27 @@ Sink Input #21
       expect(Updater.esMasNueva('0.2', '0.1.9'), isTrue);
       expect(Updater.esMasNueva('0.1.0', '0.1'), isFalse);
       expect(Updater.esMasNueva('0.1.0+2', '0.1.0+1'), isTrue);
+      expect(Updater.esMasNueva('1.6.0.100', '1.6.0'), isTrue);
+      expect(Updater.esMasNueva('1.6.0.101', '1.6.0.100'), isTrue);
+      expect(Updater.esMasNueva('1.6.1', '1.6.0.999'), isTrue);
+      expect(Updater.esMasNueva('1.6.0', '1.6.0.100'), isFalse);
       expect(Updater.esMasNueva('', '0.1.0'), isFalse);
       expect(Updater.esMasNueva('vX.Y', '0.1.0'), isFalse);
+    });
+
+    test('identifica versiones preview, canales y nombres de ventana', () {
+      expect(esVersionPreview('1.6.0.100'), isTrue);
+      expect(esVersionPreview('1.6.0.999'), isTrue);
+      expect(esVersionPreview('1.6.0'), isFalse);
+      expect(esVersionPreview('1.6.0.12'), isFalse);
+      expect(canalDeVersion('1.6.0.100'), CanalActualizacion.preview);
+      expect(canalDeVersion('1.6.0'), CanalActualizacion.estable);
+      expect(nombreVentanaNeoFy(preview: false), 'NeoFy');
+      expect(nombreVentanaNeoFy(preview: true), 'NeoFy (PREVIEW)');
+      expect(
+        nombreVentanaNeoFy(preview: true, debug: true),
+        'NeoFy (PREVIEW) (debug)',
+      );
     });
 
     test('la versión que anuncia el updater es la constante del proyecto', () {
@@ -122,17 +141,143 @@ Sink Input #21
       addTearDown(updater.dispose);
       expect(updater.versionActual, kVersion);
       expect(
-        RegExp(r'^\d+\.\d+\.\d+$').hasMatch(kVersion),
+        kRegexVersionValida.hasMatch(kVersion),
         isTrue,
-        reason: 'kVersion debe ser x.y.z: el instalador la usa tal cual',
+        reason: 'kVersion debe ser x.y.z o x.y.z.1xx: el instalador la usa tal cual',
       );
     });
 
-    test('la URI de última release apunta a apps/neofy sin doble codificación', () {
+    test('las URIs de última release apuntan a estable y preview sin doble codificación', () {
       expect(
         Updater.uriUltimaRelease.toString(),
         'https://git.neogex.xyz/api/v4/projects/apps%2Fneofy/releases/permalink/latest',
       );
+      expect(
+        Updater.uriUltimaReleasePreview.toString(),
+        'https://git.neogex.xyz/api/v4/projects/apps%2Fneofy-preview/releases/permalink/latest',
+      );
+    });
+
+    test('cambiar a Preview consulta apps/neofy-preview y detecta versiones X.Y.Z.1XX', () async {
+      final peticiones = <Uri>[];
+      const pkgPreview =
+          'https://git.neogex.xyz/api/v4/projects/12/packages/generic/neofy-preview/1.6.0.100/NeoFy-1.6.0.100-windows-x64.exe';
+      final cliente = MockClient((request) async {
+        peticiones.add(request.url);
+        if (request.url == Updater.uriUltimaRelease) {
+          return http.Response(jsonEncode({'tag_name': 'v1.6.0'}), 200);
+        }
+        if (request.url == Updater.uriUltimaReleasePreview) {
+          return http.Response(
+            jsonEncode({
+              'tag_name': 'v1.6.0.100',
+              'description': 'Preview 100',
+              'assets': {
+                'links': [
+                  {'name': 'Instalador Windows x64 (.exe)', 'url': pkgPreview},
+                ],
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      final updater = Updater(
+        cliente: cliente,
+        instalaSolo: true,
+        versionActual: '1.6.0',
+      );
+      addTearDown(updater.dispose);
+
+      await updater.buscar();
+      expect(updater.estado, EstadoActualizacion.alDia);
+
+      await updater.cambiarCanal(CanalActualizacion.preview);
+      expect(updater.canal, CanalActualizacion.preview);
+      expect(updater.estado, EstadoActualizacion.disponible);
+      expect(updater.versionDisponible, '1.6.0.100');
+      expect(peticiones, [
+        Updater.uriUltimaRelease,
+        Updater.uriUltimaReleasePreview,
+      ]);
+    });
+
+    test('en canal Preview marca al día ante 404 o preview anterior a la estable', () async {
+      final cliente404 = MockClient((_) async => http.Response('', 404));
+      final updater404 = Updater(
+        cliente: cliente404,
+        instalaSolo: true,
+        canalInicial: CanalActualizacion.preview,
+        versionActual: '1.6.0',
+      );
+      addTearDown(updater404.dispose);
+      await updater404.buscar();
+      expect(updater404.estado, EstadoActualizacion.alDia);
+
+      final clienteAntigua = MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tag_name': 'v1.5.9.105',
+            'assets': {
+              'links': [
+                {
+                  'name': 'Instalador Windows x64 (.exe)',
+                  'url':
+                      'https://git.neogex.xyz/api/v4/projects/12/packages/generic/neofy-preview/1.5.9.105/NeoFy-1.5.9.105-windows-x64.exe',
+                },
+              ],
+            },
+          }),
+          200,
+        ),
+      );
+      final updaterAntigua = Updater(
+        cliente: clienteAntigua,
+        instalaSolo: true,
+        canalInicial: CanalActualizacion.preview,
+        versionActual: '1.6.0',
+      );
+      addTearDown(updaterAntigua.dispose);
+      await updaterAntigua.buscar();
+      expect(updaterAntigua.estado, EstadoActualizacion.alDia);
+    });
+
+    test('volver de compilación Preview a Estable ofrece la release estable', () async {
+      const pkgEstable =
+          'https://git.neogex.xyz/api/v4/projects/10/packages/generic/neofy/1.6.0/NeoFy-1.6.0-windows-x64.exe';
+      final cliente = MockClient((request) async {
+        if (request.url == Updater.uriUltimaRelease) {
+          return http.Response(
+            jsonEncode({
+              'tag_name': 'v1.6.0',
+              'description': 'Estable 1.6.0',
+              'assets': {
+                'links': [
+                  {'name': 'Instalador Windows x64 (.exe)', 'url': pkgEstable},
+                ],
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      final updater = Updater(
+        cliente: cliente,
+        instalaSolo: true,
+        canalInicial: CanalActualizacion.preview,
+        versionActual: '1.6.0.105',
+      );
+      addTearDown(updater.dispose);
+
+      expect(updater.esCambioAEstable, isFalse);
+      await updater.cambiarCanal(CanalActualizacion.estable);
+      expect(updater.esCambioAEstable, isTrue);
+      expect(updater.estado, EstadoActualizacion.disponible);
+      expect(updater.versionDisponible, '1.6.0');
     });
 
     test('buscar() detecta release en GitLab y descarga desde el paquete genérico', () async {

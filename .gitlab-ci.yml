@@ -15,6 +15,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "api"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_BRANCH == "PREVIEW" && $CI_PIPELINE_SOURCE == "push"'
 
 stages:
   - check
@@ -354,7 +355,7 @@ publish:github:
   rules:
     - if: '$CLEAN_WINDOWS_DIR == "true"'
       when: never
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
       when: manual
       allow_failure: false
   resource_group: github-release
@@ -441,7 +442,7 @@ publish:gitlab:
   rules:
     - if: '$CLEAN_WINDOWS_DIR == "true"'
       when: never
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
       when: manual
       allow_failure: false
   resource_group: gitlab-apps-release
@@ -459,6 +460,9 @@ publish:gitlab:
       VERSION="${TAG#v}"
       APP_PROJECT_ID="10"
       PUBLIC_BASE="https://git.neogex.xyz/api/v4/projects/${APP_PROJECT_ID}/packages/generic/neofy/${VERSION}"
+      tmp_create="$(mktemp)"
+      tmp_update="$(mktemp)"
+      trap 'rm -f "$tmp_create" "$tmp_update"' EXIT
 
       test -n "${GITLAB_APPS_TOKEN:-}"
       kver="$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart | tr -d '\r')"
@@ -522,7 +526,7 @@ publish:gitlab:
           },
       }
       print(json.dumps(payload, ensure_ascii=False))
-      ' "$TAG" "$VERSION" "$PUBLIC_BASE" "$arch_nombre" > /tmp/gitlab-release.json
+      ' "$TAG" "$VERSION" "$PUBLIC_BASE" "$arch_nombre" > "$tmp_create"
 
       estado="$(curl -s -o /dev/null -w '%{http_code}' \
         --header "PRIVATE-TOKEN: ${GITLAB_APPS_TOKEN}" \
@@ -535,18 +539,139 @@ publish:gitlab:
       with open("RELEASE_NOTES.md", encoding="utf-8") as f:
           notas = f.read().strip()
       print(json.dumps({"name": f"NeoFy {version}", "description": notas}, ensure_ascii=False))
-      ' "$VERSION" > /tmp/gitlab-release-update.json
+      ' "$VERSION" > "$tmp_update"
         curl -fsSL -X PUT \
           --header "PRIVATE-TOKEN: ${GITLAB_APPS_TOKEN}" \
           --header "Content-Type: application/json" \
-          --data @/tmp/gitlab-release-update.json \
+          --data @"$tmp_update" \
           "${CI_API_V4_URL}/projects/${APP_PROJECT_ID}/releases/${TAG}" >/dev/null
         echo "Release $TAG actualizada en apps/neofy"
       else
         curl -fsSL -X POST \
           --header "PRIVATE-TOKEN: ${GITLAB_APPS_TOKEN}" \
           --header "Content-Type: application/json" \
-          --data @/tmp/gitlab-release.json \
+          --data @"$tmp_create" \
           "${CI_API_V4_URL}/projects/${APP_PROJECT_ID}/releases" >/dev/null
         echo "Release $TAG creada en apps/neofy"
+      fi
+
+publish:gitlab-preview:
+  stage: publish
+  tags:
+    - publish
+  rules:
+    - if: '$CLEAN_WINDOWS_DIR == "true"'
+      when: never
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]{3}$/'
+      when: manual
+      allow_failure: false
+  resource_group: gitlab-apps-preview-release
+  needs:
+    - job: build:windows
+      artifacts: true
+    - job: build:linux
+      artifacts: true
+    - job: build:arch
+      artifacts: true
+  script:
+    - |
+      set -euo pipefail
+      TAG="${CI_COMMIT_TAG}"
+      VERSION="${TAG#v}"
+      PREVIEW_PROJECT_ID="12"
+      PUBLIC_BASE="https://git.neogex.xyz/api/v4/projects/${PREVIEW_PROJECT_ID}/packages/generic/neofy-preview/${VERSION}"
+      tmp_create="$(mktemp)"
+      tmp_update="$(mktemp)"
+      trap 'rm -f "$tmp_create" "$tmp_update"' EXIT
+
+      test -n "${GITLAB_APPS_PREVIEW_TOKEN:-}"
+      echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]{3}$'
+      kver="$(sed -n "s/^const String kVersion = '\([^']*\)';/\1/p" lib/core/app_config.dart | tr -d '\r')"
+      test "$TAG" = "v${kver}"
+      grep -q '^## Features' RELEASE_NOTES.md
+      grep -q '^## Fixes' RELEASE_NOTES.md
+
+      win_exe="dist/NeoFy-${VERSION}-windows-x64.exe"
+      linux_tar="dist/NeoFy-${VERSION}-linux-x86_64.tar.gz"
+      linux_app="dist/NeoFy-${VERSION}-linux-x86_64.AppImage"
+      arch_pkg="$(ls dist/neofy-bin-${VERSION}-*.pkg.tar.zst | head -n1)"
+
+      test -f "$win_exe"
+      test -f "$linux_tar"
+      test -f "$linux_app"
+      test -f "$arch_pkg"
+
+      for fichero in "$win_exe" "$linux_tar" "$linux_app" "$arch_pkg"; do
+        nombre="$(basename "$fichero")"
+        curl -fsSL --header "PRIVATE-TOKEN: ${GITLAB_APPS_PREVIEW_TOKEN}" \
+          --upload-file "$fichero" \
+          "${CI_API_V4_URL}/projects/${PREVIEW_PROJECT_ID}/packages/generic/neofy-preview/${VERSION}/${nombre}" \
+          >/dev/null
+        echo "  subido paquete preview $nombre"
+      done
+
+      arch_nombre="$(basename "$arch_pkg")"
+      python3 -c '
+      import json, sys
+      tag, version, base, arch_nombre = sys.argv[1:5]
+      with open("RELEASE_NOTES.md", encoding="utf-8") as f:
+          notas = f.read().strip()
+      payload = {
+          "name": f"NeoFy {version} (PREVIEW)",
+          "tag_name": tag,
+          "ref": "PREVIEW",
+          "description": notas,
+          "assets": {
+              "links": [
+                  {
+                      "name": "Instalador Windows x64 (.exe)",
+                      "url": f"{base}/NeoFy-{version}-windows-x64.exe",
+                      "link_type": "package",
+                  },
+                  {
+                      "name": "Linux portable x86_64 (.tar.gz)",
+                      "url": f"{base}/NeoFy-{version}-linux-x86_64.tar.gz",
+                      "link_type": "package",
+                  },
+                  {
+                      "name": "Linux AppImage x86_64 (.AppImage)",
+                      "url": f"{base}/NeoFy-{version}-linux-x86_64.AppImage",
+                      "link_type": "package",
+                  },
+                  {
+                      "name": "Paquete Arch Linux (.pkg.tar.zst)",
+                      "url": f"{base}/{arch_nombre}",
+                      "link_type": "package",
+                  },
+              ]
+          },
+      }
+      print(json.dumps(payload, ensure_ascii=False))
+      ' "$TAG" "$VERSION" "$PUBLIC_BASE" "$arch_nombre" > "$tmp_create"
+
+      estado="$(curl -s -o /dev/null -w '%{http_code}' \
+        --header "PRIVATE-TOKEN: ${GITLAB_APPS_PREVIEW_TOKEN}" \
+        "${CI_API_V4_URL}/projects/${PREVIEW_PROJECT_ID}/releases/${TAG}")"
+
+      if [ "$estado" = "200" ]; then
+        python3 -c '
+      import json, sys
+      version = sys.argv[1]
+      with open("RELEASE_NOTES.md", encoding="utf-8") as f:
+          notas = f.read().strip()
+      print(json.dumps({"name": f"NeoFy {version} (PREVIEW)", "description": notas}, ensure_ascii=False))
+      ' "$VERSION" > "$tmp_update"
+        curl -fsSL -X PUT \
+          --header "PRIVATE-TOKEN: ${GITLAB_APPS_PREVIEW_TOKEN}" \
+          --header "Content-Type: application/json" \
+          --data @"$tmp_update" \
+          "${CI_API_V4_URL}/projects/${PREVIEW_PROJECT_ID}/releases/${TAG}" >/dev/null
+        echo "Release preview $TAG actualizada en apps/neofy-preview"
+      else
+        curl -fsSL -X POST \
+          --header "PRIVATE-TOKEN: ${GITLAB_APPS_PREVIEW_TOKEN}" \
+          --header "Content-Type: application/json" \
+          --data @"$tmp_create" \
+          "${CI_API_V4_URL}/projects/${PREVIEW_PROJECT_ID}/releases" >/dev/null
+        echo "Release preview $TAG creada en apps/neofy-preview"
       fi

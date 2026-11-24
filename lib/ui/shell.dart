@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/app_config.dart';
 import '../core/artistas_favoritos_store.dart';
 import '../core/auth.dart';
 import '../core/carpetas_store.dart';
@@ -685,7 +686,13 @@ class _AppShellState extends State<AppShell> {
               excludeFromSemantics: true,
             ),
             const SizedBox(width: 8),
-            Text('NeoFy', style: tema.textTheme.titleLarge),
+            ValueListenableBuilder<bool>(
+              valueListenable: modoPreview,
+              builder: (context, enPreview, _) => Text(
+                nombreVentanaNeoFy(preview: enPreview),
+                style: tema.textTheme.titleLarge,
+              ),
+            ),
             const SizedBox(width: 20),
             IconButton(
               tooltip: 'Atrás',
@@ -1785,10 +1792,13 @@ class _Sidebar extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: T(
-                            'NeoFy',
-                            style: theme.textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis,
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable: modoPreview,
+                            builder: (context, enPreview, _) => Text(
+                              nombreVentanaNeoFy(preview: enPreview),
+                              style: theme.textTheme.titleSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ],

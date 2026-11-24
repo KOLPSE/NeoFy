@@ -1,10 +1,11 @@
 ## Features
 
-- Migrado el sistema de actualizaciones y descargas a [git.neogex.xyz/apps/neofy](https://git.neogex.xyz/apps/neofy). Esta versión **1.5.9 es la última publicada en GitHub**: al actualizar a `v1.5.9`, NeoFy comprobará y descargará las próximas versiones directamente desde GitLab.
-- Nuevo logotipo e icono oficial aplicado en el icono de aplicación y ventana de Windows (`app_icon.ico`), bandeja del sistema (`tray.ico` y `tray.png`), iconos y ventana GTK en Linux (`neofy.png` y `AppImage`), pantalla de inicio, cabecera y barra lateral expandida o contraída.
+- Añadido selector de rama de actualizaciones (**Estable** y **Preview**) en Ajustes para alternar en cualquier momento entre versiones estables (`apps/neofy`) y versiones de prueba (`apps/neofy-preview`).
+- Identificación dinámica de ventana y bandeja como **NeoFy (PREVIEW)** cuando la aplicación usa la rama Preview o una compilación preview (`X.Y.Z.1XX`).
+- Soporte en el actualizador y en el pipeline de GitLab para versiones preview con sufijo de 3 cifras (`vX.Y.Z.1XX`) y regreso controlado a Estable.
 
 ## Fixes
 
-- Actualizador adaptado a la API de Releases y paquetes genéricos de GitLab (`apps%2Fneofy/releases/permalink/latest`), con validación estricta de host HTTPS (`git.neogex.xyz`) y rechazo de respuestas `text/html`.
-- Actualizados `PKGBUILD`, `tool/probe_update.dart`, el texto de actualización de Linux y la documentación del proyecto para apuntar a `git.neogex.xyz/apps/neofy`.
-- Añadidos tests unitarios para la consulta de última versión, validación de descargas y rechazo de respuestas HTML.
+- Evitadas condiciones de carrera al cambiar de rama durante una búsqueda de actualizaciones en curso.
+- Corregida la sincronización dinámica del título de la ventana en Linux con barra de cabecera GTK (`GtkHeaderBar`).
+- Endurecida la creación de temporales en la publicación de releases de GitLab usando `mktemp`.

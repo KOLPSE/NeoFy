@@ -5,7 +5,9 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 const _host = 'git.neogex.xyz';
-const _proyecto = 'apps/neofy';
+const _proyectoEstable = 'apps/neofy';
+const _proyectoPreview = 'apps/neofy-preview';
+final _rePreview = RegExp(r'^\d+\.\d+\.\d+\.\d{3}$');
 
 bool esMasNueva(String candidata, String actual) {
   List<int> tramos(String v) =>
@@ -21,17 +23,34 @@ bool esMasNueva(String candidata, String actual) {
 }
 
 Future<void> main(List<String> args) async {
-  final instalada = args.isEmpty ? '0.1.0' : args.first;
-  print('Simulando una instalación en la versión $instalada\n');
+  var preview = false;
+  var instalada = '0.1.0';
+  for (final arg in args) {
+    if (arg == '--preview') {
+      preview = true;
+    } else {
+      instalada = arg;
+    }
+  }
+
+  final proyecto = preview ? _proyectoPreview : _proyectoEstable;
+  print(
+    'Simulando una instalación en la versión $instalada '
+    '(canal: ${preview ? 'Preview' : 'Estable'})\n',
+  );
 
   final endpoint = Uri.parse(
-    'https://$_host/api/v4/projects/${Uri.encodeComponent(_proyecto)}/releases/permalink/latest',
+    'https://$_host/api/v4/projects/${Uri.encodeComponent(proyecto)}/releases/permalink/latest',
   );
   final res = await http.get(
     endpoint,
     headers: {'Accept': 'application/json'},
   );
   print('GET $endpoint → HTTP ${res.statusCode}');
+  if (res.statusCode == 404 && preview) {
+    print('  Aún no hay releases preview publicadas en $proyecto (al día).');
+    exit(0);
+  }
   if (res.statusCode != 200) {
     print(res.body);
     exit(1);
@@ -65,8 +84,13 @@ Future<void> main(List<String> args) async {
   final fiable = uri.scheme == 'https' && uri.host == _host;
   print('  host de la descarga: ${uri.host}  ${fiable ? '(fiable)' : '(RECHAZADO)'}');
 
-  print('\nVeredicto para $instalada: '
-      '${esMasNueva(version, instalada) ? "SE OFRECE actualizar a $version" : "al día"}');
+  final cambioAEstable = _rePreview.hasMatch(instalada) && !preview;
+  final ofrece =
+      cambioAEstable ? version != instalada : esMasNueva(version, instalada);
+  print(
+    '\nVeredicto para $instalada: '
+    '${ofrece ? "SE OFRECE ${cambioAEstable ? 'instalar' : 'actualizar a'} $version" : "al día"}',
+  );
 
   final cabeza = await http.head(uri);
   print('HEAD del instalador → HTTP ${cabeza.statusCode}'

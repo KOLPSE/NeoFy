@@ -81,14 +81,20 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
 
+  final config = await AppConfig.load();
+  final enDebug =
+      kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1';
+  final esPreviewInicial =
+      config.canalActualizacion == CanalActualizacion.preview ||
+      kEsCompilacionPreview;
+  modoPreview.value = esPreviewInicial;
+
   await windowManager.ensureInitialized();
   final options = WindowOptions(
     size: Size(1000, 680),
     minimumSize: Size(820, 560),
     center: true,
-    title: kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1'
-        ? 'NeoFy (debug)'
-        : 'NeoFy',
+    title: nombreVentanaNeoFy(preview: esPreviewInicial, debug: enDebug),
   );
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.show();
@@ -96,7 +102,6 @@ Future<void> main(List<String> args) async {
   });
   await windowManager.setPreventClose(true);
 
-  final config = await AppConfig.load();
   final temas = TemaStore(config);
   await temas.cargar();
   unawaited(ArtCache.prune());
@@ -130,9 +135,9 @@ class _SpotifyNativeAppState extends State<SpotifyNativeApp> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.temas,
+      animation: Listenable.merge([widget.temas, modoPreview]),
       builder: (context, _) => MaterialApp(
-        title: 'NeoFy',
+        title: nombreVentanaNeoFy(preview: modoPreview.value),
         debugShowCheckedModeBanner: false,
         theme: widget.temas.themeDataClaro,
         darkTheme: widget.temas.themeDataOscuro,
@@ -164,7 +169,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final Settings _settings = Settings(widget.config)
     ..onCambioDeModo = _alCambiarDeModo
     ..onCambioDiscord = _alCambiarDiscord
-    ..onCambioIdioma = () => _traductor.refrescar();
+    ..onCambioCanalActualizacion = _alCambiarCanalActualizacion
+    ..onCambioIdioma = () {
+      _traductor.refrescar();
+    };
   late final Traductor _traductor = Traductor(
     localeEfectivo: () => _settings.localeEfectivo,
   );
@@ -197,7 +205,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   );
 
   late final DiscordRpc _discordRpc = DiscordRpc();
-  final Updater _updater = Updater();
+  late final Updater _updater = Updater(
+    canalInicial: widget.config.canalActualizacion,
+  );
 
   final YtAuth _ytAuth = YtAuth();
   late final YtMusicApi _ytApi = YtMusicApi(_ytAuth);
@@ -480,6 +490,30 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     }
   }
 
+  void _alCambiarCanalActualizacion(CanalActualizacion canal) {
+    unawaited(_actualizarTituloVentana());
+    unawaited(_updater.cambiarCanal(canal));
+  }
+
+  Future<void> _actualizarTituloVentana() async {
+    final enDebug =
+        kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1';
+    final titulo = nombreVentanaNeoFy(
+      preview: _settings.enModoPreview,
+      debug: enDebug,
+    );
+    try {
+      await windowManager.setTitle(titulo);
+    } catch (_) {}
+    if (Platform.isWindows && _bandejaDisponible) {
+      try {
+        await trayManager.setToolTip(
+          nombreVentanaNeoFy(preview: _settings.enModoPreview),
+        );
+      } catch (_) {}
+    }
+  }
+
   static const _techoRendimiento = 100 << 20;
 
   void _aplicarTechoDeMemoria(bool activo) {
@@ -563,7 +597,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
     if (Platform.isWindows) {
       try {
-        await trayManager.setToolTip('NeoFy');
+        await trayManager.setToolTip(
+          nombreVentanaNeoFy(preview: _settings.enModoPreview),
+        );
       } catch (_) {}
     }
   }

@@ -9,14 +9,53 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.5.9';
+const String kVersion = '1.6.0';
 
 const String kHostActualizaciones = 'git.neogex.xyz';
 
 const String kProyectoActualizaciones = 'apps/neofy';
 
+const String kProyectoActualizacionesPreview = 'apps/neofy-preview';
+
 const String kUrlRepositorio =
     'https://$kHostActualizaciones/$kProyectoActualizaciones';
+
+enum CanalActualizacion {
+  estable,
+  preview;
+
+  String get valor => name;
+
+  String get proyecto => switch (this) {
+        CanalActualizacion.estable => kProyectoActualizaciones,
+        CanalActualizacion.preview => kProyectoActualizacionesPreview,
+      };
+
+  static CanalActualizacion desdeValor(
+    String? valor, {
+    CanalActualizacion? respaldo,
+  }) {
+    if (valor == preview.valor) return preview;
+    if (valor == estable.valor) return estable;
+    return respaldo ?? canalDeVersion(kVersion);
+  }
+}
+
+final RegExp kRegexVersionEstable = RegExp(r'^\d+\.\d+\.\d+$');
+final RegExp kRegexVersionPreview = RegExp(r'^\d+\.\d+\.\d+\.\d{3}$');
+final RegExp kRegexVersionValida = RegExp(r'^\d+\.\d+\.\d+(?:\.\d{3})?$');
+
+bool esVersionPreview(String version) => kRegexVersionPreview.hasMatch(version);
+
+CanalActualizacion canalDeVersion(String version) =>
+    esVersionPreview(version) ? CanalActualizacion.preview : CanalActualizacion.estable;
+
+bool get kEsCompilacionPreview => esVersionPreview(kVersion);
+
+String nombreVentanaNeoFy({required bool preview, bool debug = false}) {
+  final base = preview ? 'NeoFy (PREVIEW)' : 'NeoFy';
+  return debug ? '$base (debug)' : base;
+}
 
 const int kRedirectPort = 8898;
 
@@ -125,6 +164,9 @@ class AppConfig {
   /// La barra lateral se muestra como rail de iconos en vez de panel ancho.
   bool sidebarPlegado;
 
+  /// Rama de actualizaciones preferida (`estable` o `preview`).
+  CanalActualizacion canalActualizacion;
+
   AppConfig({
     this.clientId = kDefaultClientId,
     this.initialVolume = 60,
@@ -142,8 +184,10 @@ class AppConfig {
     this.sincronizacionPorVoz = false,
     this.menusEnElemento = true,
     this.sidebarPlegado = false,
+    CanalActualizacion? canalActualizacion,
   }) : temaColores = temaColores ?? {},
-       desfasesLetraMs = desfasesLetraMs ?? {};
+       desfasesLetraMs = desfasesLetraMs ?? {},
+       canalActualizacion = canalActualizacion ?? canalDeVersion(kVersion);
 
   static File get _file => File(p.join(appDataDir().path, 'config.json'));
 
@@ -184,6 +228,9 @@ class AppConfig {
         },
         menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
         sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
+        canalActualizacion: CanalActualizacion.desdeValor(
+          map['canalActualizacion'] as String?,
+        ),
         modoLetraPorPalabras: (map['modoLetraPorPalabras'] as bool?) ?? false,
         sincronizacionPorVoz: (map['sincronizacionPorVoz'] as bool?) ?? false,
         desfasesLetraMs: {
@@ -220,6 +267,7 @@ class AppConfig {
         'sincronizacionPorVoz': sincronizacionPorVoz,
         'menusEnElemento': menusEnElemento,
         'sidebarPlegado': sidebarPlegado,
+        'canalActualizacion': canalActualizacion.valor,
       }),
     );
   }

@@ -18,28 +18,45 @@ enum EstadoActualizacion {
 }
 
 class Updater extends ChangeNotifier {
-  Updater({http.Client? cliente, bool? instalaSolo})
-      : _http = cliente ?? http.Client(),
-        _httpPropio = cliente == null,
-        _instalaSolo = instalaSolo ?? seInstalaSolo;
+  Updater({
+    http.Client? cliente,
+    bool? instalaSolo,
+    CanalActualizacion? canalInicial,
+    String? versionActual,
+  }) : _http = cliente ?? http.Client(),
+       _httpPropio = cliente == null,
+       _instalaSolo = instalaSolo ?? seInstalaSolo,
+       _versionActual = versionActual ?? kVersion,
+       _canal = canalInicial ?? canalDeVersion(versionActual ?? kVersion);
 
   final http.Client _http;
   final bool _httpPropio;
   final bool _instalaSolo;
+  final String _versionActual;
+  CanalActualizacion _canal;
+  int _generacionBusqueda = 0;
   bool _disposed = false;
 
   static const _hostFiable = kHostActualizaciones;
   static final _rePrefijoV = RegExp('^v');
   static final _reSeparadorVersion = RegExp(r'[.+-]');
 
-  /// URI de consulta de la última release en GitLab. Se construye con
-  /// `Uri.parse` porque `Uri.https` vuelve a escapar `%2F` como `%252F` y
+  /// URI de consulta de la última release en GitLab para [canal]. Se construye
+  /// con `Uri.parse` porque `Uri.https` vuelve a escapar `%2F` como `%252F` y
   /// GitLab responde 404.
-  static Uri get uriUltimaRelease => Uri.parse(
+  static Uri uriUltimaReleasePara(CanalActualizacion canal) => Uri.parse(
         'https://$kHostActualizaciones/api/v4/projects/'
-        '${Uri.encodeComponent(kProyectoActualizaciones)}'
+        '${Uri.encodeComponent(canal.proyecto)}'
         '/releases/permalink/latest',
       );
+
+  static Uri get uriUltimaRelease =>
+      uriUltimaReleasePara(CanalActualizacion.estable);
+
+  static Uri get uriUltimaReleasePreview =>
+      uriUltimaReleasePara(CanalActualizacion.preview);
+
+  Uri get uriConsultaActual => uriUltimaReleasePara(_canal);
 
   EstadoActualizacion estado = EstadoActualizacion.reposo;
   String? versionDisponible;
@@ -50,21 +67,55 @@ class Updater extends ChangeNotifier {
   String? _urlDescarga;
   File? _instalador;
 
-  String get versionActual => kVersion;
+  CanalActualizacion get canal => _canal;
+  String get versionActual => _versionActual;
+  CanalActualizacion get canalInstalado => canalDeVersion(_versionActual);
+  bool get esCambioAEstable =>
+      canalInstalado == CanalActualizacion.preview &&
+      _canal == CanalActualizacion.estable;
+  bool get ocupado =>
+      estado == EstadoActualizacion.descargando ||
+      estado == EstadoActualizacion.listaParaInstalar;
 
   static bool get seInstalaSolo => Platform.isWindows;
 
-  Future<void> buscar() async {
-    if (estado == EstadoActualizacion.buscando ||
-        estado == EstadoActualizacion.descargando) {
-      return;
+  Future<void> cambiarCanal(
+    CanalActualizacion nuevo, {
+    bool buscarAhora = true,
+  }) async {
+    if (nuevo == _canal || ocupado) return;
+    _canal = nuevo;
+    _generacionBusqueda++;
+    versionDisponible = null;
+    notas = null;
+    error = null;
+    _urlDescarga = null;
+    _instalador = null;
+    progreso = 0;
+    _cambiar(EstadoActualizacion.reposo);
+    if (buscarAhora) {
+      await buscar(forzar: true);
     }
+  }
+
+  Future<void> buscar({bool forzar = false}) async {
+    if (ocupado) return;
+    if (!forzar && estado == EstadoActualizacion.buscando) return;
+
+    final generacion = ++_generacionBusqueda;
+    final canalConsulta = _canal;
+    final uri = uriUltimaReleasePara(canalConsulta);
+    versionDisponible = null;
+    notas = null;
+    _urlDescarga = null;
+    _instalador = null;
     _cambiar(EstadoActualizacion.buscando);
     try {
       final res = await _http.get(
-        uriUltimaRelease,
+        uri,
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 15));
+      if (_disposed || generacion != _generacionBusqueda) return;
 
       if (res.statusCode == 404) {
         _cambiar(EstadoActualizacion.alDia);
@@ -79,7 +130,13 @@ class Updater extends ChangeNotifier {
       final version = etiqueta.replaceFirst(_rePrefijoV, '');
       if (version.isEmpty) throw 'La release no tiene versión';
 
-      if (!esMasNueva(version, kVersion)) {
+      final cambioAEstable =
+          canalInstalado == CanalActualizacion.preview &&
+          canalConsulta == CanalActualizacion.estable;
+      final debeOfrecer = cambioAEstable
+          ? version != _versionActual
+          : esMasNueva(version, _versionActual);
+      if (!debeOfrecer) {
         _cambiar(EstadoActualizacion.alDia);
         return;
       }
@@ -103,14 +160,17 @@ class Updater extends ChangeNotifier {
       if (exe.isEmpty) throw 'La release no trae instalador';
 
       final url = exe.first['url'] as String;
-      final uri = Uri.tryParse(url);
-      if (uri == null || uri.scheme != 'https' || uri.host != _hostFiable) {
+      final uriDescarga = Uri.tryParse(url);
+      if (uriDescarga == null ||
+          uriDescarga.scheme != 'https' ||
+          uriDescarga.host != _hostFiable) {
         throw 'La descarga no viene de $_hostFiable';
       }
 
       _urlDescarga = url;
       _cambiar(EstadoActualizacion.disponible);
     } catch (e) {
+      if (_disposed || generacion != _generacionBusqueda) return;
       error = '$e';
       _cambiar(EstadoActualizacion.fallo);
     }
