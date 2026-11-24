@@ -35,18 +35,24 @@ cleanup:windows:
     - if: '$CLEAN_WINDOWS_DIR == "true"'
   variables:
     GIT_STRATEGY: none
+    GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
+    USERPROFILE: 'C:\ci\profile'
     TEMP: 'C:\ci\temp'
     TMP: 'C:\ci\temp'
   script:
     - |
+      Set-Location 'C:\'
       Get-Process robocopy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
       $target = "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex\neofy"
       $borrar = $target
       if (Test-Path -LiteralPath "\\?\$target") {
         $apartado = "$target.old-$env:CI_JOB_ID"
-        cmd /c "move `"$target`" `"$apartado`" 2>nul" | Out-Null
+        cmd /c "move `"$target`" `"$apartado`""
         $global:LASTEXITCODE = 0
-        if (Test-Path -LiteralPath "\\?\$apartado") { $borrar = $apartado }
+        if (Test-Path -LiteralPath "\\?\$apartado") {
+          Write-Host "Apartado en $apartado"
+          $borrar = $apartado
+        }
       }
       if (Test-Path -LiteralPath "\\?\$borrar") {
         New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
@@ -55,7 +61,7 @@ cleanup:windows:
         & robocopy $empty $borrar /MIR /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
         $global:LASTEXITCODE = 0
         Remove-Item -LiteralPath $empty -Force -Recurse -ErrorAction SilentlyContinue
-        cmd /c "rmdir /s /q `"$borrar`" 2>nul" | Out-Null
+        cmd /c "rmdir /s /q `"$borrar`""
         $global:LASTEXITCODE = 0
       }
       if (Test-Path -LiteralPath "\\?\$target") {
@@ -131,6 +137,7 @@ build:windows:
     GIT_CLEAN_FLAGS: '-ffdx -e .ci-tools/'
     PUB_CACHE: 'C:\ci\pub-cache-clean'
     CARGO_HOME: 'C:\ci\cargo-clean'
+    CARGO_TARGET_DIR: 'C:\ci\neofy-target'
     GIT_CONFIG_GLOBAL: 'C:\ci\gitconfig-ci'
     APPDATA: 'C:\ci\appdata\roaming'
     LOCALAPPDATA: 'C:\ci\appdata\local'

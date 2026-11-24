@@ -79,9 +79,19 @@ if ($codigoSidecar -ne 0) {
   if ($codigoSidecar -ne 0) { throw "Falló cargo build metadata-sidecar (código $codigoSidecar)" }
 }
 
+$sidecarBuild = if ($env:CARGO_TARGET_DIR) {
+  Join-Path $env:CARGO_TARGET_DIR 'release\metadata-sidecar.exe'
+} else {
+  Join-Path $root 'tool\metadata-sidecar\target\release\metadata-sidecar.exe'
+}
+if (-not (Test-Path $sidecarBuild)) {
+    throw "La compilacion termino pero no aparece $sidecarBuild"
+}
+
 $sidecar = Join-Path $root 'tool\metadata-sidecar\target\release\metadata-sidecar.exe'
-if (-not (Test-Path $sidecar)) {
-    throw "La compilacion termino pero no aparece $sidecar"
+if ($env:CARGO_TARGET_DIR) {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $sidecar) | Out-Null
+  Copy-Item $sidecarBuild $sidecar -Force
 }
 
 $sizeSidecar = [math]::Round((Get-Item $sidecar).Length / 1MB, 1)
