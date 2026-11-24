@@ -61,10 +61,23 @@ if (Test-Path $pubHosted) {
   }
   if ($pubCorrupto) {
     Write-Host "Limpiando caché corrupta en $pubHosted..."
-    Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+    $sufijo = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID }
+    $apartado = "$pubHosted.corrupt-$sufijo"
+    cmd /c "move `"$pubHosted`" `"$apartado`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
     if (Test-Path $pubHosted) {
-      cmd /c "rmdir /s /q `"$pubHosted`" 2>nul"
-      $global:LASTEXITCODE = 0
+      Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path $pubHosted) {
+        cmd /c "rmdir /s /q `"$pubHosted`" 2>nul"
+        $global:LASTEXITCODE = 0
+      }
+    }
+    if (Test-Path $pubHosted) {
+      $env:PUB_CACHE = "$($env:PUB_CACHE)-$sufijo"
+      New-Item -ItemType Directory -Force -Path $env:PUB_CACHE | Out-Null
+      Write-Host "Aislando PUB_CACHE en $($env:PUB_CACHE) por entrada corrupta."
+    } elseif (Test-Path $apartado) {
+      Remove-Item -LiteralPath $apartado -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
 }

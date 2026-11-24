@@ -13,7 +13,11 @@ function Limpiar-CacheCargo {
       $dir = Join-Path $h $sub
       if (Test-Path $dir) {
         Write-Host "Limpiando caché de Cargo corrupta en $dir..."
-        Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+        $apartado = "$dir.corrupt-$PID"
+        cmd /c "move `"$dir`" `"$apartado`" 2>nul" | Out-Null
+        $global:LASTEXITCODE = 0
+        $borrar = if (Test-Path $apartado) { $apartado } else { $dir }
+        Remove-Item -LiteralPath $borrar -Recurse -Force -ErrorAction SilentlyContinue
       }
     }
   }
