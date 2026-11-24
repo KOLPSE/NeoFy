@@ -61,10 +61,23 @@ if (Test-Path $pubHosted) {
   }
   if ($pubCorrupto) {
     Write-Host "Limpiando caché corrupta en $pubHosted..."
-    Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+    $sufijo = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID }
+    $apartado = "$pubHosted.corrupt-$sufijo"
+    cmd /c "move `"$pubHosted`" `"$apartado`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
     if (Test-Path $pubHosted) {
-      cmd /c "rmdir /s /q `"$pubHosted`" 2>nul"
-      $global:LASTEXITCODE = 0
+      Remove-Item -LiteralPath $pubHosted -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path $pubHosted) {
+        cmd /c "rmdir /s /q `"$pubHosted`" 2>nul"
+        $global:LASTEXITCODE = 0
+      }
+    }
+    if (Test-Path $pubHosted) {
+      $env:PUB_CACHE = "$($env:PUB_CACHE)-$sufijo"
+      New-Item -ItemType Directory -Force -Path $env:PUB_CACHE | Out-Null
+      Write-Host "Aislando PUB_CACHE en $($env:PUB_CACHE) por entrada corrupta."
+    } elseif (Test-Path $apartado) {
+      Remove-Item -LiteralPath $apartado -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
 }
@@ -84,13 +97,51 @@ $env:GIT_CONFIG_VALUE_0 = $sdkRoot.Replace('\', '/')
 & (Join-Path $sdkRoot 'bin\flutter.bat') --version
 if ($LASTEXITCODE -ne 0) { throw 'Flutter no está disponible.' }
 
+$dartExe = Join-Path $sdkRoot 'bin\cache\dart-sdk\bin\dart.exe'
+$toolBackend = Join-Path $sdkRoot 'packages\flutter_tools\bin\tool_backend.dart'
+function Probar-ToolBackend {
+  $prevProj = $env:PROJECT_DIR
+  Remove-Item Env:PROJECT_DIR -ErrorAction SilentlyContinue
+  $prevPref = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $salida = & $dartExe $toolBackend windows-x64 release 2>&1
+    $codigo = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prevPref
+    if ($null -ne $prevProj) { $env:PROJECT_DIR = $prevProj }
+  }
+  return @{ Codigo = $codigo; Salida = ($salida | Out-String).Trim() }
+}
+$pruebaBackend = Probar-ToolBackend
+if ($pruebaBackend.Codigo -ne 1) {
+  Write-Host "tool_backend.dart devolvió código $($pruebaBackend.Codigo): $($pruebaBackend.Salida)"
+  Write-Host "Regenerando packages\flutter_tools\.dart_tool y flutter_tools.snapshot..."
+  $dotTool = Join-Path $sdkRoot 'packages\flutter_tools\.dart_tool'
+  $apartadoDot = "$dotTool.corrupt-$PID"
+  if (Test-Path $dotTool) {
+    cmd /c "move `"$dotTool`" `"$apartadoDot`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
+    Remove-Item -LiteralPath $apartadoDot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter_tools.snapshot') -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter.bat.lock') -Force -ErrorAction SilentlyContinue
+  & (Join-Path $sdkRoot 'bin\flutter.bat') --version
+  if ($LASTEXITCODE -ne 0) { throw 'No se pudo regenerar flutter_tools.' }
+  $pruebaBackend = Probar-ToolBackend
+  if ($pruebaBackend.Codigo -ne 1) {
+    throw "tool_backend.dart sigue fallando (código $($pruebaBackend.Codigo)): $($pruebaBackend.Salida)"
+  }
+}
+
 # Verifica que los archivos del wrapper C++ del engine Windows en caché no estén
 # corruptos (por ejemplo tras un fallo de disco en vm-windows que deje
 # standard_codec.cc ilegible para MSVC).
 $engineDir = Join-Path $sdkRoot 'bin\cache\artifacts\engine'
 $wrapperDir = Join-Path $engineDir 'windows-x64\cpp_client_wrapper'
-if (Test-Path $wrapperDir) {
-  $corrupto = $false
+$genSnapshot = Join-Path $engineDir 'windows-x64-release\gen_snapshot.exe'
+$corrupto = -not (Test-Path $genSnapshot)
+if (-not $corrupto -and (Test-Path $wrapperDir)) {
   foreach ($f in (Get-ChildItem -LiteralPath $wrapperDir -File -Recurse | Where-Object { $_.Extension -in '.cc','.h' })) {
     $texto = [IO.File]::ReadAllText($f.FullName)
     if ($texto.IndexOf([char]0) -ge 0 -or -not $texto.TrimStart().StartsWith('// Copyright')) {
@@ -99,16 +150,16 @@ if (Test-Path $wrapperDir) {
       break
     }
   }
-  if ($corrupto) {
-    Write-Host 'Limpiando caché corrupta del engine Windows de Flutter y ejecutando precache...'
-    foreach ($sub in @('windows-x64', 'windows-x64-profile', 'windows-x64-release')) {
-      $d = Join-Path $engineDir $sub
-      if (Test-Path $d) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-    if (Test-Path 'windows\flutter\ephemeral') {
-      Remove-Item -LiteralPath 'windows\flutter\ephemeral' -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    & (Join-Path $sdkRoot 'bin\flutter.bat') precache --windows --force
-    if ($LASTEXITCODE -ne 0) { throw 'Falló flutter precache --windows --force.' }
+}
+if ($corrupto) {
+  Write-Host 'Limpiando caché corrupta del engine Windows de Flutter y ejecutando precache...'
+  foreach ($sub in @('windows-x64', 'windows-x64-profile', 'windows-x64-release')) {
+    $d = Join-Path $engineDir $sub
+    if (Test-Path $d) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
   }
+  if (Test-Path 'windows\flutter\ephemeral') {
+    Remove-Item -LiteralPath 'windows\flutter\ephemeral' -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  & (Join-Path $sdkRoot 'bin\flutter.bat') precache --windows --force
+  if ($LASTEXITCODE -ne 0) { throw 'Falló flutter precache --windows --force.' }
 }
