@@ -56,7 +56,11 @@ if ($env:NEOREPORT_APP_KEY) {
   throw 'Configura NEOREPORT_APP_KEY o .neoreport-key.json antes de compilar.'
 }
 & $flutter build windows --release @definiciones
-if ($LASTEXITCODE -ne 0) { throw "Falló la compilación de Flutter" }
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "`n=== Diagnóstico verbose de flutter build windows ===" -ForegroundColor Yellow
+  & $flutter build windows --release --verbose @definiciones 2>&1 | Select-Object -Last 80
+  throw "Falló la compilación de Flutter"
+}
 
 $release = "build\windows\x64\runner\Release"
 
