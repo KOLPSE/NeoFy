@@ -68,6 +68,7 @@ class Updater extends ChangeNotifier {
   File? _instalador;
 
   CanalActualizacion get canal => _canal;
+  bool get instalaSolo => _instalaSolo;
   String get versionActual => _versionActual;
   CanalActualizacion get canalInstalado => canalDeVersion(_versionActual);
   bool get esCambioAEstable =>

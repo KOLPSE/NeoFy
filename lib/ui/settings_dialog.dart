@@ -560,16 +560,16 @@ class _Actualizaciones extends StatelessWidget {
                                   : 'Estás al día',
                             EstadoActualizacion.disponible =>
                               cambioAEstable
-                                  ? (Updater.seInstalaSolo
+                                  ? (updater.instalaSolo
                                         ? 'Versión estable disponible: ${updater.versionDisponible}'
                                         : 'Versión estable disponible (${updater.versionDisponible}). '
                                               'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.')
                                   : esPreview
-                                  ? (Updater.seInstalaSolo
+                                  ? (updater.instalaSolo
                                         ? 'Hay una versión preview nueva: ${updater.versionDisponible}'
                                         : 'Hay una versión preview nueva (${updater.versionDisponible}). '
                                               'Descárgala desde $kHostActualizaciones/$kProyectoActualizacionesPreview.')
-                                  : (Updater.seInstalaSolo
+                                  : (updater.instalaSolo
                                         ? 'Hay una versión nueva: ${updater.versionDisponible}'
                                         : 'Hay una versión nueva (${updater.versionDisponible}). '
                                               'Descárgala desde $kHostActualizaciones o actualiza tu paquete de Linux.'),
@@ -599,7 +599,7 @@ class _Actualizaciones extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 if (estado == EstadoActualizacion.disponible &&
-                    Updater.seInstalaSolo)
+                    updater.instalaSolo)
                   FilledButton(
                     onPressed: _actualizar,
                     child: T(cambioAEstable ? 'Instalar' : 'Actualizar'),
