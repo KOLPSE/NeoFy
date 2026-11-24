@@ -35,18 +35,31 @@ cleanup:windows:
     - if: '$CLEAN_WINDOWS_DIR == "true"'
   variables:
     GIT_STRATEGY: none
+    TEMP: 'C:\ci\temp'
+    TMP: 'C:\ci\temp'
   script:
     - |
+      Get-Process robocopy -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
       $target = "C:\Users\Administrator\Documents\builds\zHgUHwNWA\0\neogex\neofy"
+      $borrar = $target
       if (Test-Path -LiteralPath "\\?\$target") {
+        $apartado = "$target.old-$env:CI_JOB_ID"
+        cmd /c "move `"$target`" `"$apartado`" 2>nul" | Out-Null
+        $global:LASTEXITCODE = 0
+        if (Test-Path -LiteralPath "\\?\$apartado") { $borrar = $apartado }
+      }
+      if (Test-Path -LiteralPath "\\?\$borrar") {
+        New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
         $empty = Join-Path $env:TEMP "empty-ci-$PID"
         New-Item -ItemType Directory -Force -Path $empty | Out-Null
-        & robocopy $empty $target /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+        & robocopy $empty $borrar /MIR /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
         $global:LASTEXITCODE = 0
         Remove-Item -LiteralPath $empty -Force -Recurse -ErrorAction SilentlyContinue
-        cmd /c "rmdir /s /q `"$target`""
+        cmd /c "rmdir /s /q `"$borrar`" 2>nul" | Out-Null
         $global:LASTEXITCODE = 0
+      }
+      if (Test-Path -LiteralPath "\\?\$target") {
+        throw "No se pudo vaciar $target"
       }
       Write-Host "Directorio de build en vm-windows limpiado."
 
