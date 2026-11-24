@@ -344,4 +344,80 @@ void main() {
           'la canción salta a un sitio distinto del que has tocado',
     );
   });
+
+  group('reposo y modo rendimiento en BarraDeProgreso', () {
+    Widget barraCon({
+      required Tema tema,
+      required bool enMarcha,
+      bool tickersActivos = true,
+      double maximo = 1000,
+    }) {
+      return MaterialApp(
+        key: ValueKey(tema.id),
+        theme: construirThemeData(tema),
+        themeAnimationDuration: Duration.zero,
+        home: Scaffold(
+          body: TickerMode(
+            enabled: tickersActivos,
+            child: Center(
+              child: SizedBox(
+                width: 300,
+                child: BarraDeProgreso(
+                  valor: 250,
+                  maximo: maximo,
+                  enMarcha: enMarcha,
+                  onCambio: (_) {},
+                  onFinDelCambio: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('no agenda ticks en temas de barra plana aunque suene', (t) async {
+      for (final tema in [temaNeoFyNocturno, temaLiquidGlass]) {
+        await t.pumpWidget(barraCon(tema: tema, enMarcha: true));
+        await t.pump(const Duration(milliseconds: 200));
+        expect(t.hasRunningAnimations, isFalse, reason: tema.nombre);
+      }
+    });
+
+    testWidgets('detiene la animación al activar modoRendimiento', (t) async {
+      final antes = modoRendimiento.value;
+      addTearDown(() => modoRendimiento.value = antes);
+
+      modoRendimiento.value = false;
+      await t.pumpWidget(barraCon(
+        tema: temaMaterialOscuro,
+        enMarcha: true,
+        maximo: 180000,
+      ));
+      await t.pump();
+      expect(t.hasRunningAnimations, isTrue);
+
+      modoRendimiento.value = true;
+      await t.pump();
+      expect(t.hasRunningAnimations, isFalse);
+    });
+
+    testWidgets('detiene la animación con TickerMode desactivado', (t) async {
+      await t.pumpWidget(barraCon(
+        tema: temaMaterialOscuro,
+        enMarcha: true,
+        tickersActivos: false,
+      ));
+      await t.pump();
+      expect(t.hasRunningAnimations, isFalse);
+
+      await t.pumpWidget(barraCon(
+        tema: temaMaterialOscuro,
+        enMarcha: true,
+        tickersActivos: true,
+      ));
+      await t.pump();
+      expect(t.hasRunningAnimations, isTrue);
+    });
+  });
 }

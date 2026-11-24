@@ -28,6 +28,21 @@ Track _track({
     );
 
 void main() {
+  testWidgets('reconecta tras perder una conexión activa', (tester) async {
+    final transporte = _FakeTransport();
+    final rpc = DiscordRpc(transporte: transporte);
+    addTearDown(rpc.stop);
+
+    rpc.start('123456');
+    await tester.pump();
+    expect(rpc.conectado, isTrue);
+
+    await transporte.desconectar();
+    await tester.pump(const Duration(seconds: 15));
+    expect(rpc.conectado, isTrue);
+    await rpc.stop();
+  });
+
   group('DiscordRpc.construirActividad', () {
     test('con pista y siguiente pista: details es el nombre, state lleva el artista y "Siguiente: …"', () {
       final pistaActual = _track(name: 'Bohemian Rhapsody', artists: 'Queen');

@@ -28,6 +28,7 @@ void main() {
         canalActualizacion: CanalActualizacion.estable,
       );
       final settings = Settings(config);
+      final tituloEstable = kEsCompilacionPreview ? 'NeoFy (PREVIEW) 1.6.0' : 'NeoFy 1.6.0';
       final ram = ResourceMonitor(pidsDeSidecars: () => const []);
       final cliente = MockClient((_) async => http.Response('', 404));
       final updater = Updater(
@@ -68,7 +69,7 @@ void main() {
 
       expect(find.text('Estable'), findsOneWidget);
       expect(find.text('Preview'), findsOneWidget);
-      expect(find.text('NeoFy 1.6.0'), findsOneWidget);
+      expect(find.text(tituloEstable), findsOneWidget);
 
       await t.ensureVisible(find.text('Preview'));
       await t.tap(find.text('Preview'));
@@ -102,10 +103,10 @@ void main() {
       await t.pumpAndSettle();
 
       expect(settings.canalActualizacion, CanalActualizacion.estable);
-      expect(settings.enModoPreview, isFalse);
-      expect(modoPreview.value, isFalse);
+      expect(settings.enModoPreview, kEsCompilacionPreview);
+      expect(modoPreview.value, kEsCompilacionPreview);
       expect(cambios, [CanalActualizacion.preview, CanalActualizacion.estable]);
-      expect(find.text('NeoFy 1.6.0'), findsOneWidget);
+      expect(find.text(tituloEstable), findsOneWidget);
     },
   );
 

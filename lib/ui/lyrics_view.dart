@@ -50,7 +50,13 @@ class _LyricsViewState extends State<LyricsView>
   );
   final _indice = ValueNotifier<int>(-1);
   final _desfaseVoz = ValueNotifier<int>(0);
-  late final Ticker _latido = createTicker((_) => _sincronizarTiempo());
+  bool _tickersActivos = true;
+  Duration _ultimoTickLatido = Duration.zero;
+  late final Ticker _latido = createTicker((elapsed) {
+    if (elapsed - _ultimoTickLatido < const Duration(milliseconds: 33)) return;
+    _ultimoTickLatido = elapsed;
+    _sincronizarTiempo();
+  });
   late FuenteDeteccionVoz _fuenteVoz;
   late bool _fuentePropia;
   final _controladorVoz = ControladorSincronizacionPorVoz();
@@ -80,6 +86,23 @@ class _LyricsViewState extends State<LyricsView>
     widget.player.progressMs.addListener(_sincronizarTiempo);
     widget.player.addListener(_actualizarLatido);
     _request = _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final activos = TickerMode.valuesOf(context).enabled;
+    if (activos != _tickersActivos) {
+      _tickersActivos = activos;
+      _actualizarLatido();
+      if (_sincVoz) {
+        if (activos) {
+          unawaited(_fuenteVoz.iniciar());
+        } else {
+          unawaited(_fuenteVoz.detener());
+        }
+      }
+    }
   }
 
   @override
@@ -142,10 +165,12 @@ class _LyricsViewState extends State<LyricsView>
   }
 
   void _actualizarLatido() {
-    final animar = _lineas.isNotEmpty && widget.player.state.isPlaying;
+    final animar =
+        _lineas.isNotEmpty && widget.player.state.isPlaying && _tickersActivos;
     if (animar == _latido.isActive) return;
     _sincronizarTiempo();
     if (animar) {
+      _ultimoTickLatido = Duration.zero;
       _latido.start();
     } else {
       _latido.stop();

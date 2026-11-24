@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
@@ -58,12 +59,66 @@ final class _ContadoresDeMemoria extends Struct {
   external int peakPagefileUsage;
 }
 
+final class _ContadoresDeMemoriaEx extends Struct {
+  @Uint32()
+  external int cb;
+  @Uint32()
+  external int pageFaultCount;
+  @IntPtr()
+  external int peakWorkingSetSize;
+  @IntPtr()
+  external int workingSetSize;
+  @IntPtr()
+  external int quotaPeakPagedPoolUsage;
+  @IntPtr()
+  external int quotaPagedPoolUsage;
+  @IntPtr()
+  external int quotaPeakNonPagedPoolUsage;
+  @IntPtr()
+  external int quotaNonPagedPoolUsage;
+  @IntPtr()
+  external int pagefileUsage;
+  @IntPtr()
+  external int peakPagefileUsage;
+  @IntPtr()
+  external int privateUsage;
+}
+
+final class _ContadoresDeMemoriaEx2 extends Struct {
+  @Uint32()
+  external int cb;
+  @Uint32()
+  external int pageFaultCount;
+  @IntPtr()
+  external int peakWorkingSetSize;
+  @IntPtr()
+  external int workingSetSize;
+  @IntPtr()
+  external int quotaPeakPagedPoolUsage;
+  @IntPtr()
+  external int quotaPagedPoolUsage;
+  @IntPtr()
+  external int quotaPeakNonPagedPoolUsage;
+  @IntPtr()
+  external int quotaNonPagedPoolUsage;
+  @IntPtr()
+  external int pagefileUsage;
+  @IntPtr()
+  external int peakPagefileUsage;
+  @IntPtr()
+  external int privateUsage;
+  @IntPtr()
+  external int privateWorkingSetSize;
+  @Uint64()
+  external int sharedCommitUsage;
+}
+
 typedef _OpenProcessC = IntPtr Function(Uint32, Int32, Uint32);
 typedef _OpenProcessDart = int Function(int, int, int);
 typedef _CloseHandleC = Int32 Function(IntPtr);
 typedef _CloseHandleDart = int Function(int);
-typedef _GetMemC = Int32 Function(IntPtr, Pointer<_ContadoresDeMemoria>, Uint32);
-typedef _GetMemDart = int Function(int, Pointer<_ContadoresDeMemoria>, int);
+typedef _GetMemC = Int32 Function(IntPtr, Pointer<Void>, Uint32);
+typedef _GetMemDart = int Function(int, Pointer<Void>, int);
 
 typedef _GetTimesC = Int32 Function(
     IntPtr, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>);
@@ -162,11 +217,15 @@ class ResourceMonitor extends ChangeNotifier {
     final antes = _momentoAnterior;
     var cpu = uso.cpu;
     if (antes != null) {
-      final segundos = ahora.difference(antes).inMicroseconds / 1e6;
-      if (segundos > 0) {
-        final segundosDeCpu = (ticks - _ticksAnteriores) / 1e7;
-        cpu = (segundosDeCpu / segundos / Platform.numberOfProcessors * 100)
-            .clamp(0.0, 100.0);
+      if (ticks < _ticksAnteriores) {
+        cpu = 0.0;
+      } else {
+        final segundos = ahora.difference(antes).inMicroseconds / 1e6;
+        if (segundos > 0) {
+          final segundosDeCpu = (ticks - _ticksAnteriores) / 1e7;
+          cpu = (segundosDeCpu / segundos / Platform.numberOfProcessors * 100)
+              .clamp(0.0, 100.0);
+        }
       }
     }
     _ticksAnteriores = ticks;
@@ -200,8 +259,8 @@ class ResourceMonitor extends ChangeNotifier {
     final vaciar = _emptyWorkingSet;
     final cerrar = _closeHandle;
     if (abrir == null || vaciar == null || cerrar == null) return;
-    for (final p in [pid, ...procesos]) {
-      if (p == null) continue;
+    final unicos = <int>{pid, ...procesos.whereType<int>()};
+    for (final p in unicos) {
       final handle = abrir(0x0400 | 0x0100, 0, p);
       if (handle == 0) continue;
       vaciar(handle);
@@ -270,6 +329,19 @@ class ResourceMonitor extends ChangeNotifier {
 
   static const int _cienNanosPorTick = 100000;
 
+  @visibleForTesting
+  static int elegirBytesWindows({
+    required int workingSet,
+    required int privateUsage,
+    required int privateWorkingSet,
+  }) {
+    if (privateWorkingSet > 0) return privateWorkingSet;
+    if (privateUsage > 0 && workingSet > 0) {
+      return math.min(workingSet, privateUsage);
+    }
+    return workingSet > 0 ? workingSet : privateUsage;
+  }
+
   static (int, int) _medirWindows(int proceso) {
     final abrir = _openProcess;
     final memoria = _getMemoryInfo;
@@ -282,12 +354,31 @@ class ResourceMonitor extends ChangeNotifier {
     final handle = abrir(_acceso, 0, proceso);
     if (handle == 0) return (0, 0);
 
-    final buf = calloc<_ContadoresDeMemoria>();
+    final buf = calloc<_ContadoresDeMemoriaEx2>();
     final ft = calloc<Uint64>(4);
     try {
       var bytes = 0;
-      buf.ref.cb = sizeOf<_ContadoresDeMemoria>();
-      if (memoria(handle, buf, buf.ref.cb) != 0) bytes = buf.ref.workingSetSize;
+      final ptr = buf.cast<Void>();
+      var tam = sizeOf<_ContadoresDeMemoriaEx2>();
+      buf.ref.cb = tam;
+      var ok = memoria(handle, ptr, tam);
+      if (ok == 0) {
+        tam = sizeOf<_ContadoresDeMemoriaEx>();
+        buf.ref.cb = tam;
+        ok = memoria(handle, ptr, tam);
+      }
+      if (ok == 0) {
+        tam = sizeOf<_ContadoresDeMemoria>();
+        buf.ref.cb = tam;
+        ok = memoria(handle, ptr, tam);
+      }
+      if (ok != 0) {
+        bytes = elegirBytesWindows(
+          workingSet: buf.ref.workingSetSize,
+          privateUsage: buf.ref.privateUsage,
+          privateWorkingSet: buf.ref.privateWorkingSetSize,
+        );
+      }
 
       var ticks = 0;
       if (tiempos(handle, ft, ft + 1, ft + 2, ft + 3) != 0) {

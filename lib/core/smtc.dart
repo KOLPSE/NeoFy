@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'reproductor_del_sistema.dart';
+import 'models.dart';
 
 export 'reproductor_del_sistema.dart' show EstadoDelSistema;
 
@@ -70,15 +71,32 @@ class SmtcService {
   }
 
   String? _ultimaFirma;
+  String? _ultimaCaratulaUri;
+  String? _ultimaCaratulaRuta;
 
   late final DescargadorDeCaratula _caratulas =
       DescargadorDeCaratula(() => estado().track?.uri);
+
+  String? _caratulaDe(Track? track) {
+    if (track == null) {
+      _ultimaCaratulaUri = null;
+      _ultimaCaratulaRuta = null;
+      return null;
+    }
+    if (track.uri == _ultimaCaratulaUri && _ultimaCaratulaRuta != null) {
+      return _ultimaCaratulaRuta;
+    }
+    final ruta = ficheroDeCaratula(track)?.path;
+    _ultimaCaratulaUri = track.uri;
+    _ultimaCaratulaRuta = ruta;
+    return ruta;
+  }
 
   void notificarCambio() {
     if (!_activo) return;
     final e = estado();
     final track = e.track;
-    final caratula = track == null ? null : ficheroDeCaratula(track)?.path;
+    final caratula = _caratulaDe(track);
     final firma = '${track?.uri}|${e.estadoDeReproduccion}|'
         '${e.puedeSaltar}|${e.puedeVolver}|$caratula';
     if (firma != _ultimaFirma) {
@@ -94,7 +112,7 @@ class SmtcService {
     if (!_activo) return;
     final e = estado();
     final track = e.track;
-    final caratula = track == null ? null : ficheroDeCaratula(track)?.path;
+    final caratula = _caratulaDe(track);
     unawaited(_mandar(e, caratula, posicionMs: posicionMs));
   }
 

@@ -32,17 +32,30 @@ $argsCargo = @(
   '--root', $installRoot
 )
 
-$ErrorActionPreference = 'Continue'
-& cargo @argsCargo
-$codigoCargo = $LASTEXITCODE
-$ErrorActionPreference = 'Stop'
-if ($codigoCargo -ne 0) {
-  Limpiar-CacheCargo
+$prevOptLevel = $env:CARGO_PROFILE_RELEASE_OPT_LEVEL
+$prevLto = $env:CARGO_PROFILE_RELEASE_LTO
+$prevStrip = $env:CARGO_PROFILE_RELEASE_STRIP
+$env:CARGO_PROFILE_RELEASE_OPT_LEVEL = 'z'
+$env:CARGO_PROFILE_RELEASE_LTO = 'thin'
+$env:CARGO_PROFILE_RELEASE_STRIP = 'symbols'
+
+try {
   $ErrorActionPreference = 'Continue'
   & cargo @argsCargo
   $codigoCargo = $LASTEXITCODE
   $ErrorActionPreference = 'Stop'
-  if ($codigoCargo -ne 0) { throw "Falló cargo install librespot (código $codigoCargo)" }
+  if ($codigoCargo -ne 0) {
+    Limpiar-CacheCargo
+    $ErrorActionPreference = 'Continue'
+    & cargo @argsCargo
+    $codigoCargo = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($codigoCargo -ne 0) { throw "Falló cargo install librespot (código $codigoCargo)" }
+  }
+} finally {
+  $env:CARGO_PROFILE_RELEASE_OPT_LEVEL = $prevOptLevel
+  $env:CARGO_PROFILE_RELEASE_LTO = $prevLto
+  $env:CARGO_PROFILE_RELEASE_STRIP = $prevStrip
 }
 
 $exe = Join-Path $installRoot 'bin\librespot.exe'

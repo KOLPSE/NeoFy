@@ -18,7 +18,7 @@ class Traductor extends ChangeNotifier {
     this.simulado = false,
     Directory? directorio,
   }) : _directorio = directorio ?? appDataDir() {
-    unawaited(_cargarCache());
+    if (traduceUi) unawaited(_asegurarCacheCargada());
   }
 
   static const int _maxEntradasCache = 600;
@@ -32,6 +32,7 @@ class Traductor extends ChangeNotifier {
   final Directory _directorio;
   final GoogleTranslator _motor = GoogleTranslator();
   final Map<String, String> _cache = {};
+  Future<void>? _cargaCache;
   Timer? _guardadoAplazado;
   bool _disposed = false;
 
@@ -46,6 +47,8 @@ class Traductor extends ChangeNotifier {
 
   /// La UI está escrita en español; solo traducimos si el objetivo no es español.
   bool get traduceUi => !simulado && idiomaObjetivo != 'es';
+
+  Future<void> _asegurarCacheCargada() => _cargaCache ??= _cargarCache();
 
   String? cacheUi(String texto) {
     if (!traduceUi) return texto;
@@ -113,6 +116,7 @@ class Traductor extends ChangeNotifier {
   Future<String> traducirUi(String texto) async {
     final t = texto.trim();
     if (t.isEmpty || !traduceUi) return texto;
+    await _asegurarCacheCargada();
     final fijada = traduccionUiFijada(idiomaObjetivo, t);
     if (fijada != null) return fijada;
     final clave = 'ui|$idiomaObjetivo|$t';
@@ -138,6 +142,7 @@ class Traductor extends ChangeNotifier {
     if (simulado) {
       return elegirBiografia(candidatas, locale: locale);
     }
+    await _asegurarCacheCargada();
 
     var bio = elegirBiografia(candidatas, locale: locale);
     if (bio.isEmpty) bio = candidatas.first;
@@ -175,6 +180,7 @@ class Traductor extends ChangeNotifier {
   }
 
   void refrescar() {
+    if (traduceUi) unawaited(_asegurarCacheCargada());
     if (!_disposed) notifyListeners();
   }
 

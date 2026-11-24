@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 const PUERTO_POR_DEFECTO: u16 = 8900;
+const MAX_LISTAS_CACHEADAS: usize = 16;
 
 struct ListaCacheada {
     nombre: String,
@@ -27,10 +28,41 @@ struct ListaCacheada {
     pistas: Vec<SpotifyUri>,
 }
 
+#[derive(Default)]
+struct CacheListas {
+    mapa: HashMap<String, Arc<ListaCacheada>>,
+    orden: VecDeque<String>,
+}
+
+impl CacheListas {
+    fn get(&mut self, id: &str) -> Option<Arc<ListaCacheada>> {
+        let encontrada = self.mapa.get(id).cloned()?;
+        if let Some(pos) = self.orden.iter().position(|k| k == id) {
+            self.orden.remove(pos);
+        }
+        self.orden.push_back(id.to_string());
+        Some(encontrada)
+    }
+
+    fn insert(&mut self, id: String, lista: Arc<ListaCacheada>) {
+        if self.mapa.contains_key(&id) {
+            if let Some(pos) = self.orden.iter().position(|k| k == &id) {
+                self.orden.remove(pos);
+            }
+        } else if self.mapa.len() >= MAX_LISTAS_CACHEADAS {
+            if let Some(vieja) = self.orden.pop_front() {
+                self.mapa.remove(&vieja);
+            }
+        }
+        self.orden.push_back(id.clone());
+        self.mapa.insert(id, lista);
+    }
+}
+
 #[derive(Clone)]
 struct Estado {
     session: Session,
-    listas: Arc<Mutex<HashMap<String, Arc<ListaCacheada>>>>,
+    listas: Arc<Mutex<CacheListas>>,
 }
 
 #[derive(Deserialize)]
@@ -82,7 +114,7 @@ fn resolver_cache_dir() -> Result<PathBuf, String> {
     Err("No se pudo determinar el directorio de datos (APPDATA o HOME no definidos)".into())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let puerto: u16 = std::env::args()
         .nth(1)
@@ -97,7 +129,7 @@ async fn main() {
         }
     };
 
-    let cache = match Cache::new(Some(&cache_dir), Some(&cache_dir), None, None) {
+    let cache = match Cache::new(Some(&cache_dir), None, None, None) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("ERROR: no se pudo abrir la cache de librespot: {e}");
@@ -121,7 +153,7 @@ async fn main() {
 
     let estado = Estado {
         session,
-        listas: Arc::new(Mutex::new(HashMap::new())),
+        listas: Arc::new(Mutex::new(CacheListas::default())),
     };
 
     let app = Router::new()

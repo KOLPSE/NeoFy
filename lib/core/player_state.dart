@@ -42,7 +42,14 @@ class PlayerController extends ChangeNotifier {
   bool premiumChecked = false;
   bool isPremium = true;
 
-  ReproduccionLibre? libre;
+  ReproduccionLibre? _libre;
+
+  ReproduccionLibre? get libre => _libre;
+
+  set libre(ReproduccionLibre? valor) {
+    _libre = valor;
+    _actualizarTickTimer();
+  }
 
   String? currentUserId;
   String? currentDisplayName;
@@ -138,6 +145,7 @@ class PlayerController extends ChangeNotifier {
     );
     currentUri.value = ultima.track.uri;
     _fijarPosicion(ultima.posicionMs);
+    _actualizarTickTimer();
     notifyListeners();
   }
 
@@ -171,6 +179,7 @@ class PlayerController extends ChangeNotifier {
 
     state = state.copyWith(isPlaying: true);
     _fijarPosicion(ultima.posicionMs);
+    _actualizarTickTimer();
     notifyListeners();
 
     final cola = ultima.uris;
@@ -190,12 +199,44 @@ class PlayerController extends ChangeNotifier {
       _porRetomar = null;
     } else {
       state = state.copyWith(isPlaying: false);
+      _actualizarTickTimer();
       notifyListeners();
     }
   }
 
+  void _actualizarTickTimer() {
+    final debeCorrer = !_disposed &&
+        _windowVisible &&
+        _libre == null &&
+        state.isPlaying &&
+        state.track != null;
+    if (debeCorrer) {
+      _tickTimer ??=
+          Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
+    } else {
+      _tickTimer?.cancel();
+      _tickTimer = null;
+    }
+  }
+
+  static bool _mismoEstadoVisible(Playback a, Playback b) =>
+      a.track?.uri == b.track?.uri &&
+      a.track?.name == b.track?.name &&
+      a.track?.artists == b.track?.artists &&
+      a.track?.artSmall == b.track?.artSmall &&
+      a.track?.artMedium == b.track?.artMedium &&
+      a.track?.durationMs == b.track?.durationMs &&
+      a.isPlaying == b.isPlaying &&
+      a.deviceId == b.deviceId &&
+      a.volumePercent == b.volumePercent &&
+      a.shuffle == b.shuffle &&
+      a.repeat == b.repeat &&
+      a.contextUri == b.contextUri &&
+      a.canSkipNext == b.canSkipNext &&
+      a.canSkipPrevious == b.canSkipPrevious;
+
   void start() {
-    _tickTimer ??= Timer.periodic(const Duration(milliseconds: 250), (_) => _tick());
+    _actualizarTickTimer();
     _schedulePoll(const Duration(milliseconds: 200));
     _aplicarVolumenAlAudio(volumeShown);
   }
@@ -203,7 +244,13 @@ class PlayerController extends ChangeNotifier {
   void setWindowVisible(bool visible) {
     if (_windowVisible == visible) return;
     _windowVisible = visible;
-    if (visible) _schedulePoll(Duration.zero);
+    _actualizarTickTimer();
+    if (visible) {
+      if (_libre == null && state.isPlaying && state.track != null) {
+        progressMs.value = posicionActualMs;
+      }
+      _schedulePoll(Duration.zero);
+    }
   }
 
   Duration get _pollInterval {
@@ -227,6 +274,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _poll() async {
     if (libre != null) {
       _pollTimer?.cancel();
+      _actualizarTickTimer();
       return;
     }
     if (_polling || _disposed) return;
@@ -244,6 +292,7 @@ class PlayerController extends ChangeNotifier {
             final posicion = posicionActualMs;
             state = state.copyWith(isPlaying: false);
             _fijarPosicion(posicion);
+            _actualizarTickTimer();
             notifyListeners();
           }
         }
@@ -284,11 +333,16 @@ class PlayerController extends ChangeNotifier {
 
       if (next.contextUri != null) _lastContextUri = next.contextUri;
 
+      final anterior = state;
+      final errorAntes = lastError;
       state = next;
       if (aceptarProgreso) _fijarPosicion(next.progressMs);
       currentUri.value = next.track?.uri;
       lastError = null;
-      notifyListeners();
+      _actualizarTickTimer();
+      if (!_mismoEstadoVisible(anterior, next) || errorAntes != null) {
+        notifyListeners();
+      }
     } catch (e) {
       if (!_disposed && revision == _revisionPosicion) {
         lastError = '$e';
@@ -422,6 +476,7 @@ class PlayerController extends ChangeNotifier {
       state = state.copyWith(isPlaying: antes.sonaba);
       _fijarPosicion(antes.posicionMs);
       lastError = null;
+      _actualizarTickTimer();
       notifyListeners();
     } catch (_) {
       await _arrancarDeNuevo(antes);
@@ -464,6 +519,7 @@ class PlayerController extends ChangeNotifier {
       state = pb.copyWith(isPlaying: false);
       _fijarPosicion(pb.progressMs);
       currentUri.value = pb.track?.uri;
+      _actualizarTickTimer();
       notifyListeners();
     } catch (_) {
     }
@@ -529,6 +585,7 @@ class PlayerController extends ChangeNotifier {
     final revision = ++_revisionPosicion;
     state = state.copyWith(isPlaying: !sonaba);
     _fijarPosicion(posicion);
+    _actualizarTickTimer();
     notifyListeners();
     final ok = await _withDevice(
       () => sonaba ? api.pause() : api.play(deviceId: ourDeviceId),
@@ -540,6 +597,7 @@ class PlayerController extends ChangeNotifier {
     state = state.copyWith(isPlaying: sonaba);
     final delta = sonaba ? _relojDePosicion.elapsedMilliseconds - inicio : 0;
     _fijarPosicion((posicion + delta).clamp(0, state.track?.durationMs ?? posicion));
+    _actualizarTickTimer();
     notifyListeners();
     _schedulePoll(Duration.zero);
   }
@@ -626,6 +684,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _reanudarTrasSaltar() async {
     if (state.isPlaying) return;
     state = state.copyWith(isPlaying: true);
+    _actualizarTickTimer();
     _fijarPosicion(0);
     notifyListeners();
     await _withDevice(() => api.play(deviceId: ourDeviceId));
@@ -852,6 +911,12 @@ class PlayerController extends ChangeNotifier {
         for (final t in likes.biblioteca) {
           if (t.uri.isNotEmpty && !urisRecientesExcluidas.contains(t.uri) && urisConocidas.add(t.uri)) {
             pistasConocidas.add(t.uri);
+          }
+        }
+      } else if (likes != null && likes.tieneUrisDeBiblioteca) {
+        for (final u in likes.urisGuardadas) {
+          if (u.isNotEmpty && !urisRecientesExcluidas.contains(u) && urisConocidas.add(u)) {
+            pistasConocidas.add(u);
           }
         }
       } else {

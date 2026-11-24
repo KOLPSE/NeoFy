@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'app_config.dart';
 
 class ArtCache {
   static const int _maxBytes = 50 * 1024 * 1024;
+  static const int _maxEnDisco = 500;
 
   static Directory get _dir {
     final d = Directory(p.join(cacheDir().path, 'art'));
@@ -20,6 +22,15 @@ class ArtCache {
   static final http.Client _http = http.Client();
 
   static final Map<String, Future<File?>> _inFlight = {};
+  static final LinkedHashSet<String> _enDisco = LinkedHashSet<String>();
+
+  static void _recordarEnDisco(String url) {
+    _enDisco.remove(url);
+    _enDisco.add(url);
+    while (_enDisco.length > _maxEnDisco) {
+      _enDisco.remove(_enDisco.first);
+    }
+  }
 
   static File _fileFor(String url) =>
       File(p.join(_dir.path, '${sha1.convert(url.codeUnits)}.img'));
@@ -37,7 +48,15 @@ class ArtCache {
   static File? ficheroSiEstaEnDisco(String url) {
     final f = _fileFor(url);
     try {
-      if (f.existsSync() && f.lengthSync() > 0) return f;
+      if (_enDisco.contains(url)) {
+        if (f.existsSync()) return f;
+        _enDisco.remove(url);
+        return null;
+      }
+      if (f.existsSync() && f.lengthSync() > 0) {
+        _recordarEnDisco(url);
+        return f;
+      }
     } catch (_) {}
     return null;
   }
@@ -60,6 +79,7 @@ class ArtCache {
     try {
       if (await f.exists()) {
         if ((await f.stat()).size > 0) {
+          _recordarEnDisco(url);
           unawaited(f.setLastModified(DateTime.now()).catchError((_) {}));
           return f;
         }
@@ -74,6 +94,7 @@ class ArtCache {
       final tmp = File('${f.path}.${_tmpCounter++}.tmp');
       await tmp.writeAsBytes(res.bodyBytes, flush: true);
       await tmp.rename(f.path);
+      _recordarEnDisco(url);
 
       return f;
     } catch (_) {
@@ -82,6 +103,7 @@ class ArtCache {
   }
 
   static void evict(String url) {
+    _enDisco.remove(url);
     unawaited(_fileFor(url).delete().catchError((_) => _fileFor(url)));
   }
 
@@ -107,6 +129,7 @@ class ArtCache {
         total -= stats[f]!.size;
         await f.delete().catchError((_) => f);
       }
+      _enDisco.clear();
     } catch (_) {
     }
   }
