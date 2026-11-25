@@ -74,7 +74,7 @@ void main() {
       expect(actividad['state'], isNot(contains('Siguiente:')));
     });
 
-    test('el botón de GitHub siempre está presente con la URL correcta', () {
+    test('el botón de GitLab siempre está presente con la URL correcta', () {
       final actividad = DiscordRpc.construirActividad(
         track: _track(),
         siguiente: null,
@@ -84,8 +84,8 @@ void main() {
 
       final buttons = actividad['buttons'] as List<dynamic>;
       expect(buttons, isNotEmpty);
-      expect(buttons.first['label'], 'GitHub');
-      expect(buttons.first['url'], 'https://github.com/KOLPSE/NeoFy');
+      expect(buttons.first['label'], 'GitLab');
+      expect(buttons.first['url'], 'https://git.neogex.xyz/apps/neofy');
     });
 
     test('timestamps.start es coherente con el progreso pasado', () {
@@ -185,7 +185,7 @@ void main() {
 
       final assets = actividad['assets'] as Map<String, dynamic>;
       expect(assets['small_image'], 'logo');
-      expect(assets['small_text'], 'github.com/KOLPSE/NeoFy');
+      expect(assets['small_text'], 'git.neogex.xyz/apps/neofy');
     });
 
     test('tipo de actividad 2 (Escuchando), no 0 (Jugando)', () {

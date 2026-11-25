@@ -286,12 +286,12 @@ class DiscordRpc {
         'large_image': caratula ?? 'logo',
         'large_text': track.album.isNotEmpty ? track.album : 'NeoFy',
         'small_image': 'logo',
-        'small_text': 'github.com/KOLPSE/NeoFy',
+        'small_text': 'git.neogex.xyz/apps/neofy',
       },
       'buttons': const [
         {
-          'label': 'GitHub',
-          'url': 'https://github.com/KOLPSE/NeoFy',
+          'label': 'GitLab',
+          'url': 'https://git.neogex.xyz/apps/neofy',
         },
       ],
     };

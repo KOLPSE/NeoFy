@@ -1,5 +1,6 @@
 ## Features
 
+- Actualizado el enlace y el texto del botón de Discord Rich Presence para apuntar al repositorio oficial en GitLab (`git.neogex.xyz/apps/neofy`).
 - Menos trabajo en segundo plano al minimizar NeoFy o dejarlo en la bandeja. Se suspenden animaciones y se reduce la actividad de los temporizadores de reproducción.
 - El proceso auxiliar de metadatos arranca bajo demanda y se cierra tras un periodo de inactividad. Las cachés de listas y portadas tienen límites.
 - Favoritos carga al inicio solo los identificadores y recupera las pistas cuando hacen falta.
@@ -10,6 +11,7 @@
 
 ## Fixes
 
+- Eliminado el archivo residual del logo antiguo (`assets/neofy-original.png`) y asegurado el icono actualizado en el acceso directo del desinstalador de Windows.
 - Favoritos vuelve a mostrar sus pistas al restaurar la ventana y conserva su caché si se minimiza durante un guardado.
 - Discord vuelve a conectar tras una caída y espacia los reintentos cuando está cerrado.
 - NeoTube muestra el aviso de instalación de libmpv cuando falta la biblioteca.
