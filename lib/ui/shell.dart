@@ -473,8 +473,10 @@ class _AppShellState extends State<AppShell> {
         children: [
           if (nocturno) _barraSuperior(context),
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
+            child: AnimatedBuilder(
+              animation: widget.settings,
+              builder: (context, _) => LayoutBuilder(
+                builder: (context, constraints) {
                 final enColumna = constraints.maxWidth >= 980;
                 final enModoCola = _colaAbierta;
                 final expandido = _sidebarDerechoExpandido;
@@ -656,7 +658,8 @@ class _AppShellState extends State<AppShell> {
                       ),
                   ],
                 );
-              },
+                },
+              ),
             ),
           ),
           if (!hayCristal && !nocturno) const Divider(height: 1),
@@ -792,8 +795,7 @@ class _AppShellState extends State<AppShell> {
               );
             } else {
               setState(
-                () => _sidebarDerechoAbiertoEnEstrecho =
-                    !_sidebarDerechoAbiertoEnEstrecho,
+                () => _sidebarDerechoAbiertoEnEstrecho = plegado,
               );
             }
           },

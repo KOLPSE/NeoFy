@@ -9,17 +9,27 @@ import 'package:http/testing.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/artistas_favoritos_store.dart';
 import 'package:neofy/core/auth.dart';
+import 'package:neofy/core/carpetas_store.dart';
+import 'package:neofy/core/followed_playlists_store.dart';
+import 'package:neofy/core/home_store.dart';
 import 'package:neofy/core/letras_service.dart';
+import 'package:neofy/core/librespot.dart';
 import 'package:neofy/core/liked_store.dart';
 import 'package:neofy/core/metadata_sidecar.dart';
 import 'package:neofy/core/models.dart';
 import 'package:neofy/core/player_state.dart';
+import 'package:neofy/core/resource_monitor.dart';
+import 'package:neofy/core/settings.dart';
 import 'package:neofy/core/spotify_api.dart';
+import 'package:neofy/core/tema_store.dart';
 import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
 import 'package:neofy/core/temporizador_apagado.dart';
+import 'package:neofy/core/updater.dart';
+import 'package:neofy/core/yt_auth.dart';
 import 'package:neofy/ui/like_button.dart';
 import 'package:neofy/ui/right_sidebar.dart';
+import 'package:neofy/ui/shell.dart';
 
 class _ConfigPrueba extends AppConfig {
   @override
@@ -28,6 +38,12 @@ class _ConfigPrueba extends AppConfig {
 
 class _ApiFalsa extends SpotifyApi {
   _ApiFalsa(super.auth);
+
+  @override
+  Future<ApiPage<Playlist>> myPlaylists({
+    int limit = 50,
+    int offset = 0,
+  }) async => const ApiPage.empty();
 
   @override
   Future<List<Track>> queue() async => const [
@@ -44,6 +60,21 @@ class _ApiFalsa extends SpotifyApi {
         ),
       ];
 }
+
+class _InicioFalso extends HomeStore {
+  _InicioFalso({required super.api, required super.auth});
+
+  @override
+  bool get puedeLeer => true;
+
+  @override
+  bool get cargado => true;
+
+  @override
+  Future<void> cargar({bool forzar = false}) async {}
+}
+
+Future<void> _sinAccion() async {}
 
 class _SidecarFalso extends MetadataSidecar {
   @override
@@ -356,6 +387,117 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byTooltip('Contraer vista'), findsOneWidget);
       expect(find.text('Información sobre el artista'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'AppShell pliega y despliega el sidebar derecho al pulsar sus botones en escritorio y en ventana estrecha',
+    (t) async {
+      await t.binding.setSurfaceSize(const Size(1400, 800));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      final config = _ConfigPrueba();
+      final auth = SpotifyAuth(config);
+      final api = _ApiFalsa(auth);
+      final player = PlayerController(api, config);
+      final temas = TemaStore(config);
+      final settings = Settings(config);
+      final dir = Directory.systemTemp;
+      final likes = LikedStore(api: api, auth: auth, directorio: dir);
+      final followed = FollowedPlaylistsStore(
+        api: api,
+        auth: auth,
+        obtenerUserId: () => null,
+      );
+      final favoritos = ArtistasFavoritosStore(directorio: dir);
+      final carpetas = CarpetasStore(directorio: dir);
+      final home = _InicioFalso(api: api, auth: auth);
+      final sidecar = _SidecarFalso();
+      final librespot = LibrespotManager(config);
+      final ram = ResourceMonitor(pidsDeSidecars: () => const []);
+      final updater = Updater();
+      final ytAuth = YtAuth();
+
+      addTearDown(() {
+        temas.dispose();
+        settings.dispose();
+        player.dispose();
+        likes.dispose();
+        followed.dispose();
+        favoritos.dispose();
+        carpetas.dispose();
+        home.dispose();
+        sidecar.dispose();
+        librespot.dispose();
+        ram.dispose();
+        updater.dispose();
+      });
+
+      final shell = AppShell(
+        api: api,
+        auth: auth,
+        player: player,
+        librespot: librespot,
+        sidecar: sidecar,
+        likes: likes,
+        followed: followed,
+        favoritos: favoritos,
+        home: home,
+        carpetas: carpetas,
+        ram: ram,
+        settings: settings,
+        temas: temas,
+        updater: updater,
+        ytAuth: ytAuth,
+        onSalirParaActualizar: _sinAccion,
+        onReiniciarAudio: _sinAccion,
+        onLogout: _sinAccion,
+        onReauth: _sinAccion,
+      );
+
+      await t.pumpWidget(
+        AnimatedBuilder(
+          animation: temas,
+          builder: (context, _) =>
+              MaterialApp(theme: temas.themeDataOscuro, home: shell),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      // En escritorio arranca desplegado (312 px) y con el botón Ocultar panel.
+      expect(find.byTooltip('Ocultar panel'), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 312);
+
+      // Plegar desde el botón [>|]
+      await t.tap(find.byTooltip('Ocultar panel'));
+      await t.pumpAndSettle();
+      expect(settings.sidebarDerechoPlegado, isTrue);
+      expect(find.byTooltip('Ocultar panel'), findsNothing);
+      expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 24);
+
+      // Volver a desplegar desde la franja <
+      await t.tap(find.byIcon(Icons.chevron_left));
+      await t.pumpAndSettle();
+      expect(settings.sidebarDerechoPlegado, isFalse);
+      expect(find.byTooltip('Ocultar panel'), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 312);
+
+      // En ventana estrecha (< 980) arranca plegado y permite abrir/plegar flotando.
+      await t.binding.setSurfaceSize(const Size(820, 560));
+      await t.pumpAndSettle();
+      expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 24);
+
+      await t.tap(find.byIcon(Icons.chevron_left));
+      await t.pumpAndSettle();
+      expect(find.byTooltip('Ocultar panel'), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 312);
+
+      await t.tap(find.byTooltip('Ocultar panel'));
+      await t.pumpAndSettle();
+      expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 24);
     },
   );
 }

@@ -7,5 +7,6 @@
 
 ## Fixes
 
+- Corregido el plegado y desplegado del sidebar derecho de Reproducción Actual en `AppShell`, que no reconstruía el layout al cambiar `sidebarDerechoPlegado`.
 - Unificado el panel de Cola dentro del sidebar derecho con retorno directo a Reproducción Actual.
 - Compartida la descarga y caché de letras de LRCLIB entre la vista completa y la vista previa lateral mediante `LetrasService`.
