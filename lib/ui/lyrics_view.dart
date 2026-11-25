@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -8,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/app_config.dart' show kLimiteDesfaseLetraMs;
 import '../core/detector_voz.dart';
+import '../core/letras_service.dart';
 import '../core/models.dart';
 import '../core/player_state.dart';
 import '../core/sincronizacion_voz.dart';
@@ -24,6 +24,7 @@ class LyricsView extends StatefulWidget {
     required this.onClose,
     this.fuenteVoz,
     this.cliente,
+    this.letrasService,
   });
 
   final Track track;
@@ -31,6 +32,7 @@ class LyricsView extends StatefulWidget {
   final VoidCallback onClose;
   final FuenteDeteccionVoz? fuenteVoz;
   final http.Client? cliente;
+  final LetrasService? letrasService;
 
   @override
   State<LyricsView> createState() => _LyricsViewState();
@@ -40,10 +42,10 @@ typedef _SegmentoKaraoke = ({String anterior, String actual, String siguiente});
 
 class _LyricsViewState extends State<LyricsView>
     with SingleTickerProviderStateMixin {
-  static final _reNormalizar = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
-
-  late Future<_Lyrics?> _request;
-  late final http.Client _client = widget.cliente ?? http.Client();
+  late Future<ResultadoLetra?> _request;
+  late final LetrasService _letras =
+      widget.letrasService ?? LetrasService(cliente: widget.cliente);
+  late final bool _letrasPropio = widget.letrasService == null;
   final _activeLine = GlobalKey();
   final _segmento = ValueNotifier<_SegmentoKaraoke>(
     (anterior: '', actual: '', siguiente: ''),
@@ -142,7 +144,7 @@ class _LyricsViewState extends State<LyricsView>
     _segmento.dispose();
     _indice.dispose();
     _desfaseVoz.dispose();
-    if (widget.cliente == null) _client.close();
+    if (_letrasPropio) _letras.dispose();
     super.dispose();
   }
 
@@ -294,82 +296,15 @@ class _LyricsViewState extends State<LyricsView>
     }
   }
 
-  Future<dynamic> _pedir(String path, Map<String, String> query) async {
-    final resp = await _client
-        .get(
-          Uri.https('lrclib.net', path, query),
-          headers: const {'User-Agent': 'NeoFy (desktop music player)'},
-        )
-        .timeout(const Duration(seconds: 8));
-    if (resp.statusCode == 404) return null;
-    if (resp.statusCode != 200) {
-      throw StateError('LRCLIB HTTP ${resp.statusCode}');
-    }
-
-    return jsonDecode(utf8.decode(resp.bodyBytes));
-  }
-
-  Future<_Lyrics?> _load() async {
-    final track = widget.track;
-    final artista = track.listaDeArtistas.firstOrNull?.name ?? track.artists;
-    final duracion = (track.durationMs / 1000).round();
-    final campos = {'track_name': track.name, 'artist_name': artista};
-    var data =
-        await _pedir('/api/get-cached', {
-              ...campos,
-              'album_name': track.album,
-              'duration': '$duracion',
-            })
-            as Map<String, dynamic>?;
-    if (data == null) {
-      final candidatos = await _pedir('/api/search', campos) as List<dynamic>?;
-      final tituloBuscado = _normalizar(track.name);
-      final artistaBuscado = _normalizar(artista);
-      final albumBuscado = _normalizar(track.album);
-      final coincidentes = (candidatos ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .where(
-            (item) =>
-                _normalizar(item['trackName']) == tituloBuscado &&
-                _normalizar(item['artistName']) == artistaBuscado &&
-                item['duration'] is num &&
-                ((item['duration'] as num) - duracion).abs() <= 3,
-          )
-          .toList();
-      data =
-          coincidentes
-              .where(
-                (item) =>
-                    _normalizar(item['albumName']) == albumBuscado &&
-                    item['hasWordSync'] == true,
-              )
-              .firstOrNull ??
-          coincidentes
-              .where(
-                (item) =>
-                    _normalizar(item['albumName']) == albumBuscado &&
-                    (item['syncedLyrics'] as String?)?.isNotEmpty == true,
-              )
-              .firstOrNull ??
-          coincidentes.firstOrNull;
-    }
-    if (data == null) return null;
-    if (data['instrumental'] == true) {
-      return const _Lyrics([], '', instrumental: true);
-    }
-    final lines = LineaDeLetra.leer(data, track.durationMs);
-    final plain = data['plainLyrics'] as String? ?? '';
-    if (lines.isEmpty && plain.trim().isEmpty) return null;
-    if (mounted) {
-      _lineas = lines;
+  Future<ResultadoLetra?> _load({bool forzar = false}) async {
+    final resultado = await _letras.obtener(widget.track, forzar: forzar);
+    if (resultado != null && !resultado.instrumental && mounted) {
+      _lineas = resultado.lineas;
       _sincronizarTiempo();
       _actualizarLatido();
     }
-    return _Lyrics(lines, plain);
+    return resultado;
   }
-
-  String _normalizar(Object? texto) =>
-      (texto as String? ?? '').toLowerCase().replaceAll(_reNormalizar, '');
 
   void _centerLine() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -431,10 +366,10 @@ class _LyricsViewState extends State<LyricsView>
                     },
                     child: const T('Seguir letra'),
                   ),
-                FutureBuilder<_Lyrics?>(
+                FutureBuilder<ResultadoLetra?>(
                   future: _request,
                   builder: (context, snapshot) {
-                    if (snapshot.data?.lines.isNotEmpty != true) {
+                    if (snapshot.data?.lineas.isNotEmpty != true) {
                       return const SizedBox.shrink();
                     }
                     return IconButton(
@@ -463,7 +398,7 @@ class _LyricsViewState extends State<LyricsView>
           if (_ajustando) _panelDeSincronizacion(),
           const Divider(height: 1),
           Expanded(
-            child: FutureBuilder<_Lyrics?>(
+            child: FutureBuilder<ResultadoLetra?>(
               future: _request,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
@@ -476,7 +411,8 @@ class _LyricsViewState extends State<LyricsView>
                       children: [
                         const T('No se pudo conectar con LRCLIB.'),
                         TextButton(
-                          onPressed: () => setState(() => _request = _load()),
+                          onPressed: () =>
+                              setState(() => _request = _load(forzar: true)),
                           child: const T('Reintentar'),
                         ),
                       ],
@@ -492,11 +428,11 @@ class _LyricsViewState extends State<LyricsView>
                 if (lyrics.instrumental) {
                   return const Center(child: T('Pista instrumental'));
                 }
-                return lyrics.lines.isEmpty
+                return lyrics.lineas.isEmpty
                     ? SingleChildScrollView(
                         padding: const EdgeInsets.all(28),
                         child: Text(
-                          lyrics.plain,
+                          lyrics.textoPlano,
                           style: theme.textTheme.titleLarge,
                         ),
                       )
@@ -654,7 +590,7 @@ class _LyricsViewState extends State<LyricsView>
     );
   }
 
-  Widget _synced(_Lyrics lyrics) {
+  Widget _synced(ResultadoLetra lyrics) {
     final theme = Theme.of(context);
     final lineStyle = theme.textTheme.headlineSmall?.copyWith(
       fontWeight: FontWeight.w600,
@@ -674,7 +610,7 @@ class _LyricsViewState extends State<LyricsView>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final (i, line) in lyrics.lines.indexed)
+                for (final (i, line) in lyrics.lineas.indexed)
                   Padding(
                     key: index == i ? _activeLine : ValueKey(i),
                     padding: const EdgeInsets.only(bottom: 8),
@@ -758,12 +694,4 @@ class _LyricsViewState extends State<LyricsView>
       ),
     );
   }
-}
-
-class _Lyrics {
-  const _Lyrics(this.lines, this.plain, {this.instrumental = false});
-
-  final List<LineaDeLetra> lines;
-  final String plain;
-  final bool instrumental;
 }

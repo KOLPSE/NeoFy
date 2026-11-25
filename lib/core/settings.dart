@@ -37,6 +37,7 @@ class Settings extends ChangeNotifier {
   String get idiomaPreferido => config.idiomaPreferido;
   String get localeEfectivo => localeSpotifyEfectivo(config.idiomaPreferido);
   bool get sidebarPlegado => config.sidebarPlegado;
+  bool get sidebarDerechoPlegado => config.sidebarDerechoPlegado;
   int get bitrate => config.bitrate;
   CanalActualizacion get canalActualizacion => config.canalActualizacion;
   bool get esCanalPreview =>
@@ -70,6 +71,13 @@ class Settings extends ChangeNotifier {
   Future<void> setSidebarPlegado(bool plegado) async {
     if (config.sidebarPlegado == plegado) return;
     config.sidebarPlegado = plegado;
+    notifyListeners();
+    await config.save();
+  }
+
+  Future<void> setSidebarDerechoPlegado(bool plegado) async {
+    if (config.sidebarDerechoPlegado == plegado) return;
+    config.sidebarDerechoPlegado = plegado;
     notifyListeners();
     await config.save();
   }

@@ -1,21 +1,11 @@
 ## Features
 
-- Actualizado el enlace y el texto del botón de Discord Rich Presence para apuntar al repositorio oficial en GitLab (`git.neogex.xyz/apps/neofy`).
-- Menos trabajo en segundo plano al minimizar NeoFy o dejarlo en la bandeja. Se suspenden animaciones y se reduce la actividad de los temporizadores de reproducción.
-- El proceso auxiliar de metadatos arranca bajo demanda y se cierra tras un periodo de inactividad. Las cachés de listas y portadas tienen límites.
-- Favoritos carga al inicio solo los identificadores y recupera las pistas cuando hacen falta.
-
-- Añadido selector de rama de actualizaciones (**Estable** y **Preview**) en Ajustes para alternar en cualquier momento entre versiones estables (`apps/neofy`) y versiones de prueba (`apps/neofy-preview`).
-- Identificación dinámica de ventana y bandeja como **NeoFy (PREVIEW)** cuando la aplicación usa la rama Preview o una compilación preview (`X.Y.Z.1XX`).
-- Soporte en el actualizador y en el pipeline de GitLab para versiones preview con sufijo de 3 cifras (`vX.Y.Z.1XX`) y regreso controlado a Estable.
+- Añadido sidebar derecho de **Reproducción Actual** en dos modos (compacto y expandido `↗↙`) y estado plegado minimalista (`<`) con extensión sutil al pasar el ratón.
+- Cabecera contextual (`HEAD`) clicable con el nombre de la playlist actual o `Canciones que te gustan`, botón para plegar a la derecha y menú completo de acciones reales (`...`) con añadir a lista, favoritos, cola, temporizador de apagado real, radio de la canción, ir al artista/álbum, ver créditos y compartir.
+- Tarjetas en tiempo real con arte de la canción (Canvas o animación sutil sobre portada), botón de compartir entre título y corazón, vista previa de letras desplegable inline (compartida con `LetrasService`), información del artista (verificado, oyentes mensuales, seguir y descripción), créditos en formato inclusivo (`Compositor/A`, `Productor/A`), próximos conciertos (`De gira`) y siguiente canción con acceso integrado a la cola.
+- Ampliado `metadata-sidecar` (Rust) con los endpoints `/track/{id}/credits`, `/artist/{id}/insights` y `/track/{id}/canvas` con caché acotada en memoria.
 
 ## Fixes
 
-- Eliminado el archivo residual del logo antiguo (`assets/neofy-original.png`) y asegurado el icono actualizado en el acceso directo del desinstalador de Windows.
-- Favoritos vuelve a mostrar sus pistas al restaurar la ventana y conserva su caché si se minimiza durante un guardado.
-- Discord vuelve a conectar tras una caída y espacia los reintentos cuando está cerrado.
-- NeoTube muestra el aviso de instalación de libmpv cuando falta la biblioteca.
-
-- Evitadas condiciones de carrera al cambiar de rama durante una búsqueda de actualizaciones en curso.
-- Corregida la sincronización dinámica del título de la ventana en Linux con barra de cabecera GTK (`GtkHeaderBar`).
-- Endurecida la creación de temporales en la publicación de releases de GitLab usando `mktemp`.
+- Unificado el panel de Cola dentro del sidebar derecho con retorno directo a Reproducción Actual.
+- Compartida la descarga y caché de letras de LRCLIB entre la vista completa y la vista previa lateral mediante `LetrasService`.

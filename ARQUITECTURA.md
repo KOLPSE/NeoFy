@@ -42,6 +42,8 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
     perfil. Vive en local (`artistas_favoritos.json`); no usa el follow de Spotify, que
     pediría un scope nuevo y un re-login.
   - `home_store.dart` — Datos de la portada (historial y lo más escuchado).
+  - `letras_service.dart` — Cliente LRCLIB compartido con caché LRU (30 pistas) entre `LyricsView` y el sidebar derecho.
+  - `temporizador_apagado.dart` — Temporizador real de apagado (minutos o fin de canción) que pausa `PlayerController` al expirar.
   - `media_keys.dart` — Recibe las teclas multimedia que registra el runner.
   - `reproductor_del_sistema.dart` — Lo que hay que enseñar fuera de la ventana
     (`EstadoDelSistema`) y de dónde sale la carátula. Lo comparten MPRIS y
@@ -83,13 +85,21 @@ es opcional — es lo que mantiene la interfaz sincronizada cuando el mando act�
   `like_button.dart` es el corazón que se llena como un líquido: la ondulación **solo corre
   mientras dura el llenado** (~600 ms) y se para al acabar. Con una animación perpetua por
   fila, una lista de 3.000 canciones tendría decenas corriendo sin que nadie las mire.
+  `right_sidebar.dart` implementa el sidebar derecho de Reproducción Actual en 4 estados:
+  plegado (franja lateral de 24 px con `<` que se ensancha a 38 px al hover sin mostrar
+  contenido), compacto (`312 px`), cola integrada (`QueueScreen` con retorno directo) y
+  expandido (`↗↙`, dos columnas en el área central). Incluye cabecera contextual clicable,
+  menú de acciones reales (`...`), arte animado o Canvas, compartir junto al corazón, vista
+  previa de letras desplegable inline, ficha de artista (verificado, oyentes mensuales,
+  seguir y biografía), créditos inclusivos (`or/A`), fechas de gira y siguiente en la cola.
 - **`tool/build_librespot.ps1`** — Compila los dos sidecars. Se ejecuta una vez.
 - **`tool/metadata-sidecar/`** — Binario Rust con sesión de librespot + servidor HTTP en
   `127.0.0.1:8900`. Sirve `GET /playlist/{id}?offset=&limit=` **con la forma de JSON de la
-  Web API**, para que `Track.fromJson` valga sin tocar nada. Anuncia `READY <puerto>` por
-  stdout cuando puede atender. Ojo al pin de `vergen 9.0.6` en su `Cargo.lock`: sin él,
-  `vergen-gitcl` arrastra dos versiones de `vergen-lib` y el build script de
-  `librespot-core` no compila.
+  Web API**, `GET /artist/{id}`, `GET /album/{id}` y los endpoints de enriquecimiento para el
+  sidebar derecho (`/track/{id}/credits`, `/artist/{id}/insights` y `/track/{id}/canvas`),
+  todo con cachés acotadas en memoria. Anuncia `READY <puerto>` por stdout cuando puede atender.
+  Ojo al pin de `vergen 9.0.6` en su `Cargo.lock`: sin él, `vergen-gitcl` arrastra dos
+  versiones de `vergen-lib` y el build script de `librespot-core` no compila.
 
 ## Tres procesos, no uno
 

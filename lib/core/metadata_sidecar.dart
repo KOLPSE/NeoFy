@@ -38,6 +38,18 @@ class MetadataSidecar extends ChangeNotifier {
   Timer? _timerInactividad;
 
   final http.Client _http = http.Client();
+  final Map<String, CreditosDePista> _cacheCreditos = {};
+  final Map<String, InfoArtistaExtendida> _cacheInsights = {};
+  final Map<String, CanvasDePista> _cacheCanvas = {};
+  static const int _maxCacheMetadatos = 40;
+
+  void _guardarEnCache<V>(Map<String, V> cache, String clave, V valor) {
+    cache.remove(clave);
+    if (cache.length >= _maxCacheMetadatos) {
+      cache.remove(cache.keys.first);
+    }
+    cache[clave] = valor;
+  }
 
   bool get ready => _ready;
   bool get puedeUsarse => _ready || (puedeArrancar?.call() ?? false);
@@ -205,6 +217,50 @@ class MetadataSidecar extends ChangeNotifier {
     return [
       for (final t in raw) Track.fromJson(t as Map<String, dynamic>?)
     ].whereType<Track>().toList();
+  }
+
+  Future<CreditosDePista?> creditosDePista(String trackId) async {
+    final id = idDeSpotify(trackId);
+    if (id.isEmpty) return null;
+    final cacheado = _cacheCreditos.remove(id);
+    if (cacheado != null) {
+      _cacheCreditos[id] = cacheado;
+      return cacheado;
+    }
+    final j = await _getJson('/track/$id/credits');
+    final creditos = CreditosDePista.fromJson(j);
+    _guardarEnCache(_cacheCreditos, id, creditos);
+    return creditos;
+  }
+
+  Future<InfoArtistaExtendida?> infoArtistaExtendida(String artistId) async {
+    final id = idDeSpotify(artistId);
+    if (id.isEmpty) return null;
+    final locale = _localeEfectivo();
+    final clave = '$id|$locale';
+    final cacheado = _cacheInsights.remove(clave);
+    if (cacheado != null) {
+      _cacheInsights[clave] = cacheado;
+      return cacheado;
+    }
+    final j = await _getJson('/artist/$id/insights', query: {'locale': locale});
+    final info = InfoArtistaExtendida.fromJson(j, locale: locale);
+    if (info != null) _guardarEnCache(_cacheInsights, clave, info);
+    return info;
+  }
+
+  Future<CanvasDePista?> canvasDePista(String trackId) async {
+    final id = idDeSpotify(trackId);
+    if (id.isEmpty) return null;
+    final cacheado = _cacheCanvas.remove(id);
+    if (cacheado != null) {
+      _cacheCanvas[id] = cacheado;
+      return cacheado;
+    }
+    final j = await _getJson('/track/$id/canvas');
+    final canvas = CanvasDePista.fromJson(j);
+    _guardarEnCache(_cacheCanvas, id, canvas);
+    return canvas;
   }
 
   Future<Map<String, dynamic>> _getJson(

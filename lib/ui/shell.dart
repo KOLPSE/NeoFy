@@ -10,6 +10,7 @@ import '../core/auth.dart';
 import '../core/carpetas_store.dart';
 import '../core/followed_playlists_store.dart';
 import '../core/home_store.dart';
+import '../core/letras_service.dart';
 import '../core/librespot.dart';
 import '../core/liked_store.dart';
 import '../core/metadata_sidecar.dart';
@@ -19,6 +20,7 @@ import '../core/resource_monitor.dart';
 import '../core/settings.dart';
 import '../core/tema_store.dart';
 import '../core/temas.dart';
+import '../core/temporizador_apagado.dart';
 import '../core/updater.dart';
 import '../core/spotify_api.dart';
 import '../core/yt_auth.dart';
@@ -39,6 +41,7 @@ import 'temas_dialog.dart';
 import 'playlist_screen.dart';
 import 'podcast_screen.dart';
 import 'queue_screen.dart';
+import 'right_sidebar.dart';
 import 'search_screen.dart';
 import 'texto_traducido.dart';
 
@@ -139,6 +142,12 @@ class _AppShellState extends State<AppShell> {
   final _adelante = <_Ruta>[];
   bool _colaAbierta = false;
   bool _letraAbierta = false;
+  bool _sidebarDerechoExpandido = false;
+  bool _sidebarDerechoAbiertoEnEstrecho = false;
+  late final LetrasService _letras = LetrasService();
+  late final TemporizadorApagado _temporizador = TemporizadorApagado(
+    widget.player,
+  );
 
   _View _view = _View.home;
   Playlist? _selected;
@@ -190,6 +199,8 @@ class _AppShellState extends State<AppShell> {
     _busqueda.dispose();
     _focoBusqueda.dispose();
     _focoCuenta.dispose();
+    _letras.dispose();
+    _temporizador.dispose();
     super.dispose();
   }
 
@@ -210,6 +221,7 @@ class _AppShellState extends State<AppShell> {
     _artistaOrigenAlbum = ruta.albumOrigin;
     _podcast = ruta.podcast;
     _letraAbierta = false;
+    _sidebarDerechoExpandido = false;
   }
 
   void _navegar(
@@ -463,8 +475,16 @@ class _AppShellState extends State<AppShell> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final enColumna = constraints.maxWidth >= 1090;
-                final cola = nocturno && _colaAbierta;
+                final enColumna = constraints.maxWidth >= 980;
+                final enModoCola = _colaAbierta;
+                final expandido = _sidebarDerechoExpandido;
+                final plegado = expandido
+                    ? true
+                    : enColumna
+                    ? (widget.settings.sidebarDerechoPlegado && !enModoCola)
+                    : (!enModoCola && !_sidebarDerechoAbiertoEnEstrecho);
+                final flotandoEnEstrecho = !enColumna && !plegado && !expandido;
+
                 final contenido = Padding(
                   padding: nocturno
                       ? const EdgeInsets.fromLTRB(8, 4, 8, 6)
@@ -558,7 +578,13 @@ class _AppShellState extends State<AppShell> {
                                 )
                               : null,
                           clipBehavior: nocturno ? Clip.antiAlias : Clip.none,
-                          child: _letraAbierta && nocturno
+                          child: expandido
+                              ? _panelDerecho(
+                                  plegado: false,
+                                  expandido: true,
+                                  enColumna: enColumna,
+                                )
+                              : _letraAbierta && nocturno
                               ? ValueListenableBuilder<String?>(
                                   valueListenable: widget.player.currentUri,
                                   builder: (context, _, _) {
@@ -575,6 +601,7 @@ class _AppShellState extends State<AppShell> {
                                       key: ValueKey(track.uri),
                                       track: track,
                                       player: widget.player,
+                                      letrasService: _letras,
                                       onClose: _cerrarLetra,
                                     );
                                   },
@@ -582,19 +609,17 @@ class _AppShellState extends State<AppShell> {
                               : _content(nocturno),
                         ),
                       ),
-                      if (enColumna && nocturno)
-                        AnimatedSize(
-                          duration: _duracionPanel(context),
-                          curve: Curves.easeOutCubic,
-                          alignment: Alignment.centerLeft,
-                          clipBehavior: Clip.hardEdge,
-                          child: cola
-                              ? Padding(
-                                  padding: const EdgeInsets.only(left: 8),
-                                  child: _panelCola(),
-                                )
-                              : const SizedBox(width: 0),
+                      if (!expandido && !flotandoEnEstrecho) ...[
+                        if (nocturno)
+                          const SizedBox(width: 8)
+                        else if (!hayCristal)
+                          const VerticalDivider(width: 1),
+                        _panelDerecho(
+                          plegado: plegado,
+                          expandido: false,
+                          enColumna: enColumna,
                         ),
+                      ],
                     ],
                   ),
                 );
@@ -602,7 +627,7 @@ class _AppShellState extends State<AppShell> {
                   fit: StackFit.expand,
                   children: [
                     contenido,
-                    if (!enColumna && cola)
+                    if (flotandoEnEstrecho)
                       Align(
                         alignment: Alignment.centerRight,
                         child: Padding(
@@ -616,7 +641,16 @@ class _AppShellState extends State<AppShell> {
                                   translation: Offset(offset, 0),
                                   child: child,
                                 ),
-                            child: _panelCola(),
+                            child: Material(
+                              elevation: 6,
+                              borderRadius: BorderRadius.circular(estilo.radio),
+                              clipBehavior: Clip.antiAlias,
+                              child: _panelDerecho(
+                                plegado: false,
+                                expandido: false,
+                                enColumna: false,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -652,25 +686,149 @@ class _AppShellState extends State<AppShell> {
       ? Duration.zero
       : const Duration(milliseconds: 210);
 
-  void _alternarCola() => setState(() => _colaAbierta = !_colaAbierta);
+  void _alternarCola() => setState(() {
+    _colaAbierta = !_colaAbierta;
+    if (_colaAbierta) {
+      _sidebarDerechoExpandido = false;
+    }
+  });
+
   void _cerrarLetra() => setState(() => _letraAbierta = false);
 
-  Widget _panelCola() => SizedBox(
-    width: 306,
-    child: Material(
-      elevation: 5,
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: QueueScreen(
-        api: widget.api,
-        player: widget.player,
-        likes: widget.likes,
-        onClose: _alternarCola,
-        home: widget.home,
-      ),
-    ),
-  );
+  ({String titulo, VoidCallback? onTap}) _contextoActual(
+    String? playingContextUri,
+    Track? track,
+  ) {
+    final uri = playingContextUri ?? '';
+    if (uri.contains(':collection')) {
+      return (
+        titulo: 'Canciones que te gustan',
+        onTap: () => _navegar(_View.liked),
+      );
+    }
+    if (uri.startsWith('spotify:playlist:')) {
+      final pid = idDeSpotify(uri);
+      for (final pl in _playlists) {
+        if (pl.id == pid || pl.uri == uri) {
+          return (
+            titulo: pl.name,
+            onTap: () => _navegar(_View.playlist, playlist: pl),
+          );
+        }
+      }
+      return (titulo: 'Playlist', onTap: null);
+    }
+    if (uri.startsWith('spotify:album:') && track != null) {
+      return (
+        titulo: track.album.isNotEmpty ? track.album : 'Álbum',
+        onTap: () => _abrirAlbum(
+          Album(
+            id: idDeSpotify(uri),
+            uri: uri,
+            name: track.album.isNotEmpty ? track.album : 'Álbum',
+            artists: track.artists,
+            listaDeArtistas: track.listaDeArtistas,
+            art: track.artMedium ?? track.artSmall,
+          ),
+        ),
+      );
+    }
+    if (uri.startsWith('spotify:artist:') && track != null) {
+      final a = track.listaDeArtistas.firstOrNull;
+      return (
+        titulo: a?.name ?? track.artists,
+        onTap: a != null ? () => _abrirArtista(a.comoArtista) : null,
+      );
+    }
+    if (track != null &&
+        !track.isEpisode &&
+        track.uri.isNotEmpty &&
+        widget.likes.isSaved(track.uri) == true) {
+      return (
+        titulo: 'Canciones que te gustan',
+        onTap: () => _navegar(_View.liked),
+      );
+    }
+    return (titulo: 'Reproduciendo', onTap: null);
+  }
+
+  Widget _panelDerecho({
+    required bool plegado,
+    required bool expandido,
+    required bool enColumna,
+  }) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.player, widget.likes]),
+      builder: (context, _) {
+        final ctx = _contextoActual(
+          widget.player.contextUri,
+          widget.player.state.track,
+        );
+        return RightSidebar(
+          api: widget.api,
+          player: widget.player,
+          likes: widget.likes,
+          favoritos: widget.favoritos,
+          sidecar: widget.sidecar,
+          letras: _letras,
+          temporizador: _temporizador,
+          playlists: _playlists,
+          home: widget.home,
+          plegado: plegado,
+          expandido: expandido,
+          mostrarCola: _colaAbierta,
+          contextoTitulo: ctx.titulo,
+          onAbrirContexto: ctx.onTap,
+          onTogglePlegado: () {
+            if (_colaAbierta) {
+              setState(() {
+                _colaAbierta = false;
+                _sidebarDerechoAbiertoEnEstrecho = false;
+              });
+            }
+            if (enColumna) {
+              unawaited(
+                widget.settings.setSidebarDerechoPlegado(!plegado),
+              );
+            } else {
+              setState(
+                () => _sidebarDerechoAbiertoEnEstrecho =
+                    !_sidebarDerechoAbiertoEnEstrecho,
+              );
+            }
+          },
+          onToggleExpandido: () => setState(() {
+            _sidebarDerechoExpandido = !_sidebarDerechoExpandido;
+            _colaAbierta = false;
+            if (_sidebarDerechoExpandido) {
+              _letraAbierta = false;
+            }
+          }),
+          onAbrirCola: () => setState(() {
+            _colaAbierta = true;
+            _sidebarDerechoExpandido = false;
+            if (!enColumna) _sidebarDerechoAbiertoEnEstrecho = true;
+          }),
+          onCerrarCola: () => setState(() {
+            _colaAbierta = false;
+            if (!enColumna) _sidebarDerechoAbiertoEnEstrecho = false;
+          }),
+          onAbrirLetraCompleta: () => setState(() {
+            _sidebarDerechoExpandido = false;
+            _letraAbierta = true;
+          }),
+          onAbrirArtista: (a) {
+            setState(() => _sidebarDerechoExpandido = false);
+            _abrirArtista(a);
+          },
+          onAbrirAlbum: (a) {
+            setState(() => _sidebarDerechoExpandido = false);
+            _abrirAlbum(a);
+          },
+        );
+      },
+    );
+  }
 
   Widget _barraSuperior(BuildContext context) {
     final tema = Theme.of(context);

@@ -9,7 +9,7 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.6.0.200';
+const String kVersion = '1.6.0.300';
 
 const String kHostActualizaciones = 'git.neogex.xyz';
 
@@ -164,6 +164,9 @@ class AppConfig {
   /// La barra lateral se muestra como rail de iconos en vez de panel ancho.
   bool sidebarPlegado;
 
+  /// El panel derecho de Reproducción Actual se muestra plegado en el borde.
+  bool sidebarDerechoPlegado;
+
   /// Rama de actualizaciones preferida (`estable` o `preview`).
   CanalActualizacion canalActualizacion;
 
@@ -184,6 +187,7 @@ class AppConfig {
     this.sincronizacionPorVoz = false,
     this.menusEnElemento = true,
     this.sidebarPlegado = false,
+    this.sidebarDerechoPlegado = false,
     CanalActualizacion? canalActualizacion,
   }) : temaColores = temaColores ?? {},
        desfasesLetraMs = desfasesLetraMs ?? {},
@@ -228,6 +232,7 @@ class AppConfig {
         },
         menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
         sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
+        sidebarDerechoPlegado: (map['sidebarDerechoPlegado'] as bool?) ?? false,
         canalActualizacion: CanalActualizacion.desdeValor(
           map['canalActualizacion'] as String?,
         ),
@@ -267,6 +272,7 @@ class AppConfig {
         'sincronizacionPorVoz': sincronizacionPorVoz,
         'menusEnElemento': menusEnElemento,
         'sidebarPlegado': sidebarPlegado,
+        'sidebarDerechoPlegado': sidebarDerechoPlegado,
         'canalActualizacion': canalActualizacion.valor,
       }),
     );

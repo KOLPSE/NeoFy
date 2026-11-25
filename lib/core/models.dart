@@ -845,3 +845,278 @@ class Playback {
     );
   }
 }
+
+/// Formatea un entero con separador de miles por punto (p. ej. `1811092` -> `'1.811.092'`).
+String formatearOyentesMensuales(int n) {
+  if (n < 0) return '0';
+  final s = '$n';
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+    buf.write(s[i]);
+  }
+  return buf.toString();
+}
+
+/// Normaliza un rol bruto de Spotify al formato inclusivo de la interfaz.
+String formatearRolCredito(String rolRaw) {
+  final limpio = rolRaw.trim();
+  if (limpio.isEmpty) return '';
+  final clave = limpio.toLowerCase();
+  if (clave == 'main artist' ||
+      clave == 'artista principal' ||
+      clave == 'primary artist') {
+    return 'Artista Principal';
+  }
+  if (clave == 'composer' ||
+      clave == 'writer' ||
+      clave == 'songwriter' ||
+      clave == 'lyricist' ||
+      clave == 'compositor' ||
+      clave == 'compositor/a' ||
+      clave == 'letrista' ||
+      clave == 'writers') {
+    return 'Compositor/A';
+  }
+  if (clave == 'producer' ||
+      clave == 'productor' ||
+      clave == 'productor/a' ||
+      clave == 'producers') {
+    return 'Productor/A';
+  }
+  if (clave == 'performer' ||
+      clave == 'performers' ||
+      clave == 'featured artist' ||
+      clave == 'intérprete' ||
+      clave == 'interprete') {
+    return 'Intérprete';
+  }
+  if (clave == 'remixer' || clave == 'remezclador') {
+    return 'Remezclador/A';
+  }
+  if (clave == 'conductor' || clave == 'director') {
+    return 'Director/A';
+  }
+  return limpio[0].toUpperCase() + limpio.substring(1);
+}
+
+class CreditoPista {
+  const CreditoPista({
+    required this.nombre,
+    this.artistaId = '',
+    this.artistaUri = '',
+    this.roles = const [],
+  });
+
+  final String nombre;
+  final String artistaId;
+  final String artistaUri;
+  final List<String> roles;
+
+  bool get tienePerfil => artistaId.isNotEmpty;
+
+  Artist get comoArtista => Artist(
+        id: artistaId,
+        uri: artistaUri.isNotEmpty ? artistaUri : 'spotify:artist:$artistaId',
+        name: nombre,
+        art: null,
+      );
+
+  String get rolesTexto {
+    final unicos = <String>[];
+    for (final rol in roles) {
+      final formateado = formatearRolCredito(rol);
+      if (formateado.isNotEmpty && !unicos.contains(formateado)) {
+        unicos.add(formateado);
+      }
+    }
+    return unicos.join(' • ');
+  }
+
+  static CreditoPista? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    final nombre = (j['name'] as String?)?.trim() ?? '';
+    if (nombre.isEmpty) return null;
+    final id = (j['id'] as String?)?.trim() ?? '';
+    final uri = (j['uri'] as String?)?.trim() ?? '';
+    final roles = <String>[
+      for (final r in (j['roles'] as List<dynamic>?) ?? const [])
+        if (r is String && r.trim().isNotEmpty) r.trim(),
+    ];
+    return CreditoPista(
+      nombre: nombre,
+      artistaId: id,
+      artistaUri: uri,
+      roles: roles,
+    );
+  }
+}
+
+class CreditosDePista {
+  const CreditosDePista({
+    this.personas = const [],
+    this.fuentes = const [],
+  });
+
+  final List<CreditoPista> personas;
+  final List<String> fuentes;
+
+  bool get estaVacio => personas.isEmpty;
+
+  static CreditosDePista fromJson(Map<String, dynamic>? j) {
+    if (j == null) return const CreditosDePista();
+    return CreditosDePista(
+      personas: [
+        for (final raw in (j['credits'] as List<dynamic>?) ?? const [])
+          if (raw is Map<String, dynamic>) ?CreditoPista.fromJson(raw),
+      ],
+      fuentes: [
+        for (final s in (j['sources'] as List<dynamic>?) ?? const [])
+          if (s is String && s.trim().isNotEmpty) s.trim(),
+      ],
+    );
+  }
+}
+
+class ConciertoArtista {
+  const ConciertoArtista({
+    required this.id,
+    required this.ciudad,
+    required this.artista,
+    required this.recinto,
+    required this.fecha,
+    this.url = '',
+  });
+
+  final String id;
+  final String ciudad;
+  final String artista;
+  final String recinto;
+  final DateTime fecha;
+  final String url;
+
+  static const _meses = [
+    'Ene',
+    'Feb',
+    'Mar',
+    'Abr',
+    'May',
+    'Jun',
+    'Jul',
+    'Ago',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dic',
+  ];
+
+  static const _dias = [
+    'lun',
+    'mar',
+    'mié',
+    'jue',
+    'vie',
+    'sáb',
+    'dom',
+  ];
+
+  String get mesCorto => _meses[fecha.month - 1];
+
+  String get diaNumero => '${fecha.day}';
+
+  String get diaSemanaCorto => _dias[fecha.weekday - 1];
+
+  String get horaTexto =>
+      '${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+
+  String get lineaDetalle {
+    final base = '$diaSemanaCorto, $horaTexto';
+    return recinto.isEmpty ? base : '$base • $recinto';
+  }
+
+  static ConciertoArtista? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    final ciudad = (j['city'] as String?)?.trim() ?? '';
+    final fechaRaw = (j['date_iso'] as String?)?.trim() ?? '';
+    if (ciudad.isEmpty || fechaRaw.isEmpty) return null;
+    final parsed = DateTime.tryParse(fechaRaw);
+    if (parsed == null) return null;
+    return ConciertoArtista(
+      id: (j['id'] as String?)?.trim() ?? '',
+      ciudad: ciudad,
+      artista: (j['artist'] as String?)?.trim() ?? '',
+      recinto: (j['venue'] as String?)?.trim() ?? '',
+      fecha: parsed.toLocal(),
+      url: (j['url'] as String?)?.trim() ?? '',
+    );
+  }
+}
+
+class InfoArtistaExtendida {
+  const InfoArtistaExtendida({
+    required this.id,
+    required this.nombre,
+    this.verificado = false,
+    this.oyentesMensuales,
+    this.biografia,
+    this.imagenBanner,
+    this.conciertos = const [],
+  });
+
+  final String id;
+  final String nombre;
+  final bool verificado;
+  final int? oyentesMensuales;
+  final String? biografia;
+  final String? imagenBanner;
+  final List<ConciertoArtista> conciertos;
+
+  static InfoArtistaExtendida? fromJson(
+    Map<String, dynamic>? j, {
+    String? locale,
+  }) {
+    if (j == null) return null;
+    final id = (j['id'] as String?)?.trim() ?? '';
+    final nombre = (j['name'] as String?)?.trim() ?? '';
+    if (id.isEmpty && nombre.isEmpty) return null;
+    final images = j['images'] as List<dynamic>?;
+    final bio = elegirBiografia([
+      for (final b in (j['biographies'] as List<dynamic>?) ?? const [])
+        if (b is String) b,
+      if (j['biography'] is String) j['biography'] as String,
+    ], locale: locale);
+    return InfoArtistaExtendida(
+      id: id,
+      nombre: nombre,
+      verificado: j['verified'] == true,
+      oyentesMensuales: (j['monthly_listeners'] as num?)?.toInt(),
+      biografia: bio.isNotEmpty ? bio : null,
+      imagenBanner: pickLargestImage(images) ?? pickImage(images, 300),
+      conciertos: [
+        for (final raw in (j['concerts'] as List<dynamic>?) ?? const [])
+          if (raw is Map<String, dynamic>) ?ConciertoArtista.fromJson(raw),
+      ],
+    );
+  }
+}
+
+class CanvasDePista {
+  const CanvasDePista({this.url, this.tipo});
+
+  final String? url;
+  final String? tipo;
+
+  bool get tieneCanvas => url != null && url!.trim().isNotEmpty;
+
+  bool get esImagenAnimable =>
+      tieneCanvas &&
+      (tipo == 'IMAGE' || tipo == 'GIF' || tipo == null);
+
+  static CanvasDePista fromJson(Map<String, dynamic>? j) {
+    if (j == null) return const CanvasDePista();
+    return CanvasDePista(
+      url: (j['canvas_url'] as String?)?.trim(),
+      tipo: (j['type'] as String?)?.trim(),
+    );
+  }
+}
