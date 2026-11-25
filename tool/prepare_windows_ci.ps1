@@ -10,7 +10,8 @@ foreach ($d in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE, $env:TEMP, $
 $toolsDir = if ($env:NEOFY_CI_TOOLS_DIR) { $env:NEOFY_CI_TOOLS_DIR } else { 'C:\ci\flutter-3.44.6' }
 $sdkRoot = Join-Path $toolsDir 'flutter'
 $completed = Join-Path $toolsDir 'sdk-ready'
-if (-not (Test-Path $completed)) {
+
+function Instalar-FlutterSdk {
   Write-Host 'Preparando Flutter 3.44.6 en el directorio del job.'
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
   $manifest = Invoke-RestMethod -TimeoutSec 45 'https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json'
@@ -32,6 +33,10 @@ if (-not (Test-Path $completed)) {
   } finally {
     Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
   }
+}
+
+if (-not (Test-Path $completed)) {
+  Instalar-FlutterSdk
 }
 if ($env:PUB_CACHE) {
   $env:PUB_CACHE = [IO.Path]::GetFullPath($env:PUB_CACHE)
@@ -94,8 +99,34 @@ $env:PATH = "$sdkRoot\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:GIT_CONFIG_COUNT = '1'
 $env:GIT_CONFIG_KEY_0 = 'safe.directory'
 $env:GIT_CONFIG_VALUE_0 = $sdkRoot.Replace('\', '/')
-& (Join-Path $sdkRoot 'bin\flutter.bat') --version
-if ($LASTEXITCODE -ne 0) { throw 'Flutter no está disponible.' }
+
+function Ejecutar-FlutterVersion {
+  $prevPref = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & (Join-Path $sdkRoot 'bin\flutter.bat') --version
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prevPref
+  }
+}
+
+if ((Ejecutar-FlutterVersion) -ne 0) {
+  Write-Host 'flutter --version falló; regenerando flutter_tools.snapshot...'
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'packages\flutter_tools\.dart_tool') -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter_tools.snapshot') -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter.bat.lock') -Force -ErrorAction SilentlyContinue
+  if ((Ejecutar-FlutterVersion) -ne 0) {
+    Write-Host 'El SDK de Flutter en caché está corrupto; reinstalando desde cero...'
+    $apartadoSdk = "$toolsDir.corrupt-$(if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID })"
+    cmd /c "move `"$toolsDir`" `"$apartadoSdk`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
+    if (Test-Path $toolsDir) { Remove-Item -LiteralPath $toolsDir -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $apartadoSdk) { Remove-Item -LiteralPath $apartadoSdk -Recurse -Force -ErrorAction SilentlyContinue }
+    Instalar-FlutterSdk
+    if ((Ejecutar-FlutterVersion) -ne 0) { throw 'Flutter no está disponible.' }
+  }
+}
 
 $dartExe = Join-Path $sdkRoot 'bin\cache\dart-sdk\bin\dart.exe'
 $toolBackend = Join-Path $sdkRoot 'packages\flutter_tools\bin\tool_backend.dart'
