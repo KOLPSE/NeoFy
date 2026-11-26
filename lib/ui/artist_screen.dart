@@ -152,8 +152,10 @@ class _ArtistScreenState extends State<ArtistScreen> {
   Future<void> _cargarDelSidecar() async {
     final perfil = await widget.sidecar!.artista(widget.artist.id);
     if (!mounted) return;
+    final cargado = perfil.artista.name.isEmpty ? widget.artist : perfil.artista;
+    widget.favoritos.actualizarArtista(cargado);
     setState(() {
-      _artista = perfil.artista.name.isEmpty ? widget.artist : perfil.artista;
+      _artista = cargado;
       _tracks = perfil.top;
       _albumes = perfil.albumes;
       _singles = perfil.singles;
@@ -209,8 +211,10 @@ class _ArtistScreenState extends State<ArtistScreen> {
       } catch (_) {
         artist = widget.artist;
       }
+      final resuelto = artist.name.isEmpty ? widget.artist : artist;
+      widget.favoritos.actualizarArtista(resuelto);
       if (mounted) {
-        setState(() => _artista = artist.name.isEmpty ? widget.artist : artist);
+        setState(() => _artista = resuelto);
       }
 
       final tracks = await topF;

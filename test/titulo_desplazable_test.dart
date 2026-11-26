@@ -11,7 +11,7 @@ const _largo =
 
 Widget _envoltorio(String texto, {double ancho = 160, Tema? tema}) {
   return MaterialApp(
-    theme: construirThemeData(tema ?? temaMaterialOscuro),
+    theme: construirThemeData(tema ?? temaNeoFyNocturno),
     home: Scaffold(
       body: Center(
         child: SizedBox(
@@ -48,7 +48,7 @@ bool sinExcepciones() =>
 
 Widget _comoEnLaBarra(String texto) {
   return MaterialApp(
-    theme: construirThemeData(temaMaterialOscuro),
+    theme: construirThemeData(temaNeoFyNocturno),
     home: Scaffold(
       body: Row(
         children: [

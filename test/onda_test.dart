@@ -6,6 +6,24 @@ import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
 import 'package:neofy/ui/onda_de_progreso.dart';
 
+const _temaOnda = Tema(
+  id: 'onda-prueba',
+  nombre: 'Onda',
+  brillo: BrilloDeTema.oscuro,
+  progreso: EstiloDeProgreso.onda,
+  colores: Paleta(
+    primario: Color(0xFF55DF79),
+    sobrePrimario: Color(0xFF0C1910),
+    fondo: Color(0xFF090909),
+    superficie: Color(0xFF252525),
+    panel: Color(0xFF161616),
+    texto: Color(0xFFF7F7F7),
+    textoTenue: Color(0xFFB8B8B8),
+    borde: Color(0xFF595959),
+    error: Color(0xFFFFA0AA),
+  ),
+);
+
 Widget _barra({
   required Tema tema,
   required bool enMarcha,
@@ -79,23 +97,23 @@ void main() {
 
   testWidgets('los temas de línea siguen usando el Slider de siempre',
       (t) async {
-    await t.pumpWidget(_barra(tema: temaLiquidGlass, enMarcha: true));
+    await t.pumpWidget(_barra(tema: temaNeoFyClaro, enMarcha: true));
     expect(find.byType(Slider), findsOneWidget);
   });
 
   testWidgets('los temas de onda no usan Slider, pintan la onda', (t) async {
-    await t.pumpWidget(_barra(tema: temaMaterialOscuro, enMarcha: true));
+    await t.pumpWidget(_barra(tema: _temaOnda, enMarcha: true));
     expect(find.byType(Slider), findsNothing);
     expect(find.byType(CustomPaint), findsWidgets);
   });
 
   testWidgets('en pausa no queda ninguna animación corriendo', (t) async {
-    await t.pumpWidget(_barra(tema: temaMaterialOscuro, enMarcha: true));
+    await t.pumpWidget(_barra(tema: _temaOnda, enMarcha: true));
     await t.pump(const Duration(milliseconds: 100));
     expect(t.hasRunningAnimations, isTrue,
         reason: 'sonando, la onda viaja');
 
-    await t.pumpWidget(_barra(tema: temaMaterialOscuro, enMarcha: false));
+    await t.pumpWidget(_barra(tema: _temaOnda, enMarcha: false));
     await t.pump(const Duration(seconds: 1));
     await t.pump(const Duration(seconds: 1));
 
@@ -109,7 +127,7 @@ void main() {
   testWidgets('el modo rendimiento apaga la onda aunque esté sonando',
       (t) async {
     modoRendimiento.value = true;
-    await t.pumpWidget(_barra(tema: temaMaterialOscuro, enMarcha: true));
+    await t.pumpWidget(_barra(tema: _temaOnda, enMarcha: true));
     await t.pump(const Duration(seconds: 1));
     await t.pump(const Duration(seconds: 1));
 
@@ -119,13 +137,13 @@ void main() {
   testWidgets('al acabar la canción, la barra vuelve andando, no de golpe',
       (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 999));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 999));
     await t.pump(const Duration(milliseconds: 100));
     expect(_fraccionPintada(t), greaterThan(0.99),
         reason: 'queda 1 ms: la barra ya está al final, interpolando');
 
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 0));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 0));
     await t.pump(const Duration(milliseconds: 16));
 
     expect(
@@ -143,14 +161,14 @@ void main() {
   testWidgets('al cambiar de canción la barra rebobina suave, no popea',
       (t) async {
     await t.pumpWidget(_barra(
-        tema: temaMaterialOscuro, enMarcha: true, valor: 600, clavePista: 'a'));
+        tema: _temaOnda, enMarcha: true, valor: 600, clavePista: 'a'));
     await t.pump(const Duration(milliseconds: 100));
     expect(_fraccionPintada(t), greaterThan(0.5),
         reason: 'la canción anterior va por la mitad');
 
     // Canción nueva que empieza de cero: es el "popeo" del downbar.
     await t.pumpWidget(_barra(
-        tema: temaMaterialOscuro, enMarcha: true, valor: 0, clavePista: 'b'));
+        tema: _temaOnda, enMarcha: true, valor: 0, clavePista: 'b'));
     await t.pump(const Duration(milliseconds: 16));
 
     expect(
@@ -168,11 +186,11 @@ void main() {
   testWidgets('un salto hacia atrás normal no dispara el rebobinado',
       (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: false, valor: 600));
+        _barra(tema: _temaOnda, enMarcha: false, valor: 600));
     await t.pump(const Duration(milliseconds: 400));
 
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: false, valor: 100));
+        _barra(tema: _temaOnda, enMarcha: false, valor: 100));
     await t.pump(const Duration(milliseconds: 16));
 
     expect(
@@ -187,7 +205,7 @@ void main() {
       'si el progreso cae a 0 antes de cambiar el URI, rebobina igual',
       (t) async {
     await t.pumpWidget(_barra(
-        tema: temaMaterialOscuro,
+        tema: _temaOnda,
         enMarcha: true,
         valor: 600,
         clavePista: 'misma'));
@@ -196,7 +214,7 @@ void main() {
 
     // El reproductor pone 0 y sigue el mismo URI un fotograma.
     await t.pumpWidget(_barra(
-        tema: temaMaterialOscuro,
+        tema: _temaOnda,
         enMarcha: true,
         valor: 0,
         clavePista: 'misma'));
@@ -212,7 +230,7 @@ void main() {
 
   testWidgets('al pasar el ratón la onda se ensancha', (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: false, valor: 400));
+        _barra(tema: _temaOnda, enMarcha: false, valor: 400));
     await t.pump();
     expect(_sobrePintada(t), 0);
 
@@ -234,7 +252,7 @@ void main() {
 
   testWidgets('al 100 % el pulgar no traspasa el final', (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: false, valor: 1000));
+        _barra(tema: _temaOnda, enMarcha: false, valor: 1000));
     await t.pump(const Duration(milliseconds: 400));
 
     final pintado = t.widget<CustomPaint>(
@@ -258,7 +276,7 @@ void main() {
   testWidgets('sonando, la barra avanza sola aunque el valor no cambie',
       (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 0));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 0));
     await t.pump();
     expect(_fraccionPintada(t), closeTo(0, 0.001));
 
@@ -274,12 +292,12 @@ void main() {
 
   testWidgets('un recálculo pequeño no hace saltar la barra', (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 0));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 0));
     await t.pump(const Duration(milliseconds: 250));
     final antes = _fraccionPintada(t);
 
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 200));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 200));
     await t.pump();
 
     expect(
@@ -292,11 +310,11 @@ void main() {
 
   testWidgets('un seek de verdad sí coloca la barra al momento', (t) async {
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 0));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 0));
     await t.pump(const Duration(milliseconds: 100));
 
     await t.pumpWidget(
-        _barra(tema: temaMaterialOscuro, enMarcha: true, valor: 800));
+        _barra(tema: _temaOnda, enMarcha: true, valor: 800));
     await t.pump();
 
     expect(
@@ -310,7 +328,7 @@ void main() {
     final saltos = <double>[];
     await t.pumpWidget(
       MaterialApp(
-        theme: construirThemeData(temaMaterialOscuro),
+        theme: construirThemeData(_temaOnda),
         home: Scaffold(
           body: Center(
             child: SizedBox(
@@ -377,7 +395,7 @@ void main() {
     }
 
     testWidgets('no agenda ticks en temas de barra plana aunque suene', (t) async {
-      for (final tema in [temaNeoFyNocturno, temaLiquidGlass]) {
+      for (final tema in [temaNeoFyNocturno, temaNeoFyClaro]) {
         await t.pumpWidget(barraCon(tema: tema, enMarcha: true));
         await t.pump(const Duration(milliseconds: 200));
         expect(t.hasRunningAnimations, isFalse, reason: tema.nombre);
@@ -390,7 +408,7 @@ void main() {
 
       modoRendimiento.value = false;
       await t.pumpWidget(barraCon(
-        tema: temaMaterialOscuro,
+        tema: _temaOnda,
         enMarcha: true,
         maximo: 180000,
       ));
@@ -404,7 +422,7 @@ void main() {
 
     testWidgets('detiene la animación con TickerMode desactivado', (t) async {
       await t.pumpWidget(barraCon(
-        tema: temaMaterialOscuro,
+        tema: _temaOnda,
         enMarcha: true,
         tickersActivos: false,
       ));
@@ -412,7 +430,7 @@ void main() {
       expect(t.hasRunningAnimations, isFalse);
 
       await t.pumpWidget(barraCon(
-        tema: temaMaterialOscuro,
+        tema: _temaOnda,
         enMarcha: true,
         tickersActivos: true,
       ));

@@ -106,46 +106,26 @@ Future<void> main(List<String> args) async {
   runApp(SpotifyNativeApp(config: config, temas: temas));
 }
 
-class SpotifyNativeApp extends StatefulWidget {
+class SpotifyNativeApp extends StatelessWidget {
   const SpotifyNativeApp({super.key, required this.config, required this.temas});
 
   final AppConfig config;
   final TemaStore temas;
 
   @override
-  State<SpotifyNativeApp> createState() => _SpotifyNativeAppState();
-}
-
-class _SpotifyNativeAppState extends State<SpotifyNativeApp> {
-  @override
-  void initState() {
-    super.initState();
-    widget.temas.vigilarLaCarpeta();
-  }
-
-  @override
-  void dispose() {
-    widget.temas.dejarDeVigilar();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.temas, modoPreview]),
+      animation: Listenable.merge([temas, modoPreview]),
       builder: (context, _) => MaterialApp(
         title: nombreVentanaNeoFy(preview: modoPreview.value),
         debugShowCheckedModeBanner: false,
-        theme: widget.temas.themeDataClaro,
-        darkTheme: widget.temas.themeDataOscuro,
-        themeMode: widget.temas.modo,
-        // Sin esto, cambiar un color con el diálogo de Temas abierto
-        // revienta: AnimatedTheme notifica a overlays que ya no son
-        // descendientes (assertion en framework.dart).
+        theme: temas.themeDataClaro,
+        darkTheme: temas.themeDataOscuro,
+        themeMode: temas.modo,
         themeAnimationDuration: Duration.zero,
         builder: (context, hijo) =>
             FondoDelTema(child: hijo ?? const SizedBox.shrink()),
-        home: RootScreen(config: widget.config, temas: widget.temas),
+        home: RootScreen(config: config, temas: temas),
       ),
     );
   }
@@ -192,8 +172,11 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     obtenerUserId: () => _player.currentUserId,
     onReauth: _reauth,
   );
-  late final ArtistasFavoritosStore _favoritos =
-      ArtistasFavoritosStore()..cargar();
+  late final ArtistasFavoritosStore _favoritos = ArtistasFavoritosStore(
+    api: _api,
+    auth: _auth,
+    onReauth: _reauth,
+  );
   late final HomeStore _home = HomeStore(api: _api, auth: _auth);
   late final CarpetasStore _carpetas = CarpetasStore()..cargar();
   final UltimaReproduccionStore _memoria = UltimaReproduccionStore();
@@ -442,6 +425,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     await _librespot.start();
 
     unawaited(_cargarCuenta(generacion));
+    unawaited(_favoritos.cargar());
     _player.start();
     unawaited(_waitForDevice(generacion));
   }
@@ -580,6 +564,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Future<void> _reauth() async {
     try {
       await _auth.login();
+      unawaited(_favoritos.cargar(forzar: true));
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -823,6 +808,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
           _ytPlayer = null;
           _player.olvidarDispositivo();
           await _auth.logout();
+          _favoritos.limpiar();
           await _smtc.stop();
           _sessionStarted = false;
           if (mounted) setState(() {});

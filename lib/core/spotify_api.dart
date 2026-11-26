@@ -369,6 +369,66 @@ class SpotifyApi {
     return j.isNotEmpty && j.first == true;
   }
 
+  Future<({List<Artist> items, String? nextAfter})> followedArtists({
+    int limit = 50,
+    String? after,
+  }) async {
+    final j = await _request(
+      'GET',
+      '/me/following',
+      query: {
+        'type': 'artist',
+        'limit': '${limit.clamp(1, 50)}',
+        if (after != null && after.isNotEmpty) 'after': after,
+      },
+    ) as Map<String, dynamic>;
+    final artists = j['artists'] as Map<String, dynamic>?;
+    final raw = (artists?['items'] as List<dynamic>?) ?? const [];
+    final items = raw
+        .map((a) => Artist.fromJson(a as Map<String, dynamic>?))
+        .whereType<Artist>()
+        .where((a) => a.id.isNotEmpty)
+        .toList();
+    final cursors = artists?['cursors'] as Map<String, dynamic>?;
+    final cursorAfter = cursors?['after'] as String?;
+    final tieneMas = artists?['next'] != null &&
+        cursorAfter != null &&
+        cursorAfter.isNotEmpty;
+    return (items: items, nextAfter: tieneMas ? cursorAfter : null);
+  }
+
+  Future<void> followArtist(String id) {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    return _request(
+      'PUT',
+      '/me/following',
+      query: {'type': 'artist', 'ids': artistId},
+    );
+  }
+
+  Future<void> unfollowArtist(String id) {
+    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
+    return _request(
+      'DELETE',
+      '/me/following',
+      query: {'type': 'artist', 'ids': artistId},
+    );
+  }
+
+  Future<List<bool>> isFollowingArtists(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final limpios = [
+      for (final id in ids)
+        id.startsWith('spotify:artist:') ? id.substring(15) : id,
+    ];
+    final j = await _request(
+      'GET',
+      '/me/following/contains',
+      query: {'type': 'artist', 'ids': limpios.join(',')},
+    ) as List<dynamic>;
+    return j.map((e) => e == true).toList();
+  }
+
   Future<Map<String, dynamic>> _listaConTope(
     String path,
     int limit, [

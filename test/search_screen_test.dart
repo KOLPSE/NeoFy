@@ -122,7 +122,7 @@ void main() {
       auth: _FakeAuth(),
       obtenerUserId: () => player.currentUserId,
     );
-    favoritos = ArtistasFavoritosStore();
+    favoritos = ArtistasFavoritosStore(api: api, auth: _FakeAuth());
     // Sin arrancar: ready es false, así que con la caja vacía la pantalla
     // enseña el hint clásico en vez del Top 50.
     sidecar = MetadataSidecar(localeEfectivo: () => 'es_ES');

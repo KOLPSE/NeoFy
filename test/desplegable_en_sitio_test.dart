@@ -7,7 +7,7 @@ import 'package:neofy/ui/desplegable_en_sitio.dart';
 
 Widget _app({required Widget child}) {
   return MaterialApp(
-    theme: construirThemeData(temaMaterialOscuro),
+    theme: construirThemeData(temaNeoFyNocturno),
     home: Scaffold(body: child),
   );
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -34,6 +35,13 @@ import 'package:neofy/ui/shell.dart';
 class _ConfigPrueba extends AppConfig {
   @override
   Future<void> save() async {}
+}
+
+class _AuthPrueba extends SpotifyAuth {
+  _AuthPrueba(super.config);
+
+  @override
+  bool hasScope(String scope) => true;
 }
 
 class _ApiFalsa extends SpotifyApi {
@@ -158,12 +166,12 @@ void main() {
       addTearDown(() => t.binding.setSurfaceSize(null));
 
       final config = _ConfigPrueba();
-      final auth = SpotifyAuth(config);
+      final auth = _AuthPrueba(config);
       final api = _ApiFalsa(auth);
       final player = PlayerController(api, config);
       final dir = Directory.systemTemp;
       final likes = LikedStore(api: api, auth: auth, directorio: dir);
-      final favoritos = ArtistasFavoritosStore(directorio: dir);
+      final favoritos = ArtistasFavoritosStore(api: api, auth: auth);
       final sidecar = _SidecarFalso();
       final letras = LetrasService(
         cliente: MockClient(
@@ -314,12 +322,39 @@ void main() {
       expect(find.text('Vista previa de la letra'), findsOneWidget);
       expect(find.text('Todo lo que vimos se nos fue'), findsOneWidget);
 
-      // Compartir está entre el título y el corazón.
+      // Copiar enlace está entre el título y el corazón, y anima a check y vuelve.
+      String? copiadoPortapapeles;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copiadoPortapapeles =
+                  (call.arguments as Map<dynamic, dynamic>)['text'] as String?;
+            }
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
       final tituloBox = t.getRect(find.text('Cero'));
-      final shareBox = t.getRect(find.byTooltip('Compartir canción'));
+      final copyFinder = find.byTooltip('Copiar enlace de la canción');
+      final shareBox = t.getRect(copyFinder);
       final heartBox = t.getRect(find.byType(LikeButton));
       expect(shareBox.left, greaterThan(tituloBox.right - 1));
       expect(shareBox.right, lessThanOrEqualTo(heartBox.left + 1));
+
+      await t.tap(copyFinder);
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 250));
+      expect(copiadoPortapapeles, 'https://open.spotify.com/track/cero1');
+      expect(find.byTooltip('Enlace copiado'), findsOneWidget);
+      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+
+      await t.pump(const Duration(milliseconds: 1600));
+      await t.pumpAndSettle();
+      expect(find.byTooltip('Copiar enlace de la canción'), findsOneWidget);
+      expect(find.byIcon(Icons.copy_rounded), findsOneWidget);
 
       // Desplegar un poco la vista previa de la letra inline
       await t.tap(find.byTooltip('Desplegar un poco la letra'));
@@ -397,7 +432,7 @@ void main() {
       addTearDown(() => t.binding.setSurfaceSize(null));
 
       final config = _ConfigPrueba();
-      final auth = SpotifyAuth(config);
+      final auth = _AuthPrueba(config);
       final api = _ApiFalsa(auth);
       final player = PlayerController(api, config);
       final temas = TemaStore(config);
@@ -409,7 +444,7 @@ void main() {
         auth: auth,
         obtenerUserId: () => null,
       );
-      final favoritos = ArtistasFavoritosStore(directorio: dir);
+      final favoritos = ArtistasFavoritosStore(api: api, auth: auth);
       final carpetas = CarpetasStore(directorio: dir);
       final home = _InicioFalso(api: api, auth: auth);
       final sidecar = _SidecarFalso();
@@ -466,6 +501,40 @@ void main() {
 
       // En escritorio arranca desplegado (312 px) y con el botón Ocultar panel.
       expect(find.byTooltip('Ocultar panel'), findsOneWidget);
+      expect(t.getSize(find.byType(RightSidebar)).width, 312);
+
+      // Redimensionar sidebar izquierdo y derecho arrastrando y restablecer con doble clic.
+      final sepIzq = find.byKey(const ValueKey('separador-sidebar-izq'));
+      final sepDer = find.byKey(const ValueKey('separador-sidebar-der'));
+      expect(sepIzq, findsOneWidget);
+      expect(sepDer, findsOneWidget);
+
+      final xIzqInicial = t.getCenter(sepIzq).dx;
+      await t.drag(sepIzq, const Offset(60, 0));
+      await t.pumpAndSettle();
+      expect(t.getCenter(sepIzq).dx, greaterThan(xIzqInicial + 20));
+      expect(settings.anchoSidebarIzquierdo, isNotNull);
+
+      await t.drag(sepDer, const Offset(-70, 0));
+      await t.pumpAndSettle();
+      final anchoDerTrasArrastre = t.getSize(find.byType(RightSidebar)).width;
+      expect(anchoDerTrasArrastre, greaterThan(330));
+      expect(settings.anchoSidebarDerecho, closeTo(anchoDerTrasArrastre, 2));
+
+      // Doble clic en ambos separadores restablece a los valores por defecto.
+      final posIzq = t.getCenter(sepIzq);
+      await t.tapAt(posIzq);
+      await t.pump(const Duration(milliseconds: 40));
+      await t.tapAt(posIzq);
+      await t.pumpAndSettle();
+      expect(settings.anchoSidebarIzquierdo, isNull);
+
+      final posDer = t.getCenter(sepDer);
+      await t.tapAt(posDer);
+      await t.pump(const Duration(milliseconds: 40));
+      await t.tapAt(posDer);
+      await t.pumpAndSettle();
+      expect(settings.anchoSidebarDerecho, isNull);
       expect(t.getSize(find.byType(RightSidebar)).width, 312);
 
       // Plegar desde el botón [>|]

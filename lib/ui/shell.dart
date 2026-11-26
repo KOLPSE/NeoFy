@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -67,6 +68,13 @@ typedef _Ruta = ({
   Artist? albumOrigin,
   Podcast? podcast,
 });
+
+const double kAnchoMinSidebarIzq = 200;
+const double kAnchoMaxSidebarIzq = 420;
+const double kAnchoMinSidebarDer = 260;
+const double kAnchoMaxSidebarDer = 480;
+const double kAnchoDefectoSidebarDer = 312;
+const double kAnchoMinCentro = 360;
 
 bool hayQuePedirMas({
   required bool quedanPaginas,
@@ -144,6 +152,8 @@ class _AppShellState extends State<AppShell> {
   bool _letraAbierta = false;
   bool _sidebarDerechoExpandido = false;
   bool _sidebarDerechoAbiertoEnEstrecho = false;
+  double? _anchoIzqDrag;
+  double? _anchoDerDrag;
   late final LetrasService _letras = LetrasService();
   late final TemporizadorApagado _temporizador = TemporizadorApagado(
     widget.player,
@@ -177,6 +187,11 @@ class _AppShellState extends State<AppShell> {
     ]);
     _scroll.addListener(_onScroll);
     unawaited(_loadMore());
+    if (widget.favoritos.canRead &&
+        !widget.favoritos.cargado &&
+        !widget.favoritos.cargando) {
+      unawaited(widget.favoritos.cargar());
+    }
   }
 
   @override
@@ -468,218 +483,352 @@ class _AppShellState extends State<AppShell> {
     final hayCristal = estilo.hayCristal;
     final nocturno = estilo.usaInterfazNocturna;
     final colores = Theme.of(context).colorScheme;
-    return Scaffold(
-      body: Column(
-        children: [
-          if (nocturno) _barraSuperior(context),
-          Expanded(
-            child: AnimatedBuilder(
-              animation: widget.settings,
-              builder: (context, _) => LayoutBuilder(
-                builder: (context, constraints) {
-                final enColumna = constraints.maxWidth >= 980;
-                final enModoCola = _colaAbierta;
-                final expandido = _sidebarDerechoExpandido;
-                final plegado = expandido
-                    ? true
-                    : enColumna
-                    ? (widget.settings.sidebarDerechoPlegado && !enModoCola)
-                    : (!enModoCola && !_sidebarDerechoAbiertoEnEstrecho);
-                final flotandoEnEstrecho = !enColumna && !plegado && !expandido;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        if ((event.buttons & kBackMouseButton) != 0) {
+          if (_historial.isNotEmpty) _recorrer(_historial, _adelante);
+        } else if ((event.buttons & kForwardMouseButton) != 0) {
+          if (_adelante.isNotEmpty) _recorrer(_adelante, _historial);
+        }
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            if (nocturno) _barraSuperior(context),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: widget.settings,
+                builder: (context, _) => LayoutBuilder(
+                  builder: (context, constraints) {
+                  final enColumna = constraints.maxWidth >= 980;
+                  final enModoCola = _colaAbierta;
+                  final expandido = _sidebarDerechoExpandido;
+                  final plegado = expandido
+                      ? true
+                      : enColumna
+                      ? (widget.settings.sidebarDerechoPlegado && !enModoCola)
+                      : (!enModoCola && !_sidebarDerechoAbiertoEnEstrecho);
+                  final flotandoEnEstrecho = !enColumna && !plegado && !expandido;
 
-                final contenido = Padding(
-                  padding: nocturno
-                      ? const EdgeInsets.fromLTRB(8, 4, 8, 6)
-                      : EdgeInsets.zero,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _panelLateral(
-                        hayCristal,
-                        AnimatedBuilder(
-                          animation: _escuchaSidebar,
-                          builder: (context, _) => _EscuchaReproductor(
-                            player: widget.player,
-                            builder: (context, playingContextUri, sinPremium) =>
-                                _Sidebar(
-                                  playlists: _playlists,
-                                  carpetas: widget.carpetas.carpetas,
-                                  carpetasPlegadas: _carpetasPlegadas,
-                                  scroll: _scroll,
-                                  loading: _loading,
-                                  error: _error,
-                                  view: _view,
-                                  selected: _selected,
-                                  expanded: _playlistsExpanded,
-                                  artistasFavoritos: widget.favoritos.artistas,
-                                  artistasExpanded: _artistasExpanded,
-                                  artistaSeleccionado: _view == _View.artist
-                                      ? _artista
-                                      : null,
-                                  playingContextUri: playingContextUri,
-                                  player: widget.player,
-                                  plegado: widget.settings.sidebarPlegado,
-                                  onTogglePlegado: () => unawaited(
-                                    widget.settings.setSidebarPlegado(
-                                      !widget.settings.sidebarPlegado,
+                  final izqPlegado = widget.settings.sidebarPlegado;
+                  final derVisibleEnColumna = !expandido && !flotandoEnEstrecho;
+                  final derExpandido = derVisibleEnColumna && !plegado;
+
+                  final anchoIzqDefecto = nocturno
+                      ? (constraints.maxWidth * .17)
+                          .clamp(_Sidebar.anchoExpandido, 320.0)
+                      : _Sidebar.anchoExpandido;
+                  final anchoIzqBase = _anchoIzqDrag ??
+                      widget.settings.anchoSidebarIzquierdo ??
+                      anchoIzqDefecto;
+                  final anchoDerBase = _anchoDerDrag ??
+                      widget.settings.anchoSidebarDerecho ??
+                      kAnchoDefectoSidebarDer;
+
+                  final anchoDerReserva = derVisibleEnColumna
+                      ? (plegado
+                          ? 24.0 + 8.0
+                          : anchoDerBase.clamp(
+                                  kAnchoMinSidebarDer, kAnchoMaxSidebarDer) +
+                              8.0)
+                      : 0.0;
+                  final maxIzqDisponible = math.max(
+                    kAnchoMinSidebarIzq,
+                    math.min(
+                      kAnchoMaxSidebarIzq,
+                      constraints.maxWidth - kAnchoMinCentro - anchoDerReserva - 24.0,
+                    ),
+                  );
+                  final anchoIzqEfectivo = anchoIzqBase.clamp(
+                    kAnchoMinSidebarIzq,
+                    maxIzqDisponible,
+                  );
+
+                  final izqReserva =
+                      (izqPlegado ? _Sidebar.anchoRail : anchoIzqEfectivo) + 8.0;
+                  final maxDerDisponible = math.max(
+                    kAnchoMinSidebarDer,
+                    math.min(
+                      kAnchoMaxSidebarDer,
+                      constraints.maxWidth - kAnchoMinCentro - izqReserva - 24.0,
+                    ),
+                  );
+                  final anchoDerEfectivo = derExpandido
+                      ? anchoDerBase.clamp(kAnchoMinSidebarDer, maxDerDisponible)
+                      : kAnchoDefectoSidebarDer;
+
+                  final contenido = Padding(
+                    padding: nocturno
+                        ? const EdgeInsets.fromLTRB(8, 4, 8, 6)
+                        : EdgeInsets.zero,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _panelLateral(
+                          hayCristal,
+                          AnimatedBuilder(
+                            animation: _escuchaSidebar,
+                            builder: (context, _) => _EscuchaReproductor(
+                              player: widget.player,
+                              builder: (context, playingContextUri, sinPremium) =>
+                                  _Sidebar(
+                                    playlists: _playlists,
+                                    carpetas: widget.carpetas.carpetas,
+                                    carpetasPlegadas: _carpetasPlegadas,
+                                    scroll: _scroll,
+                                    loading: _loading,
+                                    error: _error,
+                                    view: _view,
+                                    selected: _selected,
+                                    expanded: _playlistsExpanded,
+                                    artistasFavoritos: widget.favoritos.artistas,
+                                    artistasPuedeLeer: widget.favoritos.canRead,
+                                    artistasCargando: widget.favoritos.cargando,
+                                    artistasError: widget.favoritos.error,
+                                    onReautorizarArtistas: widget.onReauth,
+                                    onReintentarArtistas: () => unawaited(
+                                      widget.favoritos.cargar(forzar: true),
                                     ),
+                                    artistasExpanded: _artistasExpanded,
+                                    artistaSeleccionado: _view == _View.artist
+                                        ? _artista
+                                        : null,
+                                    playingContextUri: playingContextUri,
+                                    player: widget.player,
+                                    plegado: izqPlegado,
+                                    anchoExpandidoPersonalizado: anchoIzqEfectivo,
+                                    onTogglePlegado: () => unawaited(
+                                      widget.settings.setSidebarPlegado(
+                                        !widget.settings.sidebarPlegado,
+                                      ),
+                                    ),
+                                    onToggleExpanded: () => setState(
+                                      () => _playlistsExpanded =
+                                          !_playlistsExpanded,
+                                    ),
+                                    onToggleArtistas: () => setState(
+                                      () =>
+                                          _artistasExpanded = !_artistasExpanded,
+                                    ),
+                                    onSelectArtista: _abrirArtista,
+                                    onToggleCarpeta: (id) => setState(() {
+                                      if (!_carpetasPlegadas.add(id)) {
+                                        _carpetasPlegadas.remove(id);
+                                      }
+                                    }),
+                                    onSelectView: _navegar,
+                                    onSelectPlaylist: (pl) =>
+                                        _navegar(_View.playlist, playlist: pl),
+                                    onLogout: widget.onLogout,
+                                    onCreatePlaylist: _crearPlaylist,
+                                    onCreateCarpeta: _crearCarpeta,
+                                    onDeletePlaylist: _borrarPlaylist,
+                                    onRenombrarCarpeta: _renombrarCarpeta,
+                                    onBorrarCarpeta: _borrarCarpeta,
+                                    onMoverPlaylist: _moverPlaylist,
+                                    ram: widget.ram,
+                                    settings: widget.settings,
+                                    temas: widget.temas,
+                                    updater: widget.updater,
+                                    onSalirParaActualizar:
+                                        widget.onSalirParaActualizar,
+                                    onReiniciarAudio: widget.onReiniciarAudio,
+                                    ytAuth: widget.ytAuth,
+                                    sinPremium: sinPremium,
                                   ),
-                                  onToggleExpanded: () => setState(
-                                    () => _playlistsExpanded =
-                                        !_playlistsExpanded,
-                                  ),
-                                  onToggleArtistas: () => setState(
-                                    () =>
-                                        _artistasExpanded = !_artistasExpanded,
-                                  ),
-                                  onSelectArtista: _abrirArtista,
-                                  onToggleCarpeta: (id) => setState(() {
-                                    if (!_carpetasPlegadas.add(id)) {
-                                      _carpetasPlegadas.remove(id);
-                                    }
-                                  }),
-                                  onSelectView: _navegar,
-                                  onSelectPlaylist: (pl) =>
-                                      _navegar(_View.playlist, playlist: pl),
-                                  onLogout: widget.onLogout,
-                                  onCreatePlaylist: _crearPlaylist,
-                                  onCreateCarpeta: _crearCarpeta,
-                                  onDeletePlaylist: _borrarPlaylist,
-                                  onRenombrarCarpeta: _renombrarCarpeta,
-                                  onBorrarCarpeta: _borrarCarpeta,
-                                  onMoverPlaylist: _moverPlaylist,
-                                  ram: widget.ram,
-                                  settings: widget.settings,
-                                  temas: widget.temas,
-                                  updater: widget.updater,
-                                  onSalirParaActualizar:
-                                      widget.onSalirParaActualizar,
-                                  onReiniciarAudio: widget.onReiniciarAudio,
-                                  ytAuth: widget.ytAuth,
-                                  sinPremium: sinPremium,
-                                ),
+                            ),
                           ),
                         ),
-                      ),
-                      if (nocturno)
-                        const SizedBox(width: 8)
-                      else if (!hayCristal)
-                        const VerticalDivider(width: 1),
-                      Expanded(
-                        key: const ValueKey('contenido'),
-                        child: Material(
-                          type: nocturno
-                              ? MaterialType.canvas
-                              : MaterialType.transparency,
-                          color: nocturno ? colores.surfaceContainer : null,
-                          shape: nocturno
-                              ? RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    estilo.radio,
+                        if (!izqPlegado)
+                          _SeparadorRedimensionable(
+                            key: const ValueKey('separador-sidebar-izq'),
+                            ancho: nocturno ? 8 : 6,
+                            lineaVisible: !nocturno && !hayCristal,
+                            onDragStart: () => setState(
+                              () => _anchoIzqDrag = anchoIzqEfectivo,
+                            ),
+                            onDragUpdate: (dx) => setState(() {
+                              final base = _anchoIzqDrag ?? anchoIzqEfectivo;
+                              _anchoIzqDrag = (base + dx).clamp(
+                                kAnchoMinSidebarIzq,
+                                maxIzqDisponible,
+                              );
+                            }),
+                            onDragEnd: () {
+                              final valor = _anchoIzqDrag;
+                              setState(() => _anchoIzqDrag = null);
+                              if (valor != null) {
+                                unawaited(
+                                  widget.settings.setAnchoSidebarIzquierdo(
+                                    valor,
                                   ),
-                                )
-                              : null,
-                          clipBehavior: nocturno ? Clip.antiAlias : Clip.none,
-                          child: expandido
-                              ? _panelDerecho(
-                                  plegado: false,
-                                  expandido: true,
-                                  enColumna: enColumna,
-                                )
-                              : _letraAbierta && nocturno
-                              ? ValueListenableBuilder<String?>(
-                                  valueListenable: widget.player.currentUri,
-                                  builder: (context, _, _) {
-                                    final track = widget.player.state.track;
-                                    if (track == null || track.isEpisode) {
-                                      return Center(
-                                        child: TextButton(
-                                          onPressed: _cerrarLetra,
-                                          child: const T('Volver al contenido'),
-                                        ),
-                                      );
-                                    }
-                                    return LyricsView(
-                                      key: ValueKey(track.uri),
-                                      track: track,
-                                      player: widget.player,
-                                      letrasService: _letras,
-                                      onClose: _cerrarLetra,
-                                    );
-                                  },
-                                )
-                              : _content(nocturno),
-                        ),
-                      ),
-                      if (!expandido && !flotandoEnEstrecho) ...[
-                        if (nocturno)
+                                );
+                              }
+                            },
+                            onDoubleTap: () {
+                              setState(() => _anchoIzqDrag = null);
+                              unawaited(
+                                widget.settings.setAnchoSidebarIzquierdo(null),
+                              );
+                            },
+                          )
+                        else if (nocturno)
                           const SizedBox(width: 8)
                         else if (!hayCristal)
                           const VerticalDivider(width: 1),
-                        _panelDerecho(
-                          plegado: plegado,
-                          expandido: false,
-                          enColumna: enColumna,
+                        Expanded(
+                          key: const ValueKey('contenido'),
+                          child: Material(
+                            type: nocturno
+                                ? MaterialType.canvas
+                                : MaterialType.transparency,
+                            color: nocturno ? colores.surfaceContainer : null,
+                            shape: nocturno
+                                ? RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      estilo.radio,
+                                    ),
+                                  )
+                                : null,
+                            clipBehavior: nocturno ? Clip.antiAlias : Clip.none,
+                            child: expandido
+                                ? _panelDerecho(
+                                    plegado: false,
+                                    expandido: true,
+                                    enColumna: enColumna,
+                                    anchoCompacto: anchoDerEfectivo,
+                                  )
+                                : _letraAbierta && nocturno
+                                ? ValueListenableBuilder<String?>(
+                                    valueListenable: widget.player.currentUri,
+                                    builder: (context, _, _) {
+                                      final track = widget.player.state.track;
+                                      if (track == null || track.isEpisode) {
+                                        return Center(
+                                          child: TextButton(
+                                            onPressed: _cerrarLetra,
+                                            child: const T('Volver al contenido'),
+                                          ),
+                                        );
+                                      }
+                                      return LyricsView(
+                                        key: ValueKey(track.uri),
+                                        track: track,
+                                        player: widget.player,
+                                        letrasService: _letras,
+                                        onClose: _cerrarLetra,
+                                      );
+                                    },
+                                  )
+                                : _content(nocturno),
+                          ),
                         ),
+                        if (derVisibleEnColumna) ...[
+                          if (derExpandido)
+                            _SeparadorRedimensionable(
+                              key: const ValueKey('separador-sidebar-der'),
+                              ancho: nocturno ? 8 : 6,
+                              lineaVisible: !nocturno && !hayCristal,
+                              onDragStart: () => setState(
+                                () => _anchoDerDrag = anchoDerEfectivo,
+                              ),
+                              onDragUpdate: (dx) => setState(() {
+                                final base = _anchoDerDrag ?? anchoDerEfectivo;
+                                _anchoDerDrag = (base - dx).clamp(
+                                  kAnchoMinSidebarDer,
+                                  maxDerDisponible,
+                                );
+                              }),
+                              onDragEnd: () {
+                                final valor = _anchoDerDrag;
+                                setState(() => _anchoDerDrag = null);
+                                if (valor != null) {
+                                  unawaited(
+                                    widget.settings.setAnchoSidebarDerecho(
+                                      valor,
+                                    ),
+                                  );
+                                }
+                              },
+                              onDoubleTap: () {
+                                setState(() => _anchoDerDrag = null);
+                                unawaited(
+                                  widget.settings.setAnchoSidebarDerecho(null),
+                                );
+                              },
+                            )
+                          else if (nocturno)
+                            const SizedBox(width: 8)
+                          else if (!hayCristal)
+                            const VerticalDivider(width: 1),
+                          _panelDerecho(
+                            plegado: plegado,
+                            expandido: false,
+                            enColumna: enColumna,
+                            anchoCompacto: anchoDerEfectivo,
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                );
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    contenido,
-                    if (flotandoEnEstrecho)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-                          child: TweenAnimationBuilder<double>(
-                            tween: Tween(begin: .06, end: 0),
-                            duration: _duracionPanel(context),
-                            curve: Curves.easeOutCubic,
-                            builder: (context, offset, child) =>
-                                FractionalTranslation(
-                                  translation: Offset(offset, 0),
-                                  child: child,
+                    ),
+                  );
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      contenido,
+                      if (flotandoEnEstrecho)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                            child: TweenAnimationBuilder<double>(
+                              tween: Tween(begin: .06, end: 0),
+                              duration: _duracionPanel(context),
+                              curve: Curves.easeOutCubic,
+                              builder: (context, offset, child) =>
+                                  FractionalTranslation(
+                                    translation: Offset(offset, 0),
+                                    child: child,
+                                  ),
+                              child: Material(
+                                elevation: 6,
+                                borderRadius: BorderRadius.circular(estilo.radio),
+                                clipBehavior: Clip.antiAlias,
+                                child: _panelDerecho(
+                                  plegado: false,
+                                  expandido: false,
+                                  enColumna: false,
+                                  anchoCompacto: kAnchoDefectoSidebarDer,
                                 ),
-                            child: Material(
-                              elevation: 6,
-                              borderRadius: BorderRadius.circular(estilo.radio),
-                              clipBehavior: Clip.antiAlias,
-                              child: _panelDerecho(
-                                plegado: false,
-                                expandido: false,
-                                enColumna: false,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                );
-                },
+                    ],
+                  );
+                  },
+                ),
               ),
             ),
-          ),
-          if (!hayCristal && !nocturno) const Divider(height: 1),
-          _panelInferior(
-            hayCristal,
-            NowPlayingBar(
-              player: widget.player,
-              librespot: widget.librespot,
-              likes: widget.likes,
-              home: widget.home,
-              onAbrirArtista: _abrirArtista,
-              colaAbierta: _colaAbierta,
-              letraAbierta: _letraAbierta,
-              onCola: nocturno ? _alternarCola : null,
-              onLetra: nocturno
-                  ? () => setState(() => _letraAbierta = !_letraAbierta)
-                  : null,
+            if (!hayCristal && !nocturno) const Divider(height: 1),
+            _panelInferior(
+              hayCristal,
+              NowPlayingBar(
+                player: widget.player,
+                librespot: widget.librespot,
+                likes: widget.likes,
+                home: widget.home,
+                onAbrirArtista: _abrirArtista,
+                colaAbierta: _colaAbierta,
+                letraAbierta: _letraAbierta,
+                onCola: nocturno ? _alternarCola : null,
+                onLetra: nocturno
+                    ? () => setState(() => _letraAbierta = !_letraAbierta)
+                    : null,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -759,6 +908,7 @@ class _AppShellState extends State<AppShell> {
     required bool plegado,
     required bool expandido,
     required bool enColumna,
+    required double anchoCompacto,
   }) {
     return AnimatedBuilder(
       animation: Listenable.merge([widget.player, widget.likes]),
@@ -780,6 +930,7 @@ class _AppShellState extends State<AppShell> {
           plegado: plegado,
           expandido: expandido,
           mostrarCola: _colaAbierta,
+          anchoCompacto: anchoCompacto,
           contextoTitulo: ctx.titulo,
           onAbrirContexto: ctx.onTap,
           onTogglePlegado: () {
@@ -1740,11 +1891,17 @@ class _Sidebar extends StatelessWidget {
     required this.selected,
     required this.expanded,
     required this.artistasFavoritos,
+    required this.artistasPuedeLeer,
+    required this.artistasCargando,
+    required this.artistasError,
+    required this.onReautorizarArtistas,
+    required this.onReintentarArtistas,
     required this.artistasExpanded,
     required this.artistaSeleccionado,
     required this.playingContextUri,
     required this.player,
     required this.plegado,
+    required this.anchoExpandidoPersonalizado,
     required this.onTogglePlegado,
     required this.onToggleExpanded,
     required this.onToggleArtistas,
@@ -1782,11 +1939,17 @@ class _Sidebar extends StatelessWidget {
   final Playlist? selected;
   final bool expanded;
   final List<Artist> artistasFavoritos;
+  final bool artistasPuedeLeer;
+  final bool artistasCargando;
+  final String? artistasError;
+  final Future<void> Function() onReautorizarArtistas;
+  final VoidCallback onReintentarArtistas;
   final bool artistasExpanded;
   final Artist? artistaSeleccionado;
   final String? playingContextUri;
   final PlayerController player;
   final bool plegado;
+  final double anchoExpandidoPersonalizado;
   final VoidCallback onTogglePlegado;
   final VoidCallback onToggleExpanded;
   final VoidCallback onToggleArtistas;
@@ -1825,9 +1988,7 @@ class _Sidebar extends StatelessWidget {
     final nocturno = EstiloNeoFy.de(context).usaInterfazNocturna;
     return _CajonLateral(
       plegado: plegado,
-      anchoExpandido: nocturno
-          ? (MediaQuery.sizeOf(context).width * .17).clamp(anchoExpandido, 320)
-          : anchoExpandido,
+      anchoExpandido: anchoExpandidoPersonalizado,
       expandidoBuilder: _contenidoExpandido,
       railBuilder: _contenidoRail,
       cabecera: nocturno ? _cabeceraBiblioteca(context) : null,
@@ -2066,8 +2227,8 @@ class _Sidebar extends StatelessWidget {
           children: [
             _CabeceraSeccion(
               label: EstiloNeoFy.de(context).usaInterfazNocturna
-                  ? 'Artistas favoritos'
-                  : 'TUS ARTISTAS FAVORITOS',
+                  ? 'Artistas seguidos'
+                  : 'TUS ARTISTAS SEGUIDOS',
               expanded: artistasExpanded,
               onTap: onToggleArtistas,
             ),
@@ -2078,8 +2239,13 @@ class _Sidebar extends StatelessWidget {
                 constraints: BoxConstraints(maxHeight: tope),
                 child: _ListaArtistasFavoritos(
                   artistas: artistasFavoritos,
+                  puedeLeer: artistasPuedeLeer,
+                  cargando: artistasCargando,
+                  error: artistasError,
                   seleccionado: artistaSeleccionado,
                   onSelect: onSelectArtista,
+                  onReautorizar: onReautorizarArtistas,
+                  onReintentar: onReintentarArtistas,
                 ),
               ),
               contenidoCerrado: const SizedBox.shrink(),
@@ -2217,7 +2383,7 @@ class _Sidebar extends StatelessWidget {
                 if (idx == 0) {
                   return const _SeparadorRail(
                     icono: Icons.person_outline,
-                    etiqueta: 'Artistas favoritos',
+                    etiqueta: 'Artistas seguidos',
                   );
                 }
                 idx--;
@@ -2225,7 +2391,7 @@ class _Sidebar extends StatelessWidget {
                   final a = artistas[idx];
                   return _CaratulaRail(
                     key: ValueKey('artista-${a.id}'),
-                    url: a.art,
+                    url: a.art ?? a.artGrande,
                     nombre: a.name,
                     redonda: true,
                     seleccionada:
@@ -2395,13 +2561,23 @@ class _EntradaPlaylist extends _EntradaSidebar {
 class _ListaArtistasFavoritos extends StatefulWidget {
   const _ListaArtistasFavoritos({
     required this.artistas,
+    required this.puedeLeer,
+    required this.cargando,
+    required this.error,
     required this.seleccionado,
     required this.onSelect,
+    required this.onReautorizar,
+    required this.onReintentar,
   });
 
   final List<Artist> artistas;
+  final bool puedeLeer;
+  final bool cargando;
+  final String? error;
   final Artist? seleccionado;
   final void Function(Artist) onSelect;
+  final Future<void> Function() onReautorizar;
+  final VoidCallback onReintentar;
 
   @override
   State<_ListaArtistasFavoritos> createState() =>
@@ -2431,11 +2607,69 @@ class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (!widget.puedeLeer) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            T(
+              'Inicia sesión de nuevo para sincronizar tus artistas seguidos.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => unawaited(widget.onReautorizar()),
+              child: const T('Conectar con Spotify'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (widget.cargando && widget.artistas.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (widget.error != null && widget.artistas.isEmpty) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            T(
+              'No se pudieron cargar tus artistas seguidos.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: widget.onReintentar,
+              child: const T('Reintentar'),
+            ),
+          ],
+        ),
+      );
+    }
     if (widget.artistas.isEmpty) {
-      return Padding(
+      return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
         child: T(
-          'Tus artistas favoritos se guardan aquí.',
+          'Los artistas que sigas en Spotify aparecerán aquí.',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -2468,6 +2702,7 @@ class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
               itemCount: filas.length,
               itemBuilder: (context, i) {
                 final a = filas[i];
+                final url = a.art ?? a.artGrande;
                 return EntradaDeLista(
                   key: ValueKey(a.id),
                   animar: !_primeraPasada && !_yaVistos.contains(a.id),
@@ -2475,7 +2710,12 @@ class _ListaArtistasFavoritosState extends State<_ListaArtistasFavoritos> {
                     dense: true,
                     visualDensity: VisualDensity.compact,
                     selected: widget.seleccionado?.id == a.id,
-                    leading: ArtImage(url: a.art, size: 28, radius: 14),
+                    leading: ArtImage(
+                      url: url,
+                      urlGrande: a.artGrande ?? url,
+                      size: 28,
+                      radius: 14,
+                    ),
                     title: Text(
                       a.name,
                       maxLines: 1,
@@ -2964,6 +3204,80 @@ class _CaratulaRail extends StatelessWidget {
                       ),
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SeparadorRedimensionable extends StatefulWidget {
+  const _SeparadorRedimensionable({
+    super.key,
+    required this.ancho,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+    required this.onDoubleTap,
+    this.lineaVisible = false,
+  });
+
+  final double ancho;
+  final VoidCallback onDragStart;
+  final void Function(double deltaX) onDragUpdate;
+  final VoidCallback onDragEnd;
+  final VoidCallback onDoubleTap;
+  final bool lineaVisible;
+
+  @override
+  State<_SeparadorRedimensionable> createState() =>
+      _SeparadorRedimensionableState();
+}
+
+class _SeparadorRedimensionableState extends State<_SeparadorRedimensionable> {
+  bool _encima = false;
+  bool _arrastrando = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final activo = _encima || _arrastrando;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _encima = true),
+      onExit: (_) => setState(() => _encima = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) {
+          setState(() => _arrastrando = true);
+          widget.onDragStart();
+        },
+        onHorizontalDragUpdate: (d) => widget.onDragUpdate(d.delta.dx),
+        onHorizontalDragEnd: (_) {
+          setState(() => _arrastrando = false);
+          widget.onDragEnd();
+        },
+        onHorizontalDragCancel: () {
+          setState(() => _arrastrando = false);
+          widget.onDragEnd();
+        },
+        onDoubleTap: widget.onDoubleTap,
+        child: SizedBox(
+          width: widget.ancho,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: activo ? 3 : (widget.lineaVisible ? 1 : 0),
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: activo
+                    ? colores.primary.withValues(alpha: 0.75)
+                    : (widget.lineaVisible
+                        ? colores.outlineVariant
+                        : Colors.transparent),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),

@@ -499,7 +499,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ArtistFavoriteButton(
             favoritos: widget.favoritos,
             artista: a,
-            size: 18,
+            compacto: true,
           ),
           Icon(
             Icons.chevron_right,

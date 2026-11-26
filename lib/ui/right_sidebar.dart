@@ -17,6 +17,7 @@ import '../core/spotify_api.dart';
 import '../core/temas.dart';
 import '../core/temporizador_apagado.dart';
 import 'art_image.dart';
+import 'artist_favorite_button.dart';
 import 'like_button.dart';
 import 'linea_de_artistas.dart';
 import 'queue_screen.dart';
@@ -316,9 +317,9 @@ class _RightSidebarState extends State<RightSidebar> {
     return 'https://open.spotify.com/$tipo/$id';
   }
 
-  Future<void> _copiarEnlace(Track track) async {
+  Future<void> _copiarEnlace(Track track, {bool notificar = true}) async {
     await Clipboard.setData(ClipboardData(text: _enlaceSpotify(track)));
-    _notificar('Enlace copiado al portapapeles');
+    if (notificar) _notificar('Enlace copiado al portapapeles');
   }
 
   Future<void> _copiarTituloYArtista(Track track) async {
@@ -1099,34 +1100,9 @@ class _RightSidebarState extends State<RightSidebar> {
           ),
         ),
         const SizedBox(width: 6),
-        PopupMenuButton<String>(
-          tooltip: 'Compartir canción',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-          icon: Icon(
-            Icons.ios_share_rounded,
-            size: 19,
-            color: colores.onSurfaceVariant,
-          ),
-          onSelected: (accion) {
-            if (accion == 'enlace') unawaited(_copiarEnlace(track));
-            if (accion == 'texto') unawaited(_copiarTituloYArtista(track));
-            if (accion == 'abrir') unawaited(_abrirEnSpotify(track));
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: 'enlace',
-              child: T('Copiar enlace de Spotify'),
-            ),
-            PopupMenuItem(
-              value: 'texto',
-              child: T('Copiar título y artista'),
-            ),
-            PopupMenuItem(
-              value: 'abrir',
-              child: T('Abrir en Spotify'),
-            ),
-          ],
+        _BotonCopiarEnlace(
+          trackUri: track.uri,
+          onCopiar: () => _copiarEnlace(track, notificar: false),
         ),
         if (!track.isEpisode && track.uri.isNotEmpty) ...[
           const SizedBox(width: 2),
@@ -1351,7 +1327,6 @@ class _RightSidebarState extends State<RightSidebar> {
       followers: fallback?.followers ?? 0,
       biografia: rawBio.isNotEmpty ? rawBio : null,
     );
-    final siguiendo = widget.favoritos.esFavorito(principal.id);
 
     final subtituloOyentes = info?.oyentesMensuales != null
         ? '${formatearOyentesMensuales(info!.oyentesMensuales!)} oyentes mensuales'
@@ -1463,7 +1438,11 @@ class _RightSidebarState extends State<RightSidebar> {
                           : const SizedBox.shrink(),
                     ),
                     const SizedBox(width: 8),
-                    _botonSeguir(artistaParaSeguir, siguiendo),
+                    ArtistFavoriteButton(
+                      favoritos: widget.favoritos,
+                      artista: artistaParaSeguir,
+                      compacto: true,
+                    ),
                   ],
                 ),
                 if (textoBio.isNotEmpty) ...[
@@ -1488,33 +1467,6 @@ class _RightSidebarState extends State<RightSidebar> {
             ),
           ),
         ],
-        ),
-      ),
-    );
-  }
-
-  Widget _botonSeguir(Artist artista, bool siguiendo) {
-    final colores = Theme.of(context).colorScheme;
-    return OutlinedButton(
-      onPressed: () => unawaited(widget.favoritos.toggle(artista)),
-      style: OutlinedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        minimumSize: const Size(0, 30),
-        side: BorderSide(
-          color: siguiendo ? colores.outline : colores.onSurfaceVariant,
-        ),
-        shape: const StadiumBorder(),
-        backgroundColor: siguiendo
-            ? colores.surfaceContainerHighest.withValues(alpha: 0.35)
-            : null,
-      ),
-      child: Text(
-        siguiendo ? 'Siguiendo' : 'Seguir',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: colores.onSurface,
         ),
       ),
     );
@@ -1579,8 +1531,6 @@ class _RightSidebarState extends State<RightSidebar> {
   Widget _filaCredito(CreditoPista persona, {bool enDialogo = false}) {
     final tema = Theme.of(context);
     final colores = tema.colorScheme;
-    final siguiendo =
-        persona.tienePerfil && widget.favoritos.esFavorito(persona.artistaId);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1619,7 +1569,11 @@ class _RightSidebarState extends State<RightSidebar> {
         ),
         if (persona.tienePerfil) ...[
           const SizedBox(width: 8),
-          _botonSeguir(persona.comoArtista, siguiendo),
+          ArtistFavoriteButton(
+            favoritos: widget.favoritos,
+            artista: persona.comoArtista,
+            compacto: true,
+          ),
         ],
       ],
     );
@@ -1971,4 +1925,97 @@ class _IconoComprimirDerechaPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _IconoComprimirDerechaPainter old) =>
       old.color != color;
+}
+
+class _BotonCopiarEnlace extends StatefulWidget {
+  const _BotonCopiarEnlace({
+    required this.trackUri,
+    required this.onCopiar,
+  });
+
+  final String trackUri;
+  final Future<void> Function() onCopiar;
+
+  @override
+  State<_BotonCopiarEnlace> createState() => _BotonCopiarEnlaceState();
+}
+
+class _BotonCopiarEnlaceState extends State<_BotonCopiarEnlace> {
+  bool _copiado = false;
+  Timer? _temporizador;
+
+  @override
+  void didUpdateWidget(covariant _BotonCopiarEnlace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trackUri != widget.trackUri) {
+      _temporizador?.cancel();
+      _temporizador = null;
+      _copiado = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _temporizador?.cancel();
+    super.dispose();
+  }
+
+  void _alPulsar() {
+    unawaited(widget.onCopiar());
+    _temporizador?.cancel();
+    setState(() => _copiado = true);
+    _temporizador = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      setState(() => _copiado = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    final sinAnimar =
+        MediaQuery.disableAnimationsOf(context) || modoRendimiento.value;
+
+    return Tooltip(
+      message: _copiado ? 'Enlace copiado' : 'Copiar enlace de la canción',
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          style: IconButton.styleFrom(
+            backgroundColor: _copiado
+                ? colores.primary.withValues(alpha: 0.14)
+                : null,
+          ),
+          onPressed: _alPulsar,
+          icon: AnimatedSwitcher(
+            duration: sinAnimar
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => ScaleTransition(
+              scale: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _copiado
+                ? Icon(
+                    Icons.check_rounded,
+                    key: const ValueKey('copiado'),
+                    size: 18,
+                    color: colores.primary,
+                  )
+                : Icon(
+                    Icons.copy_rounded,
+                    key: const ValueKey('copiar'),
+                    size: 18,
+                    color: colores.onSurfaceVariant,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
 }
