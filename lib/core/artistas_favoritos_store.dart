@@ -28,7 +28,7 @@ class ArtistasFavoritosStore extends ChangeNotifier {
   bool _disposed = false;
 
   bool get canRead => auth.hasScope(kScopeFollowRead);
-  bool get canModify => auth.hasScope(kScopeFollowModify);
+  bool get canModify => auth.hasScope(kScopeLibraryModify);
   bool get cargando => _cargando;
   bool get cargado => _cargado;
   String? get error => _error;

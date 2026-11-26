@@ -397,34 +397,31 @@ class SpotifyApi {
     return (items: items, nextAfter: tieneMas ? cursorAfter : null);
   }
 
-  Future<void> followArtist(String id) {
-    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
-    return _request(
-      'PUT',
-      '/me/following',
-      query: {'type': 'artist', 'ids': artistId},
-    );
+  static String _artistUri(String id) {
+    final limpio = id.trim();
+    return limpio.startsWith('spotify:artist:')
+        ? limpio
+        : 'spotify:artist:$limpio';
   }
 
-  Future<void> unfollowArtist(String id) {
-    final artistId = id.startsWith('spotify:artist:') ? id.substring(15) : id;
-    return _request(
-      'DELETE',
-      '/me/following',
-      query: {'type': 'artist', 'ids': artistId},
-    );
-  }
+  Future<void> followArtist(String id) => _request(
+        'PUT',
+        '/me/library',
+        query: {'uris': _artistUri(id)},
+      );
+
+  Future<void> unfollowArtist(String id) => _request(
+        'DELETE',
+        '/me/library',
+        query: {'uris': _artistUri(id)},
+      );
 
   Future<List<bool>> isFollowingArtists(List<String> ids) async {
     if (ids.isEmpty) return const [];
-    final limpios = [
-      for (final id in ids)
-        id.startsWith('spotify:artist:') ? id.substring(15) : id,
-    ];
     final j = await _request(
       'GET',
-      '/me/following/contains',
-      query: {'type': 'artist', 'ids': limpios.join(',')},
+      '/me/library/contains',
+      query: {'uris': [for (final id in ids) _artistUri(id)].join(',')},
     ) as List<dynamic>;
     return j.map((e) => e == true).toList();
   }

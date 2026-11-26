@@ -10,6 +10,7 @@ import 'package:translator/translator.dart';
 import 'app_config.dart';
 import 'idiomas_spotify.dart';
 import 'models.dart';
+import 'traducciones_ui.dart';
 
 /// Traduce textos de la UI (español → idioma elegido) y biografías al vuelo.
 class Traductor extends ChangeNotifier {
@@ -198,16 +199,9 @@ class Traductor extends ChangeNotifier {
   );
 }
 
-/// Google confunde algunos términos de la app; aquí van fijados por idioma.
-String? traduccionUiFijada(String idioma, String texto) {
-  const porIdioma = {
-    'en': {
-      'Temas': 'Themes',
-      'Tema': 'Theme',
-    },
-  };
-  return porIdioma[idioma]?[texto];
-}
+/// Diccionario curado de la app; evita traducciones literales erróneas.
+String? traduccionUiFijada(String idioma, String texto) =>
+    buscarTraduccionUiFijada(idioma, texto);
 
 class TraductorScope extends InheritedNotifier<Traductor> {
   const TraductorScope({

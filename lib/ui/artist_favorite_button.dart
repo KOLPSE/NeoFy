@@ -77,6 +77,8 @@ class _ArtistFavoriteButtonState extends State<ArtistFavoriteButton> {
         'que volver a pasar por Spotify otra vez.',
       );
       if (!mounted) return;
+      final accion = await traducirTexto(context, 'Iniciar sesión');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 6),
@@ -84,7 +86,7 @@ class _ArtistFavoriteButtonState extends State<ArtistFavoriteButton> {
           action: reauth == null
               ? null
               : SnackBarAction(
-                  label: 'Iniciar sesión',
+                  label: accion,
                   onPressed: () => unawaited(reauth()),
                 ),
         ),

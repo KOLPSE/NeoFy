@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:neofy/core/app_config.dart';
 import 'package:neofy/core/artistas_favoritos_store.dart';
 import 'package:neofy/core/auth.dart';
@@ -10,7 +12,7 @@ import 'package:neofy/ui/artist_favorite_button.dart';
 class _AuthPrueba extends SpotifyAuth {
   _AuthPrueba({this.scopes = const {
     kScopeFollowRead,
-    kScopeFollowModify,
+    kScopeLibraryModify,
   }}) : super(AppConfig());
 
   Set<String> scopes;
@@ -20,6 +22,9 @@ class _AuthPrueba extends SpotifyAuth {
 
   @override
   bool hasScope(String scope) => scopes.contains(scope);
+
+  @override
+  Future<String> accessToken() async => 'fake-token';
 }
 
 class _ApiArtistasPrueba extends SpotifyApi {
@@ -189,5 +194,36 @@ void main() {
     await t.tap(find.text('Iniciar sesión'));
     await t.pumpAndSettle();
     expect(reauthCalls, 1);
+  });
+
+  test('SpotifyApi sigue, deja de seguir y consulta artistas via /v1/me/library',
+      () async {
+    final peticiones = <String>[];
+    final auth = _AuthPrueba();
+    final cliente = MockClient((req) async {
+      peticiones.add(
+        '${req.method} ${req.url.path}?uris=${req.url.queryParameters['uris']}',
+      );
+      if (req.url.path == '/v1/me/library/contains') {
+        return http.Response('[true, false]', 200,
+            headers: {'content-type': 'application/json'});
+      }
+      return http.Response('', 200);
+    });
+    final api = SpotifyApi(auth, cliente: cliente);
+    addTearDown(api.close);
+
+    await api.followArtist('abc');
+    await api.followArtist('spotify:artist:abc');
+    await api.unfollowArtist('abc');
+    final seguidos = await api.isFollowingArtists(['a1', 'spotify:artist:a2']);
+
+    expect(seguidos, [true, false]);
+    expect(peticiones, [
+      'PUT /v1/me/library?uris=spotify:artist:abc',
+      'PUT /v1/me/library?uris=spotify:artist:abc',
+      'DELETE /v1/me/library?uris=spotify:artist:abc',
+      'GET /v1/me/library/contains?uris=spotify:artist:a1,spotify:artist:a2',
+    ]);
   });
 }
