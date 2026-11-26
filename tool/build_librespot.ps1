@@ -21,6 +21,24 @@ function Limpiar-CacheCargo {
       }
     }
   }
+  $target = $env:CARGO_TARGET_DIR
+  if ($target -and (Test-Path $target)) {
+    Write-Host "Limpiando CARGO_TARGET_DIR corrupto en $target..."
+    $apartadoTarget = "$target.corrupt-$PID"
+    cmd /c "move `"$target`" `"$apartadoTarget`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
+    if (Test-Path $apartadoTarget) {
+      Remove-Item -LiteralPath $apartadoTarget -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $target) {
+      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $target) {
+      $env:CARGO_TARGET_DIR = "$target-$PID"
+      New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
+      Write-Host "Aislando CARGO_TARGET_DIR en $($env:CARGO_TARGET_DIR)"
+    }
+  }
 }
 
 $argsCargo = @(
