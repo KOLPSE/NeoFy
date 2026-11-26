@@ -64,7 +64,8 @@ try {
     Write-Host "`n=== Reintentando tras limpiar ephemeral y forzar precache de Windows ===" -ForegroundColor Yellow
     foreach ($d in @('windows\flutter\ephemeral', 'build\windows')) {
       if (Test-Path -LiteralPath $d) {
-        Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue
+        cmd /c "rmdir /s /q `"$d`" 2>nul"
+        $global:LASTEXITCODE = 0
       }
     }
     & $flutter precache --windows --force
