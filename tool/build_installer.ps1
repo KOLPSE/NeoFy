@@ -69,11 +69,9 @@ try {
       }
     }
     & $flutter precache --windows --force
-    $salidaVerbose = & $flutter build windows --release --verbose @definiciones 2>&1
+    & $flutter build windows --release --verbose @definiciones 2>&1 | ForEach-Object { Write-Host $_ }
     $codigoFlutter = $LASTEXITCODE
     if ($codigoFlutter -ne 0) {
-      Write-Host "`n=== Diagnóstico verbose de flutter build windows ===" -ForegroundColor Yellow
-      $salidaVerbose | Select-Object -Last 100 | ForEach-Object { Write-Host $_ }
       throw "Falló la compilación de Flutter (código $codigoFlutter)"
     }
   }

@@ -86,6 +86,32 @@ if (-not (Test-Path $completed)) {
     }
   }
 }
+
+$cacheDirSdk = Join-Path $sdkRoot 'bin\cache'
+$sdkCacheCorrupto = $false
+if (Test-Path -LiteralPath $cacheDirSdk) {
+  try {
+    Get-ChildItem -LiteralPath $cacheDirSdk -Recurse -ErrorAction Stop | Out-Null
+  } catch {
+    Write-Host "Caché corrupta dentro del SDK ($cacheDirSdk): $($_.Exception.Message)"
+    $sdkCacheCorrupto = $true
+  }
+}
+if ($sdkCacheCorrupto) {
+  $sufijoSdk = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID }
+  $apartadoSdk = "$toolsDir.corrupt-$sufijoSdk"
+  cmd /c "move `"$toolsDir`" `"$apartadoSdk`" 2>nul" | Out-Null
+  $global:LASTEXITCODE = 0
+  Limpiar-RutaRobusta $apartadoSdk
+  Limpiar-RutaRobusta $toolsDir
+  if (Test-Path -LiteralPath $toolsDir) {
+    $toolsDir = "$toolsDir-clean"
+    $sdkRoot = Join-Path $toolsDir 'flutter'
+    $completed = Join-Path $toolsDir 'sdk-ready'
+  }
+  Instalar-FlutterSdk
+}
+
 if ($env:PUB_CACHE) {
   $env:PUB_CACHE = [IO.Path]::GetFullPath($env:PUB_CACHE)
 } else {
