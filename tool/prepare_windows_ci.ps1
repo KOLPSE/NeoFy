@@ -27,6 +27,7 @@ function Instalar-FlutterSdk {
     Write-Host 'SDK descargado y verificado; extrayendo archivos.'
     & tar.exe -xf $archive -C $toolsDir
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $sdkRoot 'bin\flutter.bat'))) {
+      Remove-Item -LiteralPath $sdkRoot -Recurse -Force -ErrorAction SilentlyContinue
       throw 'No se pudo extraer el SDK de Flutter.'
     }
     [IO.File]::WriteAllText($completed, 'Flutter 3.44.6')
@@ -36,7 +37,32 @@ function Instalar-FlutterSdk {
 }
 
 if (-not (Test-Path $completed)) {
-  Instalar-FlutterSdk
+  $cleanDir = "$toolsDir-clean"
+  $cleanReady = Join-Path $cleanDir 'sdk-ready'
+  if (Test-Path $cleanReady) {
+    $toolsDir = $cleanDir
+    $sdkRoot = Join-Path $toolsDir 'flutter'
+    $completed = $cleanReady
+  } else {
+    if (Test-Path $toolsDir) {
+      Write-Host "Directorio $toolsDir incompleto sin sdk-ready; intentando apartarlo."
+      $sufijo = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { [DateTime]::UtcNow.ToString('yyyyMMddHHmmss') }
+      $corrupto = "$toolsDir.corrupt-$sufijo"
+      cmd /c "move `"$toolsDir`" `"$corrupto`" >nul 2>nul"
+      if (Test-Path $corrupto) {
+        Remove-Item -LiteralPath $corrupto -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      if (Test-Path $toolsDir) {
+        Write-Host "No se pudo mover $toolsDir; usando ruta limpia $cleanDir."
+        $toolsDir = $cleanDir
+        $sdkRoot = Join-Path $toolsDir 'flutter'
+        $completed = $cleanReady
+      }
+    }
+    if (-not (Test-Path $completed)) {
+      Instalar-FlutterSdk
+    }
+  }
 }
 if ($env:PUB_CACHE) {
   $env:PUB_CACHE = [IO.Path]::GetFullPath($env:PUB_CACHE)
