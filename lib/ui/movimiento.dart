@@ -24,15 +24,14 @@ class Pulsable extends StatefulWidget {
 
 class _PulsableState extends State<Pulsable>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _escala =
-      AnimationController.unbounded(vsync: this, value: 1);
+  AnimationController? _escala;
 
   bool _encima = false;
   bool _pulsado = false;
 
   @override
   void dispose() {
-    _escala.dispose();
+    _escala?.dispose();
     super.dispose();
   }
 
@@ -51,17 +50,27 @@ class _PulsableState extends State<Pulsable>
   void _asentar({bool rapido = false}) {
     final destino = _destino;
     if (!_habilitado) {
-      _escala.value = 1;
+      _escala?.value = 1;
       return;
     }
-    _escala.animateWith(
+    var creada = false;
+    var escala = _escala;
+    if (escala == null) {
+      if (destino == 1) return;
+      escala = _escala = AnimationController.unbounded(vsync: this, value: 1);
+      creada = true;
+    }
+    escala.animateWith(
       SpringSimulation(
         rapido ? _movimiento.espacialRapido : _movimiento.espacialNormal,
-        _escala.value,
+        escala.value,
         destino,
-        _escala.velocity,
+        escala.velocity,
       ),
     );
+    if (creada && mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -90,15 +99,17 @@ class _PulsableState extends State<Pulsable>
           _pulsado = false;
           _asentar(rapido: true);
         },
-        child: AnimatedBuilder(
-          animation: _escala,
-          builder: (context, hijo) => Transform.scale(
-            scale: _escala.value,
-            filterQuality: FilterQuality.low,
-            child: hijo,
-          ),
-          child: widget.child,
-        ),
+        child: !_habilitado || _escala == null
+            ? widget.child
+            : AnimatedBuilder(
+                animation: _escala!,
+                builder: (context, hijo) => Transform.scale(
+                  scale: _escala!.value,
+                  filterQuality: FilterQuality.low,
+                  child: hijo,
+                ),
+                child: widget.child,
+              ),
       ),
     );
   }

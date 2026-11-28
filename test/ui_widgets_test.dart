@@ -35,9 +35,27 @@ const _album = Album(
   art: null,
 );
 
+const _temaCristalPrueba = Tema(
+  id: 'cristal-prueba',
+  nombre: 'Cristal',
+  brillo: BrilloDeTema.oscuro,
+  cristal: Cristal(activo: true),
+  colores: Paleta(
+    primario: Color(0xFF55DF79),
+    sobrePrimario: Color(0xFF0C1910),
+    fondo: Color(0xFF090909),
+    superficie: Color(0xFF252525),
+    panel: Color(0xFF161616),
+    texto: Color(0xFFF7F7F7),
+    textoTenue: Color(0xFFB8B8B8),
+    borde: Color(0xFF595959),
+    error: Color(0xFFFFA0AA),
+  ),
+);
+
 Widget _envVolumen({required double volumen, required bool muteado}) {
   return MaterialApp(
-    theme: construirThemeData(temaMaterialOscuro),
+    theme: construirThemeData(temaNeoFyNocturno),
     home: Scaffold(
       body: IconoDeVolumen(volumen: volumen, muteado: muteado),
     ),
@@ -77,7 +95,7 @@ void main() {
       (t) async {
         await t.pumpWidget(
           MaterialApp(
-            theme: construirThemeData(temaLiquidGlass),
+            theme: construirThemeData(_temaCristalPrueba),
             home: const Center(
               child: SizedBox(
                 width: 244,
@@ -137,7 +155,7 @@ void main() {
       ArtistaDePista? abierto;
       await t.pumpWidget(
         MaterialApp(
-          theme: construirThemeData(temaMaterialOscuro),
+          theme: construirThemeData(temaNeoFyNocturno),
           home: Scaffold(
             body: LineaDeArtistas(
               artistas: const [
@@ -159,7 +177,7 @@ void main() {
       var toques = 0;
       await t.pumpWidget(
         MaterialApp(
-          theme: construirThemeData(temaMaterialOscuro),
+          theme: construirThemeData(temaNeoFyNocturno),
           home: Scaffold(
             body: LineaDeArtistas(
               artistas: const [

@@ -45,13 +45,14 @@ import 'ui/shell.dart';
 
 final _lockPort = kDebugMode && Platform.environment['NEOFY_DEBUG_INSTANCE'] == '1' ? 53331 : 53330;
 
-Future<bool> _acquireSingleInstance() async {
+Future<bool> _acquireSingleInstance({VoidCallback? alMostrar}) async {
   try {
     final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, _lockPort);
     server.listen((socket) {
       socket.drain<void>().catchError((_) {});
       windowManager.show();
       windowManager.focus();
+      alMostrar?.call();
       socket.destroy();
     });
     return true;
@@ -67,17 +68,13 @@ Future<bool> _acquireSingleInstance() async {
   }
 }
 
+VoidCallback? _onMostrarOtraInstancia;
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   if (runWebViewTitleBarWidget(args)) return;
-  try {
-    MediaKit.ensureInitialized();
-  } catch (e) {
-    YtPlayer.libmpvDisponible = false;
-    debugPrint('[vía libre] sin libmpv, no se podrá reproducir por YouTube: $e');
-  }
 
-  if (!await _acquireSingleInstance()) {
+  if (!await _acquireSingleInstance(alMostrar: () => _onMostrarOtraInstancia?.call())) {
     exit(0);
   }
 
@@ -109,46 +106,26 @@ Future<void> main(List<String> args) async {
   runApp(SpotifyNativeApp(config: config, temas: temas));
 }
 
-class SpotifyNativeApp extends StatefulWidget {
+class SpotifyNativeApp extends StatelessWidget {
   const SpotifyNativeApp({super.key, required this.config, required this.temas});
 
   final AppConfig config;
   final TemaStore temas;
 
   @override
-  State<SpotifyNativeApp> createState() => _SpotifyNativeAppState();
-}
-
-class _SpotifyNativeAppState extends State<SpotifyNativeApp> {
-  @override
-  void initState() {
-    super.initState();
-    widget.temas.vigilarLaCarpeta();
-  }
-
-  @override
-  void dispose() {
-    widget.temas.dejarDeVigilar();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.temas, modoPreview]),
+      animation: Listenable.merge([temas, modoPreview]),
       builder: (context, _) => MaterialApp(
         title: nombreVentanaNeoFy(preview: modoPreview.value),
         debugShowCheckedModeBanner: false,
-        theme: widget.temas.themeDataClaro,
-        darkTheme: widget.temas.themeDataOscuro,
-        themeMode: widget.temas.modo,
-        // Sin esto, cambiar un color con el diálogo de Temas abierto
-        // revienta: AnimatedTheme notifica a overlays que ya no son
-        // descendientes (assertion en framework.dart).
+        theme: temas.themeDataClaro,
+        darkTheme: temas.themeDataOscuro,
+        themeMode: temas.modo,
         themeAnimationDuration: Duration.zero,
         builder: (context, hijo) =>
             FondoDelTema(child: hijo ?? const SizedBox.shrink()),
-        home: RootScreen(config: widget.config, temas: widget.temas),
+        home: RootScreen(config: config, temas: temas),
       ),
     );
   }
@@ -179,6 +156,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final LibrespotManager _librespot = LibrespotManager(widget.config);
   late final MetadataSidecar _sidecar = MetadataSidecar(
     localeEfectivo: () => localeSpotifyEfectivo(widget.config.idiomaPreferido),
+    puedeArrancar: () => _sessionStarted && _librespot.hasCredentials,
   );
   late final SpotifyApi _api = SpotifyApi(
     _auth,
@@ -187,15 +165,18 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   late final PlayerController _player = PlayerController(_api, widget.config);
   late final LikedStore _likes =
       LikedStore(api: _api, auth: _auth, onReauth: _reauth)
-        ..cargarDesdeDisco();
+        ..cargarUrisDesdeDisco();
   late final FollowedPlaylistsStore _followed = FollowedPlaylistsStore(
     api: _api,
     auth: _auth,
     obtenerUserId: () => _player.currentUserId,
     onReauth: _reauth,
   );
-  late final ArtistasFavoritosStore _favoritos =
-      ArtistasFavoritosStore()..cargar();
+  late final ArtistasFavoritosStore _favoritos = ArtistasFavoritosStore(
+    api: _api,
+    auth: _auth,
+    onReauth: _reauth,
+  );
   late final HomeStore _home = HomeStore(api: _api, auth: _auth);
   late final CarpetasStore _carpetas = CarpetasStore()..cargar();
   final UltimaReproduccionStore _memoria = UltimaReproduccionStore();
@@ -209,9 +190,36 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     canalInicial: widget.config.canalActualizacion,
   );
 
+  static bool _mediaKitInicializado = false;
   final YtAuth _ytAuth = YtAuth();
   late final YtMusicApi _ytApi = YtMusicApi(_ytAuth);
-  late final YtPlayer _ytPlayer = YtPlayer(volumenInicial: widget.config.volumenNeoTube);
+  YtPlayer? _ytPlayer;
+
+  YtPlayer _asegurarYtPlayer() {
+    final existente = _ytPlayer;
+    if (existente != null) return existente;
+    if (!_mediaKitInicializado) {
+      try {
+        MediaKit.ensureInitialized();
+      } catch (e) {
+        YtPlayer.libmpvDisponible = false;
+        debugPrint('[vía libre] sin libmpv, no se podrá reproducir por YouTube: $e');
+      }
+      _mediaKitInicializado = true;
+    }
+    final player = YtPlayer(volumenInicial: widget.config.volumenNeoTube);
+    player.alEmpezarAReproducir = _player.pause;
+    player.onVolumenFijado = (v) {
+      widget.config.volumenNeoTube = v;
+      unawaited(widget.config.save());
+    };
+    player.onSalto = (ms) {
+      _mpris.notificarSalto(ms * 1000);
+      _smtc.notificarSalto(ms);
+    };
+    _ytPlayer = player;
+    return player;
+  }
 
   late final MediaKeys _mediaKeys = MediaKeys(
     onPlayPause: () => _mandoDeFuera('playPause', _alternar),
@@ -277,6 +285,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     onRaise: () {
       windowManager.show();
       windowManager.focus();
+      _alVerse();
     },
     estado: _estadoParaElSistema,
   );
@@ -287,11 +296,17 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   bool _reiniciandoAudio = false;
 
   bool _ventanaVisible = true;
+  bool _bibliotecaLiberada = false;
+  Timer? _podaAlEsconder;
+  Timer? _podaAlEsconderTardia;
   DateTime _ultimoReinicioDeAudio = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
     super.initState();
+    _onMostrarOtraInstancia = () {
+      if (mounted) _alVerse();
+    };
     windowManager.addListener(this);
     trayManager.addListener(this);
     _mediaKeys.start();
@@ -308,15 +323,6 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _audio.start();
     _librespot.onFalloDeAudio = (linea) =>
         unawaited(_reiniciarAudio(motivo: 'error en el log: $linea'));
-    _ytPlayer.alEmpezarAReproducir = _player.pause;
-    _ytPlayer.onVolumenFijado = (v) {
-      widget.config.volumenNeoTube = v;
-      unawaited(widget.config.save());
-    };
-    _ytPlayer.onSalto = (ms) {
-      _mpris.notificarSalto(ms * 1000);
-      _smtc.notificarSalto(ms);
-    };
     _ram.start();
     unawaited(_updater.buscar());
     _aplicarTechoDeMemoria(_settings.performanceMode);
@@ -326,14 +332,17 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
 
   @override
   void dispose() {
+    _onMostrarOtraInstancia = null;
+    _podaAlEsconder?.cancel();
+    _podaAlEsconderTardia?.cancel();
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     _mediaKeys.stop();
     _player.removeListener(_avisarAlSistema);
     _player.onSalto = null;
-    _ytPlayer.alEmpezarAReproducir = null;
-    _ytPlayer.onVolumenFijado = null;
-    _ytPlayer.onSalto = null;
+    _ytPlayer?.alEmpezarAReproducir = null;
+    _ytPlayer?.onVolumenFijado = null;
+    _ytPlayer?.onSalto = null;
     unawaited(_mpris.stop());
     unawaited(_smtc.stop());
     _audio.stop();
@@ -350,7 +359,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     _updater.dispose();
     _librespot.dispose();
     _sidecar.dispose();
-    _ytPlayer.dispose();
+    _ytPlayer?.dispose();
     _api.close();
     _auth.close();
     _ytApi.close();
@@ -416,9 +425,9 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     await _librespot.start();
 
     unawaited(_cargarCuenta(generacion));
+    unawaited(_favoritos.cargar());
     _player.start();
     unawaited(_waitForDevice(generacion));
-    unawaited(_startSidecar());
   }
 
   Future<void> _cargarCuenta(int generacion) async {
@@ -430,7 +439,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       if (!_player.isPremium) {
         _player.libre = ReproduccionLibre(
           puente: PuenteYt(_ytApi),
-          ytPlayer: _ytPlayer,
+          ytPlayer: _asegurarYtPlayer(),
           api: _api,
           controller: _player,
         );
@@ -476,8 +485,6 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     if (activo) {
       unawaited(_sidecar.stop());
       ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
-    } else if (_sessionStarted) {
-      unawaited(_startSidecar());
     }
   }
 
@@ -514,24 +521,12 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
     }
   }
 
-  static const _techoRendimiento = 100 << 20;
+  static const _techoRendimiento = 75 << 20;
 
   void _aplicarTechoDeMemoria(bool activo) {
     _ram.techoBytes = activo ? _techoRendimiento : null;
     if (activo) {
       ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
-    }
-  }
-
-  Future<void> _startSidecar() async {
-    if (_settings.performanceMode) return;
-    for (var i = 0; i < 60; i++) {
-      if (!mounted) return;
-      if (_librespot.hasCredentials) {
-        await _sidecar.start();
-        return;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
     }
   }
 
@@ -569,6 +564,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Future<void> _reauth() async {
     try {
       await _auth.login();
+      unawaited(_favoritos.cargar(forzar: true));
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -633,6 +629,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   void onTrayIconMouseDown() {
     windowManager.show();
     windowManager.focus();
+    _alVerse();
   }
 
   @override
@@ -653,6 +650,7 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
       case 'show':
         windowManager.show();
         windowManager.focus();
+        _alVerse();
       case 'exit':
         unawaited(_quit());
     }
@@ -691,19 +689,61 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   void onWindowFocus() => _alVerse();
 
   void _alVerse() {
+    _podaAlEsconder?.cancel();
+    _podaAlEsconder = null;
+    _podaAlEsconderTardia?.cancel();
+    _podaAlEsconderTardia = null;
+    final cambio = !_ventanaVisible;
     _ventanaVisible = true;
     _ram.setVisible(true);
     _ajustarSondeo();
+    if (cambio && mounted) {
+      setState(() {});
+      if (_bibliotecaLiberada) {
+        _bibliotecaLiberada = false;
+        unawaited(_likes.cargarBiblioteca());
+      }
+    }
   }
 
   void _alEsconderse() {
+    final cambio = _ventanaVisible;
     _ventanaVisible = false;
     _ram.setVisible(false);
     _ajustarSondeo();
+    if (cambio && mounted) setState(() {});
+
+    unawaited(_recordarReproduccion(forzar: true));
+    unawaited(_sidecar.detenerSiInactivo(inmediato: true));
+    _liberarBibliotecaAlEsconder();
+
     final cache = PaintingBinding.instance.imageCache;
     cache.clear();
     cache.clearLiveImages();
     ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
+
+    _podaAlEsconder?.cancel();
+    _podaAlEsconder = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted || _ventanaVisible) return;
+      final c = PaintingBinding.instance.imageCache;
+      c.clear();
+      c.clearLiveImages();
+      ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
+    });
+
+    _podaAlEsconderTardia?.cancel();
+    _podaAlEsconderTardia = Timer(const Duration(seconds: 3), () {
+      if (!mounted || _ventanaVisible) return;
+      final c = PaintingBinding.instance.imageCache;
+      c.clear();
+      c.clearLiveImages();
+      _liberarBibliotecaAlEsconder();
+      ResourceMonitor.devolverMemoriaAlSistema([_librespot.pid, _sidecar.pid]);
+    });
+  }
+
+  void _liberarBibliotecaAlEsconder() {
+    if (_likes.liberarMemoriaDeBiblioteca()) _bibliotecaLiberada = true;
   }
 
   void _ajustarSondeo() => _player.setWindowVisible(_ventanaVisible);
@@ -712,7 +752,10 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
   Widget build(BuildContext context) {
     return TraductorScope(
       notifier: _traductor,
-      child: _buildContenido(),
+      child: TickerMode(
+        enabled: _ventanaVisible,
+        child: _buildContenido(),
+      ),
     );
   }
 
@@ -758,8 +801,14 @@ class _RootScreenState extends State<RootScreen> with WindowListener, TrayListen
           await _librespot.stop();
           _player.libre?.dispose();
           _player.libre = null;
+          _ytPlayer?.alEmpezarAReproducir = null;
+          _ytPlayer?.onVolumenFijado = null;
+          _ytPlayer?.onSalto = null;
+          _ytPlayer?.dispose();
+          _ytPlayer = null;
           _player.olvidarDispositivo();
           await _auth.logout();
+          _favoritos.limpiar();
           await _smtc.stop();
           _sessionStarted = false;
           if (mounted) setState(() {});

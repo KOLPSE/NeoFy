@@ -26,6 +26,35 @@ class _TituloDesplazableState extends State<TituloDesplazable>
   late final AnimationController _avance;
 
   bool _encima = false;
+  String? _textoMedido;
+  TextStyle? _estiloMedido;
+  TextDirection? _dirMedida;
+  double _anchoMedido = 0;
+  double _altoMedido = 0;
+
+  (double, double) _medir(
+    String texto,
+    TextStyle estilo,
+    TextDirection direccion,
+  ) {
+    if (_textoMedido == texto &&
+        _estiloMedido == estilo &&
+        _dirMedida == direccion) {
+      return (_anchoMedido, _altoMedido);
+    }
+    final medidor = TextPainter(
+      text: TextSpan(text: texto, style: estilo),
+      maxLines: 1,
+      textDirection: direccion,
+    )..layout();
+    _textoMedido = texto;
+    _estiloMedido = estilo;
+    _dirMedida = direccion;
+    _anchoMedido = medidor.width;
+    _altoMedido = medidor.height;
+    medidor.dispose();
+    return (_anchoMedido, _altoMedido);
+  }
 
   @override
   void initState() {
@@ -79,16 +108,10 @@ class _TituloDesplazableState extends State<TituloDesplazable>
 
     return LayoutBuilder(
       builder: (context, restricciones) {
-        final medidor = TextPainter(
-          text: TextSpan(text: widget.texto, style: estilo),
-          maxLines: 1,
-          textDirection: Directionality.of(context),
-        )..layout();
+        final (anchoDelTexto, altoDelTexto) =
+            _medir(widget.texto, estilo, Directionality.of(context));
 
         final hueco = restricciones.maxWidth;
-        final anchoDelTexto = medidor.width;
-        final altoDelTexto = medidor.height;
-        medidor.dispose();
         final recorrido = anchoDelTexto - hueco;
 
         if (recorrido <= 0.5) {

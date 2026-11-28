@@ -9,7 +9,7 @@ import 'app_config.dart';
 
 const int kFormatoDeTema = 1;
 
-const String kIdTemaPorDefecto = 'material-oscuro';
+const String kIdTemaPorDefecto = kIdTemaNocturno;
 
 const String kNombreDelManifiesto = 'tema.json';
 

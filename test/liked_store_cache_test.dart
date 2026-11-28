@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -43,6 +44,7 @@ class _FakeApi extends SpotifyApi {
   _FakeApi(super.auth);
 
   int cargas = 0;
+  Completer<void>? retiradaEnCurso;
   List<Track> remotas = const [_una, _otra];
 
   @override
@@ -60,7 +62,9 @@ class _FakeApi extends SpotifyApi {
   Future<void> saveTracks(List<String> uris) async {}
 
   @override
-  Future<void> removeSavedTracks(List<String> uris) async {}
+  Future<void> removeSavedTracks(List<String> uris) async {
+    await retiradaEnCurso?.future;
+  }
 }
 
 void main() {
@@ -129,6 +133,24 @@ void main() {
     await likes.toggle(_una.uri, pista: _una);
     expect(likes.biblioteca.any((t) => t.uri == _una.uri), isFalse);
     expect(likes.isSaved(_una.uri), isFalse);
+  });
+
+  test('conserva las pistas durante un cambio y su guardado aplazado', () async {
+    final dir = dirTemporal();
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final api = _FakeApi(_FakeAuth());
+    final likes = LikedStore(api: api, auth: _FakeAuth(), directorio: dir);
+    addTearDown(likes.dispose);
+    await likes.cargarBiblioteca();
+
+    final retirada = Completer<void>();
+    api.retiradaEnCurso = retirada;
+    final cambio = likes.toggle(_una.uri, pista: _una);
+    expect(likes.liberarMemoriaDeBiblioteca(), isFalse);
+    retirada.complete();
+    await cambio;
+    expect(likes.liberarMemoriaDeBiblioteca(), isFalse);
+    expect(likes.biblioteca.map((t) => t.uri), [_otra.uri]);
   });
 
   test('el fichero es JSON plano, no un volcado de la API', () async {

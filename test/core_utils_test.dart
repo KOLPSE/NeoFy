@@ -337,7 +337,11 @@ Sink Input #21
         return http.StreamedResponse(const Stream.empty(), 404);
       });
 
-      final updater = Updater(cliente: cliente, instalaSolo: true);
+      final updater = Updater(
+        cliente: cliente,
+        instalaSolo: true,
+        versionActual: '1.6.0',
+      );
       addTearDown(updater.dispose);
 
       await updater.buscar();
@@ -376,7 +380,11 @@ Sink Input #21
             200,
           ),
         );
-        final updater = Updater(cliente: cliente, instalaSolo: true);
+        final updater = Updater(
+          cliente: cliente,
+          instalaSolo: true,
+          versionActual: '1.6.0',
+        );
         addTearDown(updater.dispose);
 
         await updater.buscar();
@@ -420,7 +428,11 @@ Sink Input #21
           200,
         ),
       );
-      final updater = Updater(cliente: cliente, instalaSolo: true);
+      final updater = Updater(
+        cliente: cliente,
+        instalaSolo: true,
+        versionActual: '1.6.0',
+      );
       addTearDown(updater.dispose);
 
       await updater.buscar();
@@ -456,7 +468,11 @@ Sink Input #21
           headers: {'content-type': 'text/html; charset=utf-8'},
         );
       });
-      final updater = Updater(cliente: cliente, instalaSolo: true);
+      final updater = Updater(
+        cliente: cliente,
+        instalaSolo: true,
+        versionActual: '1.6.0',
+      );
       addTearDown(updater.dispose);
 
       await updater.buscar();

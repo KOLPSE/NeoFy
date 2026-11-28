@@ -4,6 +4,24 @@ import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
 import 'package:neofy/ui/movimiento.dart';
 
+const _temaExpresivo = Tema(
+  id: 'expresivo',
+  nombre: 'Expresivo',
+  brillo: BrilloDeTema.oscuro,
+  movimiento: Movimiento(esquema: EsquemaDeMovimiento.expresivo),
+  colores: Paleta(
+    primario: Color(0xFF55DF79),
+    sobrePrimario: Color(0xFF0C1910),
+    fondo: Color(0xFF090909),
+    superficie: Color(0xFF252525),
+    panel: Color(0xFF161616),
+    texto: Color(0xFFF7F7F7),
+    textoTenue: Color(0xFFB8B8B8),
+    borde: Color(0xFF595959),
+    error: Color(0xFFFFA0AA),
+  ),
+);
+
 Widget _envoltorio({
   required Tema tema,
   required bool abierto,
@@ -62,7 +80,7 @@ void main() {
   });
 
   testWidgets('plegado, el contenido abierto no está en el árbol', (t) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: false));
 
     expect(find.text('PLEGADO'), findsOneWidget);
     expect(
@@ -73,7 +91,7 @@ void main() {
   });
 
   testWidgets('abierto del todo, el contenido plegado desaparece', (t) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: true));
     await t.pump(const Duration(seconds: 2));
 
     expect(find.text('LA LISTA'), findsOneWidget);
@@ -83,8 +101,8 @@ void main() {
   testWidgets('durante la transición conviven los dos, y acaba asentando', (
     t,
   ) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: false));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: true));
 
     await t.pump(const Duration(milliseconds: 16));
     expect(find.text('LA LISTA'), findsOneWidget);
@@ -101,8 +119,8 @@ void main() {
   testWidgets('es un acordeón: la altura del contenido crece de verdad', (
     t,
   ) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: false));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: true));
     await t.pump(const Duration(milliseconds: 16));
 
     expect(find.byType(SizeTransition), findsOneWidget);
@@ -114,8 +132,8 @@ void main() {
   });
 
   testWidgets('el hueco recorta el overflow, como overflow:hidden', (t) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: false));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: true));
     await t.pump(const Duration(milliseconds: 40));
 
     expect(
@@ -128,8 +146,8 @@ void main() {
   testWidgets('van apiladas, no en columna: la lista tapa a la fijada', (
     t,
   ) async {
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: false));
-    await t.pumpWidget(_envoltorio(tema: temaMaterialOscuro, abierto: true));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: false));
+    await t.pumpWidget(_envoltorio(tema: _temaExpresivo, abierto: true));
     await t.pump(const Duration(milliseconds: 40));
 
     if (find.text('PLEGADO').evaluate().isEmpty) return;

@@ -56,14 +56,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
       List<Track> t;
       final sidecar = widget.sidecar;
       if (sidecar != null &&
-          sidecar.ready &&
-          widget.api.esperaDe('/albums') != null) {
+          sidecar.puedeUsarse &&
+          widget.api.esperaDe('/albums') != null &&
+          await sidecar.asegurarListo()) {
         t = await sidecar.albumTracks(widget.album.id);
       } else {
         try {
           t = await widget.api.albumTracks(widget.album.id);
         } catch (e) {
-          if (sidecar != null && sidecar.ready) {
+          if (sidecar != null &&
+              sidecar.puedeUsarse &&
+              await sidecar.asegurarListo()) {
             t = await sidecar.albumTracks(widget.album.id);
           } else {
             rethrow;
@@ -268,6 +271,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     return ValueListenableBuilder<String?>(
       valueListenable: widget.player.currentUri,
       builder: (context, currentUri, _) => ListView.builder(
+        addAutomaticKeepAlives: false,
         itemCount: _tracks.length,
         itemBuilder: (context, i) {
           final t = _tracks[i];

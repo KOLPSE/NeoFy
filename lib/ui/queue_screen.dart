@@ -98,6 +98,7 @@ class _QueueScreenState extends State<QueueScreen> {
         return const Center(child: T('Aún no hay escuchas recientes.'));
       }
       return ListView.builder(
+        addAutomaticKeepAlives: false,
         itemCount: home.recientes.length,
         itemBuilder: (context, index) {
           final track = home.recientes[index];
@@ -208,6 +209,7 @@ class _QueueScreenState extends State<QueueScreen> {
                   ),
                 )
               : ListView.builder(
+                  addAutomaticKeepAlives: false,
                   itemCount: _queue.length,
                   itemBuilder: (context, i) => TrackTile(
                     track: _queue[i],

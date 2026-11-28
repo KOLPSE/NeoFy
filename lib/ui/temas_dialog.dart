@@ -1,13 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../core/app_config.dart';
 import '../core/settings.dart';
 import '../core/tema_store.dart';
-import '../core/temas.dart';
 import '../core/temas_incluidos.dart';
-import 'personalizacion_tema.dart';
 import 'texto_traducido.dart';
 
 class BotonDeTemas extends StatelessWidget {
@@ -22,365 +20,65 @@ class BotonDeTemas extends StatelessWidget {
     return AnimatedBuilder(
       animation: temas,
       builder: (context, _) {
-        final activo = temas.porId(temas.idSeleccionado);
-        final nombre = activo?.nombre ?? 'Automático (sigue al sistema)';
-        final cuantos = temas.temasDeDisco.length;
-        return Row(
+        final seleccionado = temas.siguiendoAlSistema
+            ? kIdTemaDelSistema
+            : temas.idSeleccionado;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  T('Temas', style: theme.textTheme.bodyMedium),
-                  const SizedBox(height: 2),
-                  T(
-                    cuantos == 0
-                        ? nombre
-                        : '$nombre · $cuantos de la comunidad instalado'
-                            '${cuantos == 1 ? '' : 's'}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
+            T('Tema', style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 2),
+            T(
+              'Elige entre NeoFy Claro, NeoFy Nocturno o seguir la apariencia del sistema.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(width: 12),
-            OutlinedButton(
-              onPressed: () => unawaited(
-                  mostrarSelectorDeTemas(context, temas, settings)),
-              child: T('Cambiar'),
+            const SizedBox(height: 10),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment<String>(
+                  value: kIdTemaDelSistema,
+                  icon: Icon(Icons.brightness_auto_outlined, size: 18),
+                  label: T('Automático'),
+                ),
+                ButtonSegment<String>(
+                  value: kIdTemaClaro,
+                  icon: Icon(Icons.light_mode_outlined, size: 18),
+                  label: T('Claro'),
+                ),
+                ButtonSegment<String>(
+                  value: kIdTemaNocturno,
+                  icon: Icon(Icons.dark_mode_outlined, size: 18),
+                  label: T('Oscuro'),
+                ),
+              ],
+              selected: {seleccionado},
+              onSelectionChanged: (sel) =>
+                  unawaited(temas.seleccionar(sel.first)),
+            ),
+            const SizedBox(height: 10),
+            ValueListenableBuilder<bool>(
+              valueListenable: menusEnElemento,
+              builder: (context, activo, _) => SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: activo,
+                onChanged: (v) => unawaited(settings.setMenusEnElemento(v)),
+                title: const T('Menús dentro del elemento'),
+                subtitle: T(
+                  'Los menús se despliegan ocupando el hueco del propio '
+                  'elemento en vez de flotar encima.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             ),
           ],
         );
       },
-    );
-  }
-}
-
-Future<void> mostrarSelectorDeTemas(
-  BuildContext context,
-  TemaStore temas,
-  Settings settings,
-) {
-  return showDialogTraducido<void>(
-    context: context,
-    builder: (context) => _DialogoDeTemas(temas: temas, settings: settings),
-  );
-}
-
-class _DialogoDeTemas extends StatelessWidget {
-  const _DialogoDeTemas({required this.temas, required this.settings});
-
-  final TemaStore temas;
-  final Settings settings;
-
-  Future<void> _abrirLaCarpeta() async {
-    final carpeta = carpetaDeTemas();
-    try {
-      await launchUrl(Uri.file(carpeta.path));
-    } catch (_) {}
-  }
-
-  Future<void> _crearEjemplo(BuildContext context) async {
-    final activo = temas.porId(temas.idSeleccionado);
-    if (activo == null || !esTemaMaterial(activo.id)) return;
-    final mensajero = ScaffoldMessenger.maybeOf(context);
-    try {
-      final creada = await crearTemaDeEjemplo(base: activo);
-      await temas.recargar();
-      if (!context.mounted) return;
-      final t = await traducirTexto(context, 'Plantilla creada en ${creada.path}');
-      mensajero?.showSnackBar(
-        SnackBar(
-          content: Text(t),
-          action: SnackBarAction(label: 'Abrir', onPressed: _abrirLaCarpeta),
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      final t = await traducirTexto(context, 'No se pudo crear la plantilla: $e');
-      mensajero?.showSnackBar(
-        SnackBar(content: Text(t)),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AlertDialog(
-      title: T('Temas'),
-      content: SizedBox(
-        width: 460,
-        child: AnimatedBuilder(
-          animation: temas,
-          builder: (context, _) {
-            final deDisco = temas.temasDeDisco;
-            final fallos = temas.fallos;
-            final avisos = temas.avisos;
-            final activo = temas.porId(temas.idSeleccionado);
-            final esMaterial =
-                activo != null && esTemaMaterial(activo.id);
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _FilaDeTema(
-                    nombre: 'Automático',
-                    detalle: 'Claro/oscuro según tu escritorio',
-                    traducir: true,
-                    muestra: null,
-                    elegido: temas.siguiendoAlSistema,
-                    onTap: () =>
-                        unawaited(temas.seleccionar(kIdTemaDelSistema)),
-                  ),
-                  const Divider(height: 20),
-                  T('INCLUIDOS', style: theme.textTheme.labelSmall),
-                  const SizedBox(height: 6),
-                  for (final tema in temasIncluidos)
-                    _FilaDeTema(
-                      nombre: tema.nombre,
-                      detalle: tema.descripcion,
-                      muestra: temas.porId(tema.id) ?? tema,
-                      elegido: temas.idSeleccionado == tema.id,
-                      onTap: () => unawaited(temas.seleccionar(tema.id)),
-                    ),
-                  const Divider(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: T('DE LA COMUNIDAD',
-                            style: theme.textTheme.labelSmall),
-                      ),
-                      IconButton(
-                        tooltip: 'Volver a leer la carpeta',
-                        iconSize: 18,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => unawaited(temas.recargar()),
-                        icon: const Icon(Icons.refresh),
-                      ),
-                    ],
-                  ),
-                  if (deDisco.isEmpty && fallos.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: T(
-                        'Todavía no hay ninguno. Cada tema es una carpeta con '
-                        'un $kNombreDelManifiesto dentro; se recargan solos al '
-                        'guardar, sin cerrar NeoFy.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ),
-                  for (final tema in deDisco)
-                    _FilaDeTema(
-                      nombre: tema.nombre,
-                      detalle: [
-                        if (tema.autor.isNotEmpty) 'de ${tema.autor}',
-                        if (tema.version.isNotEmpty) 'v${tema.version}',
-                        if (tema.descripcion.isNotEmpty) tema.descripcion,
-                      ].join(' · '),
-                      muestra: tema,
-                      elegido: temas.idSeleccionado == tema.id,
-                      aviso: avisos[tema.id]?.join('\n'),
-                      onTap: () => unawaited(temas.seleccionar(tema.id)),
-                    ),
-                  for (final entrada in fallos.entries)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.error_outline,
-                              size: 16, color: theme.colorScheme.error),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${entrada.key}: ${entrada.value}',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.colorScheme.error),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const Divider(height: 24),
-                  PersonalizacionTema(temas: temas, settings: settings),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => unawaited(_abrirLaCarpeta()),
-                        icon: const Icon(Icons.folder_open, size: 18),
-                        label: T('Abrir la carpeta'),
-                      ),
-                      Tooltip(
-                        message: esMaterial
-                            ? 'Guarda los colores actuales como un tema '
-                                'de la comunidad.'
-                            : 'Elige Material oscuro o Material claro para '
-                                'guardar los colores como plantilla.',
-                        child: OutlinedButton.icon(
-                          onPressed: esMaterial
-                              ? () => unawaited(_crearEjemplo(context))
-                              : null,
-                          icon: const Icon(Icons.add, size: 18),
-                          label: T('Crear una plantilla'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: T('Cerrar'),
-        ),
-      ],
-    );
-  }
-}
-
-class _FilaDeTema extends StatelessWidget {
-  const _FilaDeTema({
-    required this.nombre,
-    required this.detalle,
-    required this.muestra,
-    required this.elegido,
-    required this.onTap,
-    this.aviso,
-    this.traducir = false,
-  });
-
-  final String nombre;
-  final String detalle;
-  final Tema? muestra;
-  final bool elegido;
-  final VoidCallback onTap;
-  final String? aviso;
-  final bool traducir;
-
-  Widget _texto(String s, TextStyle? style, {int? maxLines}) {
-    if (traducir) {
-      return T(s,
-          style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
-    }
-    return Text(s,
-        style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Row(
-          children: [
-            _Muestra(tema: muestra),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _texto(nombre, theme.textTheme.bodyMedium),
-                  if (detalle.isNotEmpty)
-                    _texto(
-                      detalle,
-                      theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant),
-                      maxLines: 2,
-                    ),
-                  if (aviso != null)
-                    Text(
-                      aviso!,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.tertiary),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              elegido ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
-              color: elegido
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Muestra extends StatelessWidget {
-  const _Muestra({required this.tema});
-
-  final Tema? tema;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final t = tema;
-    if (t == null) {
-      return Container(
-        width: 44,
-        height: 30,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-          gradient: const LinearGradient(
-            colors: [Colors.white, Colors.black],
-            stops: [0.5, 0.5],
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 44,
-      height: 30,
-      decoration: BoxDecoration(
-        color: t.colores.fondo,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            decoration: BoxDecoration(
-              color: t.colores.panel,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(5),
-                bottomLeft: Radius.circular(5),
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: t.colores.primario,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

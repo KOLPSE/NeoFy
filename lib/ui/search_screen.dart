@@ -186,7 +186,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _asegurarTop50() async {
-    if (!mounted || !widget.sidecar.ready || _top50 != null || _cargandoTop50) {
+    if (!mounted ||
+        !widget.sidecar.puedeUsarse ||
+        _top50 != null ||
+        _cargandoTop50) {
       return;
     }
     setState(() {
@@ -195,6 +198,10 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     final locale = widget.localeEfectivo;
     try {
+      if (!await widget.sidecar.asegurarListo()) {
+        if (mounted) setState(() => _cargandoTop50 = false);
+        return;
+      }
       ApiPage<Track> pagina;
       try {
         pagina = await widget.sidecar.playlistItems(
@@ -492,7 +499,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ArtistFavoriteButton(
             favoritos: widget.favoritos,
             artista: a,
-            size: 18,
+            compacto: true,
           ),
           Icon(
             Icons.chevron_right,
@@ -522,7 +529,7 @@ class _SearchScreenState extends State<SearchScreen> {
   /// Con la caja vacía y "Más escuchadas" activo: el Top 50 del país del
   /// idioma, pedido al sidecar. Sin sidecar, la pantalla clásica.
   Widget _cuerpoTop50(ThemeData theme) {
-    if (!widget.sidecar.ready) {
+    if (!widget.sidecar.puedeUsarse) {
       return Center(
         child: T(
           'Escribe para buscar en NeoFy.',
@@ -576,6 +583,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return ValueListenableBuilder<String?>(
       valueListenable: widget.player.currentUri,
       builder: (context, currentUri, _) => ListView.builder(
+        addAutomaticKeepAlives: false,
         controller: _scroll,
         itemCount: top.length + 1,
         itemBuilder: (context, i) {
@@ -632,6 +640,7 @@ class _SearchScreenState extends State<SearchScreen> {
       builder: (context, currentUri, _) {
         final total = _calcularTotalItems();
         return ListView.builder(
+          addAutomaticKeepAlives: false,
           controller: _scroll,
           itemCount: total,
           itemBuilder: (context, i) => _construirItem(context, i, currentUri),

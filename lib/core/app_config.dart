@@ -9,7 +9,7 @@ const String kDefaultClientId = '';
 
 const String kDiscordClientId = '1537557680024199198';
 
-const String kVersion = '1.6.0';
+const String kVersion = '1.6.0.401';
 
 const String kHostActualizaciones = 'git.neogex.xyz';
 
@@ -80,6 +80,8 @@ const List<String> kScopes = [
   'playlist-modify-public',
   'user-library-read',
   'user-library-modify',
+  'user-follow-read',
+  'user-follow-modify',
   'user-top-read',
   'user-read-recently-played',
 ];
@@ -89,6 +91,10 @@ const String kScopeLibraryModify = 'user-library-modify';
 const String kScopePlaylistModify = 'playlist-modify-private';
 
 const String kScopeLibraryRead = 'user-library-read';
+
+const String kScopeFollowRead = 'user-follow-read';
+
+const String kScopeFollowModify = 'user-follow-modify';
 
 const String kScopeTopRead = 'user-top-read';
 const String kScopeRecentlyPlayed = 'user-read-recently-played';
@@ -164,6 +170,15 @@ class AppConfig {
   /// La barra lateral se muestra como rail de iconos en vez de panel ancho.
   bool sidebarPlegado;
 
+  /// Ancho personalizado del panel izquierdo cuando está expandido.
+  double? anchoSidebarIzquierdo;
+
+  /// El panel derecho de Reproducción Actual se muestra plegado en el borde.
+  bool sidebarDerechoPlegado;
+
+  /// Ancho personalizado del panel derecho cuando está expandido en columna.
+  double? anchoSidebarDerecho;
+
   /// Rama de actualizaciones preferida (`estable` o `preview`).
   CanalActualizacion canalActualizacion;
 
@@ -184,6 +199,9 @@ class AppConfig {
     this.sincronizacionPorVoz = false,
     this.menusEnElemento = true,
     this.sidebarPlegado = false,
+    this.anchoSidebarIzquierdo,
+    this.sidebarDerechoPlegado = false,
+    this.anchoSidebarDerecho,
     CanalActualizacion? canalActualizacion,
   }) : temaColores = temaColores ?? {},
        desfasesLetraMs = desfasesLetraMs ?? {},
@@ -198,9 +216,6 @@ class AppConfig {
       final map = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
       final temaGuardado = map['tema'] as String?;
       final temaElegido = map['temaElegido'] == true;
-      final materialPersonalizado =
-          (map['temaColores'] as Map?)?['material-oscuro'] is Map &&
-          ((map['temaColores'] as Map)['material-oscuro'] as Map).isNotEmpty;
       return AppConfig(
         clientId: (map['clientId'] as String?) ?? kDefaultClientId,
         initialVolume: (map['initialVolume'] as int?) ?? 60,
@@ -210,12 +225,7 @@ class AppConfig {
         discordRpcEnabled: (map['discordRpcEnabled'] as bool?) ?? false,
         discordClientId:
             (map['discordClientId'] as String?) ?? kDiscordClientId,
-        tema:
-            temaGuardado == 'material-oscuro' &&
-                !temaElegido &&
-                !materialPersonalizado
-            ? kTemaPorDefecto
-            : temaGuardado ?? kTemaPorDefecto,
+        tema: temaGuardado ?? kTemaPorDefecto,
         temaElegido: temaElegido,
         idiomaPreferido: (map['idiomaPreferido'] as String?) ?? kIdiomaSistema,
         temaColores: {
@@ -228,6 +238,10 @@ class AppConfig {
         },
         menusEnElemento: (map['menusEnElemento'] as bool?) ?? true,
         sidebarPlegado: (map['sidebarPlegado'] as bool?) ?? false,
+        anchoSidebarIzquierdo:
+            (map['anchoSidebarIzquierdo'] as num?)?.toDouble(),
+        sidebarDerechoPlegado: (map['sidebarDerechoPlegado'] as bool?) ?? false,
+        anchoSidebarDerecho: (map['anchoSidebarDerecho'] as num?)?.toDouble(),
         canalActualizacion: CanalActualizacion.desdeValor(
           map['canalActualizacion'] as String?,
         ),
@@ -267,6 +281,11 @@ class AppConfig {
         'sincronizacionPorVoz': sincronizacionPorVoz,
         'menusEnElemento': menusEnElemento,
         'sidebarPlegado': sidebarPlegado,
+        if (anchoSidebarIzquierdo != null)
+          'anchoSidebarIzquierdo': anchoSidebarIzquierdo,
+        'sidebarDerechoPlegado': sidebarDerechoPlegado,
+        if (anchoSidebarDerecho != null)
+          'anchoSidebarDerecho': anchoSidebarDerecho,
         'canalActualizacion': canalActualizacion.valor,
       }),
     );

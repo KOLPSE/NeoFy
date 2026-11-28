@@ -1,14 +1,91 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neofy/core/app_config.dart';
+import 'package:neofy/core/settings.dart';
 import 'package:neofy/core/tema_store.dart';
 import 'package:neofy/core/temas.dart';
 import 'package:neofy/core/temas_incluidos.dart';
+import 'package:neofy/ui/temas_dialog.dart';
 import 'package:path/path.dart' as p;
 
 import '../tool/tema.dart' as herramienta;
+
+class _FakeConfigTemas extends AppConfig {
+  _FakeConfigTemas({super.tema});
+
+  int guardados = 0;
+
+  @override
+  Future<void> save() async {
+    guardados++;
+  }
+}
+
+const _temaMaterialPrueba = Tema(
+  id: 'material-prueba',
+  nombre: 'Material prueba',
+  brillo: BrilloDeTema.oscuro,
+  radio: 26,
+  radioBoton: 999,
+  radioCaratula: 16,
+  navegacion: EstiloDeNavegacion.pildora,
+  movimiento: Movimiento(esquema: EsquemaDeMovimiento.expresivo),
+  progreso: EstiloDeProgreso.onda,
+  tipografia: Tipografia(pesoTitulos: 600),
+  formas: Formas(
+    extraPequeno: 8,
+    pequeno: 16,
+    medio: 20,
+    grande: 28,
+    extraGrande: 36,
+  ),
+  colores: Paleta(
+    primario: Color(0xFFCFBDFE),
+    sobrePrimario: Color(0xFF36275D),
+    fondo: Color(0xFF141218),
+    superficie: Color(0xFF2B292F),
+    panel: Color(0xFF211F24),
+    texto: Color(0xFFE6E0E9),
+    textoTenue: Color(0xFFCAC4CF),
+    borde: Color(0xFF948F99),
+    error: Color(0xFFFFB4AB),
+  ),
+);
+
+const _temaCristalPrueba = Tema(
+  id: 'cristal-prueba',
+  nombre: 'Cristal prueba',
+  brillo: BrilloDeTema.oscuro,
+  radio: 18,
+  radioCaratula: 12,
+  colores: Paleta(
+    primario: Color(0xFF0A84FF),
+    sobrePrimario: Color(0xFFFFFFFF),
+    fondo: Color(0xFF05070E),
+    superficie: Color(0xFF121A2B),
+    panel: Color(0xFF16203A),
+    texto: Color(0xFFF5F7FF),
+    textoTenue: Color(0xFFA9B6D4),
+    borde: Color(0xFF2B3A5C),
+    error: Color(0xFFFF453A),
+  ),
+  cristal: Cristal(
+    activo: true,
+    desenfoque: 28,
+    opacidad: 0.16,
+    saturacion: 1.8,
+    brillo: 0.14,
+    borde: 0.16,
+    radio: 22,
+  ),
+  fondo: FondoDeTema(
+    usarCaratula: true,
+    desenfoque: 60,
+    oscurecer: 0.55,
+    degradado: [Color(0xFF0B1026), Color(0xFF1A0E2E), Color(0xFF05070E)],
+    anguloDegradado: 135,
+  ),
+);
 
 void main() {
   group('parsearColor', () {
@@ -187,14 +264,14 @@ void main() {
     });
 
     test('no hay ondulacion de Material al pulsar', () {
-      final datos = construirThemeData(temaMaterialOscuro);
+      final datos = construirThemeData(_temaMaterialPrueba);
       expect(datos.splashFactory, NoSplash.splashFactory);
       expect(datos.splashColor, Colors.transparent);
       expect(datos.highlightColor, Colors.transparent);
     });
 
     test('los botones reaccionan al hover sin ripple al pulsar', () {
-      final datos = construirThemeData(temaMaterialOscuro);
+      final datos = construirThemeData(_temaMaterialPrueba);
       const hover = {WidgetState.hovered};
       const reposo = <WidgetState>{};
 
@@ -216,12 +293,12 @@ void main() {
     });
 
     test('sin cristal ni fondo, el Scaffold sigue siendo opaco', () {
-      final datos = construirThemeData(temaMaterialOscuro);
-      expect(datos.scaffoldBackgroundColor, temaMaterialOscuro.colores.fondo);
+      final datos = construirThemeData(_temaMaterialPrueba);
+      expect(datos.scaffoldBackgroundColor, _temaMaterialPrueba.colores.fondo);
     });
 
     test('con cristal el Scaffold se vuelve transparente para que se vea', () {
-      final datos = construirThemeData(temaLiquidGlass);
+      final datos = construirThemeData(_temaCristalPrueba);
       expect(datos.scaffoldBackgroundColor, Colors.transparent);
       expect(datos.extension<EstiloNeoFy>()!.cristal.activo, isTrue);
     });
@@ -278,18 +355,9 @@ void main() {
       expect(ids, isNot(contains(kIdTemaDelSistema)));
     });
 
-    test('incluye Nocturno y Claro junto a los dos Material y Liquid Glass', () {
+    test('solo incluye NeoFy Nocturno y NeoFy Claro', () {
       final ids = temasIncluidos.map((t) => t.id).toSet();
-      expect(
-        ids,
-        containsAll([
-          temaNeoFyNocturno.id,
-          temaNeoFyClaro.id,
-          'material-claro',
-          'material-oscuro',
-          'liquid-glass',
-        ]),
-      );
+      expect(ids, {temaNeoFyNocturno.id, temaNeoFyClaro.id});
     });
 
     test('NeoFy Claro comparte la interfaz de NeoFy Nocturno en modo claro',
@@ -316,44 +384,78 @@ void main() {
       expect(auto.temaParaOscuro.id, temaNeoFyNocturno.id);
     });
 
-    test('la configuración nueva abre Nocturno y Material sigue siendo clásico', () {
+    test('la configuración nueva abre NeoFy Nocturno', () {
       final nuevo = TemaStore(AppConfig());
-      final clasico = TemaStore(AppConfig(tema: temaMaterialOscuro.id));
       addTearDown(nuevo.dispose);
-      addTearDown(clasico.dispose);
 
       expect(nuevo.idSeleccionado, temaNeoFyNocturno.id);
       expect(
         nuevo.themeDataOscuro.extension<EstiloNeoFy>()!.usaInterfazNocturna,
         isTrue,
       );
-      expect(
-        clasico.themeDataOscuro.extension<EstiloNeoFy>()!.usaInterfazNocturna,
-        isFalse,
-      );
     });
 
-    test('cada tema retirado migra a un incluido de su mismo brillo', () {
+    test('cada tema retirado migra a NeoFy Claro o NeoFy Nocturno', () {
       for (final entrada in kTemasRetirados.entries) {
         final destino = temaIncluidoPorId(entrada.value);
         expect(destino, isNotNull, reason: '${entrada.key} → ${entrada.value}');
-        final eraOscuro = entrada.key.endsWith('oscuro');
-        expect(destino!.esOscuro, eraOscuro,
-            reason: '${entrada.key} era ${eraOscuro ? "oscuro" : "claro"}');
+        final eraClaro = entrada.key.endsWith('claro');
+        expect(destino!.esOscuro, !eraClaro,
+            reason: '${entrada.key} era ${eraClaro ? "claro" : "oscuro"}');
       }
     });
 
-    test('los de Material mezclan radios: contenedor redondeado y botón '
-        'completamente redondo', () {
-      for (final tema in [temaMaterialClaro, temaMaterialOscuro]) {
-        expect(tema.radio, 26);
-        expect(tema.radioBoton, 999);
-        expect(tema.radioCaratula, 16);
-        expect(tema.navegacion, EstiloDeNavegacion.pildora);
-        expect(tema.movimiento.esquema, EsquemaDeMovimiento.expresivo);
-        expect(tema.cristal.activo, isFalse);
-        expect(tema.fondo.hayAlgoQuePintar, isFalse);
+    test('cargar() migra temas retirados y temas desconocidos de comunidad',
+        () async {
+      for (final entrada in <String, String>{
+        'material-oscuro': kIdTemaNocturno,
+        'material-claro': kIdTemaClaro,
+        'liquid-glass': kIdTemaNocturno,
+        'mi-tema-comunidad': kIdTemaNocturno,
+      }.entries) {
+        final cfg = _FakeConfigTemas(tema: entrada.key);
+        final store = TemaStore(cfg);
+        addTearDown(store.dispose);
+        await store.cargar();
+        expect(store.idSeleccionado, entrada.value, reason: entrada.key);
+        expect(cfg.guardados, 1);
       }
+    });
+
+    testWidgets('selector directo de temas permite elegir Automático, Claro y Oscuro',
+        (t) async {
+      final cfg = _FakeConfigTemas(tema: kIdTemaNocturno);
+      final temas = TemaStore(cfg);
+      final settings = Settings(cfg);
+      addTearDown(temas.dispose);
+      addTearDown(settings.dispose);
+
+      await t.pumpWidget(
+        MaterialApp(
+          theme: construirThemeData(temaNeoFyNocturno),
+          home: Scaffold(
+            body: BotonDeTemas(temas: temas, settings: settings),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+
+      expect(find.text('Automático'), findsOneWidget);
+      expect(find.text('Claro'), findsOneWidget);
+      expect(find.text('Oscuro'), findsOneWidget);
+      expect(find.text('Menús dentro del elemento'), findsOneWidget);
+
+      await t.tap(find.text('Claro'));
+      await t.pumpAndSettle();
+      expect(temas.idSeleccionado, kIdTemaClaro);
+
+      await t.tap(find.text('Automático'));
+      await t.pumpAndSettle();
+      expect(temas.siguiendoAlSistema, isTrue);
+
+      await t.tap(find.text('Oscuro'));
+      await t.pumpAndSettle();
+      expect(temas.idSeleccionado, kIdTemaNocturno);
     });
 
     test('solo el movimiento expresivo rebasa; el sobrio no', () {
@@ -393,8 +495,8 @@ void main() {
     });
 
     test('la escala llega a los sitios que dice Compose', () {
-      final datos = construirThemeData(temaMaterialOscuro);
-      final formas = temaMaterialOscuro.escalaDeFormas;
+      final datos = construirThemeData(_temaMaterialPrueba);
+      final formas = _temaMaterialPrueba.escalaDeFormas;
 
       BorderRadius radioDe(ShapeBorder? forma) =>
           ((forma! as RoundedRectangleBorder).borderRadius as BorderRadius);
@@ -406,22 +508,13 @@ void main() {
           formas.extraPequeno);
     });
 
-    test('los de Material engordan title y label, como manda la tabla del '
-        'type scale', () {
-      final datos = construirThemeData(temaMaterialOscuro);
+    test('engorda title y label cuando pesoTitulos es 600', () {
+      final datos = construirThemeData(_temaMaterialPrueba);
       expect(datos.textTheme.titleLarge?.fontWeight, FontWeight.w600);
       expect(datos.textTheme.labelLarge?.fontWeight, FontWeight.w600);
       expect(datos.textTheme.bodyLarge?.fontWeight,
           isNot(FontWeight.w600),
           reason: 'el cuerpo se queda en normal; solo title y label suben');
-    });
-
-    test('en Material oscuro el panel es más claro que el fondo, como marca '
-        'la elevación de Material', () {
-      expect(
-        temaMaterialOscuro.colores.panel.computeLuminance(),
-        greaterThan(temaMaterialOscuro.colores.fondo.computeLuminance()),
-      );
     });
 
     test('cada uno construye su ThemeData sin reventar', () {
@@ -433,10 +526,9 @@ void main() {
       }
     });
 
-    test('solo Liquid Glass trae el cristal encendido', () {
+    test('ningún tema incluido usa cristal', () {
       for (final tema in temasIncluidos) {
-        expect(tema.cristal.activo, tema.id == 'liquid-glass',
-            reason: 'en ${tema.id}');
+        expect(tema.cristal.activo, isFalse, reason: 'en ${tema.id}');
       }
     });
 
@@ -504,7 +596,7 @@ void main() {
       expect(plano.containsKey('fondo'), isFalse);
       expect(plano.containsKey('tipografia'), isFalse);
 
-      final conCristal = temaLiquidGlass.aJson();
+      final conCristal = _temaCristalPrueba.aJson();
       expect(conCristal.containsKey('cristal'), isTrue);
       expect(conCristal.containsKey('fondo'), isTrue);
     });
@@ -525,7 +617,7 @@ void main() {
     });
 
     test('la herramienta conoce todas las claves que la app serializa', () {
-      final serializado = temaLiquidGlass.aJson();
+      final serializado = _temaCristalPrueba.aJson();
       expect(serializado.keys, everyElement(isIn(herramienta.clavesDeRaiz)));
 
       final colores = serializado['colores'] as Map<String, dynamic>;
@@ -589,40 +681,6 @@ void main() {
         'colores': {'primario': '#1DB954', 'fondo': '#FFFFFF'},
       });
       expect(problemas, isEmpty);
-    });
-  });
-
-  group('crearTemaDeEjemplo', () {
-    test('parte de Material y escribe los colores personalizados', () async {
-      final tmp = Directory(
-        p.join(Directory.systemTemp.path,
-            'neofy-plantilla-${DateTime.now().microsecondsSinceEpoch}'),
-      );
-      tmp.createSync();
-      addTearDown(() {
-        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
-      });
-
-      final base = temaMaterialOscuro.personalizado({
-        'primario': '#1DB954',
-        'fondo': '#000000',
-        'panel': '#0A0A0A',
-      });
-      final dir = await crearTemaDeEjemplo(
-        base: base,
-        nombre: 'Verde noche',
-        en: tmp,
-      );
-      final cargado = leerTemaDeCarpeta(dir);
-
-      expect(p.basename(dir.path), 'verde-noche');
-      expect(cargado.tema.nombre, 'Verde noche');
-      expect(cargado.tema.incluido, isFalse);
-      expect(cargado.tema.cristal.activo, isFalse);
-      expect(cargado.tema.colores.primario, const Color(0xFF1DB954));
-      expect(cargado.tema.colores.fondo, const Color(0xFF000000));
-      expect(cargado.tema.colores.panel, const Color(0xFF0A0A0A));
-      expect(esTemaMaterial(cargado.tema.id), isFalse);
     });
   });
 }

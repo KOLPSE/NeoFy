@@ -8,7 +8,7 @@ import 'package:neofy/ui/corazon_animado.dart';
 
 Widget _envoltorio({required bool lleno}) {
   return MaterialApp(
-    theme: construirThemeData(temaMaterialOscuro),
+    theme: construirThemeData(temaNeoFyNocturno),
     home: Scaffold(
       body: Row(
         children: [

@@ -97,27 +97,15 @@ class _ArtistScreenState extends State<ArtistScreen> {
 
   Future<bool> _esperarSidecar() async {
     final s = widget.sidecar;
-    if (s == null) return false;
+    if (s == null || !s.puedeUsarse) return false;
     if (s.ready) return true;
     _pendienteDeSidecar = true;
-    final listo = Completer<bool>();
-    void ver() {
-      if (s.ready && !listo.isCompleted) listo.complete(true);
-    }
-    s.addListener(ver);
-    void cancelar() {
-      s.removeListener(ver);
-      if (!listo.isCompleted) listo.complete(false);
-    }
-    _cancelarEsperaSidecar = cancelar;
     try {
-      return await listo.future
+      return await s
+          .asegurarListo()
           .timeout(const Duration(seconds: 12), onTimeout: () => s.ready);
-    } finally {
-      s.removeListener(ver);
-      if (identical(_cancelarEsperaSidecar, cancelar)) {
-        _cancelarEsperaSidecar = null;
-      }
+    } catch (_) {
+      return false;
     }
   }
 
@@ -164,8 +152,10 @@ class _ArtistScreenState extends State<ArtistScreen> {
   Future<void> _cargarDelSidecar() async {
     final perfil = await widget.sidecar!.artista(widget.artist.id);
     if (!mounted) return;
+    final cargado = perfil.artista.name.isEmpty ? widget.artist : perfil.artista;
+    widget.favoritos.actualizarArtista(cargado);
     setState(() {
-      _artista = perfil.artista.name.isEmpty ? widget.artist : perfil.artista;
+      _artista = cargado;
       _tracks = perfil.top;
       _albumes = perfil.albumes;
       _singles = perfil.singles;
@@ -221,8 +211,10 @@ class _ArtistScreenState extends State<ArtistScreen> {
       } catch (_) {
         artist = widget.artist;
       }
+      final resuelto = artist.name.isEmpty ? widget.artist : artist;
+      widget.favoritos.actualizarArtista(resuelto);
       if (mounted) {
-        setState(() => _artista = artist.name.isEmpty ? widget.artist : artist);
+        setState(() => _artista = resuelto);
       }
 
       final tracks = await topF;
@@ -601,6 +593,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
         ),
         Expanded(
           child: ListView.builder(
+            addAutomaticKeepAlives: false,
             padding: EdgeInsets.zero,
             itemCount: _populares.length,
             itemBuilder: (context, i) => _tilePopular(i),

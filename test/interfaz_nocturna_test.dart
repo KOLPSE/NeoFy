@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,7 +78,7 @@ void main() {
     expect(player.isPremium, isTrue);
   });
 
-  testWidgets('Nocturno y Material muestran distribuciones distintas', (
+  testWidgets('NeoFy Nocturno y Claro navegan con barra, ratón lateral y ajuste de sidebar', (
     t,
   ) async {
     await t.binding.setSurfaceSize(const Size(820, 560));
@@ -115,7 +116,7 @@ void main() {
         auth: auth,
         obtenerUserId: () => null,
       ),
-      favoritos: ArtistasFavoritosStore(directorio: temporal),
+      favoritos: ArtistasFavoritosStore(api: api, auth: auth),
       carpetas: CarpetasStore(directorio: temporal),
       home: home,
       ram: ResourceMonitor(pidsDeSidecars: () => const []),
@@ -178,6 +179,25 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Última escucha'), findsOneWidget);
 
+    // Botones laterales del ratón: atrás (vuelve a Ajustes? espera: arriba fuimos a Ajustes y luego atrás -> home, así que adelante vuelve a Ajustes y atrás vuelve a Inicio)
+    final ratonLateral = await t.createGesture(
+      kind: PointerDeviceKind.mouse,
+      buttons: kForwardMouseButton,
+    );
+    await ratonLateral.down(const Offset(400, 300));
+    await ratonLateral.up();
+    await t.pumpAndSettle();
+    expect(find.text('Apariencia e idioma'), findsOneWidget);
+
+    final ratonAtras = await t.createGesture(
+      kind: PointerDeviceKind.mouse,
+      buttons: kBackMouseButton,
+    );
+    await ratonAtras.down(const Offset(400, 300));
+    await ratonAtras.up();
+    await t.pumpAndSettle();
+    expect(find.text('Última escucha'), findsOneWidget);
+
     await t.tap(find.byTooltip('Cola'));
     await t.pumpAndSettle();
     expect(find.text('La cola está vacía.'), findsOneWidget);
@@ -231,13 +251,5 @@ void main() {
       Theme.of(t.element(find.text('Biblioteca'))).brightness,
       Brightness.light,
     );
-
-    await temas.seleccionar(temaMaterialOscuro.id);
-    await t.pumpAndSettle();
-    expect(find.text('Biblioteca'), findsNothing);
-    expect(find.text('Última escucha'), findsNothing);
-    expect(find.text('Una canción del historial'), findsOneWidget);
-    expect(buscar, findsNothing);
-    expect(find.text('Buscar'), findsOneWidget);
   });
 }

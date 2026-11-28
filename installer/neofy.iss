@@ -43,7 +43,7 @@ Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignore
 
 [Icons]
 Name: "{group}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"
-Name: "{group}\{cm:UninstallProgram,{#Nombre}}"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallProgram,{#Nombre}}"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#Ejecutable}"
 Name: "{autodesktop}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: desktopicon
 Name: "{userstartup}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"; Tasks: startup
 

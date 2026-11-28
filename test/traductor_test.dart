@@ -58,6 +58,62 @@ void main() {
     expect(traduccionUiFijada('en', 'Tema'), 'Theme');
   });
 
+  test('traduccionUiFijada evita traducciones literales en los idiomas curados',
+      () {
+    expect(traduccionUiFijada('en', 'Cola'), 'Queue');
+    expect(traduccionUiFijada('en', 'Letra'), 'Lyrics');
+    expect(traduccionUiFijada('en', 'Reproducir'), 'Play');
+    expect(traduccionUiFijada('en', 'Claro'), 'Light');
+    expect(traduccionUiFijada('en', 'Reproducción Actual'), 'Now Playing');
+    expect(traduccionUiFijada('en', 'Nada sonando'), 'Nothing playing');
+    expect(traduccionUiFijada('en', 'SONANDO AHORA'), 'NOW PLAYING');
+    expect(traduccionUiFijada('en', 'Aleatorio'), 'Shuffle');
+    expect(traduccionUiFijada('en', 'Canciones que te gustan'), 'Liked Songs');
+    expect(traduccionUiFijada('en', 'Ajustes'), 'Settings');
+    expect(traduccionUiFijada('en', 'Cuenta'), 'Account');
+    expect(traduccionUiFijada('en', 'Temporizador de apagado'), 'Sleep timer');
+    expect(traduccionUiFijada('en', 'Por letras'), 'By lines');
+
+    expect(traduccionUiFijada('fr', 'Cola'), 'File d’attente');
+    expect(traduccionUiFijada('de', 'Letra'), 'Songtext');
+    expect(traduccionUiFijada('pt', 'Ajustes'), 'Configurações');
+    expect(traduccionUiFijada('it', 'Cola'), 'Coda');
+  });
+
+  test('traduccionUiFijada resuelve patrones interpolados con concordancia', () {
+    expect(traduccionUiFijada('en', '1 canciones'), '1 song');
+    expect(traduccionUiFijada('en', '12 canciones'), '12 songs');
+    expect(traduccionUiFijada('en', '1,2 M seguidores'), '1,2 M followers');
+    expect(traduccionUiFijada('en', 'Volver a Muse'), 'Back to Muse');
+    expect(traduccionUiFijada('en', 'Pódcast · NPR'), 'Podcast · NPR');
+    expect(traduccionUiFijada('fr', '1 canciones'), '1 titre');
+    expect(traduccionUiFijada('de', '3 canciones'), '3 Titel');
+  });
+
+  test('el diccionario curado prevalece sobre caché literal previa en disco',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('neofy_trad_override_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final fichero = File(p.join(dir.path, 'traducciones.json'));
+    fichero.writeAsStringSync(jsonEncode({
+      'ui|en|Cola': 'Tail',
+      'ui|en|Claro': 'Of course',
+      'ui|en|Letra': 'Letter',
+    }));
+
+    final traductor = Traductor(
+      localeEfectivo: () => 'en_US',
+      directorio: dir,
+    );
+    addTearDown(traductor.dispose);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(traductor.cacheUi('Cola'), 'Queue');
+    expect(traductor.cacheUi('Claro'), 'Light');
+    expect(traductor.cacheUi('Letra'), 'Lyrics');
+    expect(await traductor.traducirUi('Cola'), 'Queue');
+  });
+
   test('biografia en simulado elige la mejor candidata por locale', () async {
     const ingles = 'Known for platinum singles and festival sets.';
     const espanol = 'Conocido por sus sencillos de platino y sus actuaciones.';

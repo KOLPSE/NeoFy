@@ -5,12 +5,35 @@ foreach ($d in @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE, $env:TEMP, $
   if ($d) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 }
 
+function Limpiar-RutaRobusta([string]$ruta) {
+  if (-not (Test-Path -LiteralPath $ruta)) { return }
+  Remove-Item -LiteralPath $ruta -Recurse -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $ruta) {
+    $vacio = Join-Path ([IO.Path]::GetTempPath()) "empty-ci-$PID-$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $vacio | Out-Null
+    & robocopy $vacio $ruta /MIR /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+    $global:LASTEXITCODE = 0
+    Remove-Item -LiteralPath $vacio -Force -Recurse -ErrorAction SilentlyContinue
+    cmd /c "rmdir /s /q `"$ruta`" 2>nul"
+    $global:LASTEXITCODE = 0
+  }
+}
+
+foreach ($patron in @('C:\ci\*.corrupt-*', 'C:\ci\pub-cache-clean\*.corrupt-*', 'C:\ci\pub-cache-fresh-*', 'C:\ci\temp\*')) {
+  Get-Item -Path $patron -ErrorAction SilentlyContinue | ForEach-Object {
+    Limpiar-RutaRobusta $_.FullName
+  }
+}
+$unidadC = Get-PSDrive C
+Write-Host ("Espacio en C:\ -> Libre: {0:N2} GB, Usado: {1:N2} GB" -f ($unidadC.Free / 1GB), ($unidadC.Used / 1GB))
+
 # El SDK vive fuera del directorio del repo en una ruta corta para evitar
 # errores de MAX_PATH (>260 caracteres) al limpiar el workspace del runner.
 $toolsDir = if ($env:NEOFY_CI_TOOLS_DIR) { $env:NEOFY_CI_TOOLS_DIR } else { 'C:\ci\flutter-3.44.6' }
 $sdkRoot = Join-Path $toolsDir 'flutter'
 $completed = Join-Path $toolsDir 'sdk-ready'
-if (-not (Test-Path $completed)) {
+
+function Instalar-FlutterSdk {
   Write-Host 'Preparando Flutter 3.44.6 en el directorio del job.'
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
   $manifest = Invoke-RestMethod -TimeoutSec 45 'https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json'
@@ -26,6 +49,7 @@ if (-not (Test-Path $completed)) {
     Write-Host 'SDK descargado y verificado; extrayendo archivos.'
     & tar.exe -xf $archive -C $toolsDir
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $sdkRoot 'bin\flutter.bat'))) {
+      Remove-Item -LiteralPath $sdkRoot -Recurse -Force -ErrorAction SilentlyContinue
       throw 'No se pudo extraer el SDK de Flutter.'
     }
     [IO.File]::WriteAllText($completed, 'Flutter 3.44.6')
@@ -33,6 +57,61 @@ if (-not (Test-Path $completed)) {
     Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
   }
 }
+
+if (-not (Test-Path $completed)) {
+  $cleanDir = "$toolsDir-clean"
+  $cleanReady = Join-Path $cleanDir 'sdk-ready'
+  if (Test-Path $cleanReady) {
+    $toolsDir = $cleanDir
+    $sdkRoot = Join-Path $toolsDir 'flutter'
+    $completed = $cleanReady
+  } else {
+    if (Test-Path $toolsDir) {
+      Write-Host "Directorio $toolsDir incompleto sin sdk-ready; intentando apartarlo."
+      $sufijo = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { [DateTime]::UtcNow.ToString('yyyyMMddHHmmss') }
+      $corrupto = "$toolsDir.corrupt-$sufijo"
+      cmd /c "move `"$toolsDir`" `"$corrupto`" >nul 2>nul"
+      if (Test-Path $corrupto) {
+        Remove-Item -LiteralPath $corrupto -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      if (Test-Path $toolsDir) {
+        Write-Host "No se pudo mover $toolsDir; usando ruta limpia $cleanDir."
+        $toolsDir = $cleanDir
+        $sdkRoot = Join-Path $toolsDir 'flutter'
+        $completed = $cleanReady
+      }
+    }
+    if (-not (Test-Path $completed)) {
+      Instalar-FlutterSdk
+    }
+  }
+}
+
+$cacheDirSdk = Join-Path $sdkRoot 'bin\cache'
+$sdkCacheCorrupto = $false
+if (Test-Path -LiteralPath $cacheDirSdk) {
+  try {
+    Get-ChildItem -LiteralPath $cacheDirSdk -Recurse -ErrorAction Stop | Out-Null
+  } catch {
+    Write-Host "Caché corrupta dentro del SDK ($cacheDirSdk): $($_.Exception.Message)"
+    $sdkCacheCorrupto = $true
+  }
+}
+if ($sdkCacheCorrupto) {
+  $sufijoSdk = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID }
+  $apartadoSdk = "$toolsDir.corrupt-$sufijoSdk"
+  cmd /c "move `"$toolsDir`" `"$apartadoSdk`" 2>nul" | Out-Null
+  $global:LASTEXITCODE = 0
+  Limpiar-RutaRobusta $apartadoSdk
+  Limpiar-RutaRobusta $toolsDir
+  if (Test-Path -LiteralPath $toolsDir) {
+    $toolsDir = "$toolsDir-clean"
+    $sdkRoot = Join-Path $toolsDir 'flutter'
+    $completed = Join-Path $toolsDir 'sdk-ready'
+  }
+  Instalar-FlutterSdk
+}
+
 if ($env:PUB_CACHE) {
   $env:PUB_CACHE = [IO.Path]::GetFullPath($env:PUB_CACHE)
 } else {
@@ -94,8 +173,43 @@ $env:PATH = "$sdkRoot\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
 $env:GIT_CONFIG_COUNT = '1'
 $env:GIT_CONFIG_KEY_0 = 'safe.directory'
 $env:GIT_CONFIG_VALUE_0 = $sdkRoot.Replace('\', '/')
-& (Join-Path $sdkRoot 'bin\flutter.bat') --version
-if ($LASTEXITCODE -ne 0) { throw 'Flutter no está disponible.' }
+
+function Ejecutar-FlutterVersion {
+  $prevPref = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $salida = & (Join-Path $sdkRoot 'bin\flutter.bat') --version 2>&1
+    $codigo = $LASTEXITCODE
+    if ($codigo -ne 0) {
+      $salida | ForEach-Object { Write-Host $_ }
+    }
+    return $codigo
+  } finally {
+    $ErrorActionPreference = $prevPref
+  }
+}
+
+if ((Ejecutar-FlutterVersion) -ne 0) {
+  Write-Host 'flutter --version falló; regenerando flutter_tools.snapshot...'
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'packages\flutter_tools\.dart_tool') -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter_tools.snapshot') -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $sdkRoot 'bin\cache\flutter.bat.lock') -Force -ErrorAction SilentlyContinue
+  if ((Ejecutar-FlutterVersion) -ne 0) {
+    Write-Host 'El SDK de Flutter en caché está corrupto; reinstalando desde cero y reiniciando PUB_CACHE...'
+    $sufijo = if ($env:CI_JOB_ID) { $env:CI_JOB_ID } else { $PID }
+    $apartadoSdk = "$toolsDir.corrupt-$sufijo"
+    cmd /c "move `"$toolsDir`" `"$apartadoSdk`" 2>nul" | Out-Null
+    $global:LASTEXITCODE = 0
+    Limpiar-RutaRobusta $toolsDir
+    Limpiar-RutaRobusta $apartadoSdk
+    $pubViejo = $env:PUB_CACHE
+    if ($pubViejo) { Limpiar-RutaRobusta $pubViejo }
+    $env:PUB_CACHE = "C:\ci\pub-cache-fresh-$sufijo"
+    New-Item -ItemType Directory -Force -Path $env:PUB_CACHE | Out-Null
+    Instalar-FlutterSdk
+    if ((Ejecutar-FlutterVersion) -ne 0) { throw 'Flutter no está disponible.' }
+  }
+}
 
 $dartExe = Join-Path $sdkRoot 'bin\cache\dart-sdk\bin\dart.exe'
 $toolBackend = Join-Path $sdkRoot 'packages\flutter_tools\bin\tool_backend.dart'

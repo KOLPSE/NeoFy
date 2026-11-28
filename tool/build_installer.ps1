@@ -55,8 +55,29 @@ if ($env:NEOREPORT_APP_KEY) {
 } else {
   throw 'Configura NEOREPORT_APP_KEY o .neoreport-key.json antes de compilar.'
 }
-& $flutter build windows --release @definiciones
-if ($LASTEXITCODE -ne 0) { throw "Falló la compilación de Flutter" }
+$prevPref = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  & $flutter build windows --release @definiciones
+  $codigoFlutter = $LASTEXITCODE
+  if ($codigoFlutter -ne 0) {
+    Write-Host "`n=== Reintentando tras limpiar ephemeral y forzar precache de Windows ===" -ForegroundColor Yellow
+    foreach ($d in @('windows\flutter\ephemeral', 'build\windows')) {
+      if (Test-Path -LiteralPath $d) {
+        cmd /c "rmdir /s /q `"$d`" 2>nul"
+        $global:LASTEXITCODE = 0
+      }
+    }
+    & $flutter precache --windows --force
+    & $flutter build windows --release --verbose @definiciones 2>&1 | ForEach-Object { Write-Host $_ }
+    $codigoFlutter = $LASTEXITCODE
+    if ($codigoFlutter -ne 0) {
+      throw "Falló la compilación de Flutter (código $codigoFlutter)"
+    }
+  }
+} finally {
+  $ErrorActionPreference = $prevPref
+}
 
 $release = "build\windows\x64\runner\Release"
 

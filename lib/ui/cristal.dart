@@ -81,7 +81,7 @@ class _ImagenDeFondo extends StatelessWidget {
         opacity: fondo.opacidad,
         child: Image.file(
           fichero,
-          cacheWidth: 960,
+          cacheWidth: fondo.desenfoque >= 20 ? 320 : 960,
           fit: _ajuste(fondo.ajuste),
           repeat: fondo.ajuste == AjusteDeFondo.repetir
               ? ImageRepeat.repeat
@@ -134,7 +134,9 @@ class _CaratulaDeFondoState extends State<_CaratulaDeFondo> {
                   opacity: widget.fondo.opacidad,
                   child: Image.file(
                     fichero,
-                    cacheWidth: 640,
+                    cacheWidth: widget.fondo.desenfoque >= 20
+                        ? 160
+                        : (widget.fondo.desenfoque > 0 ? 320 : 640),
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
